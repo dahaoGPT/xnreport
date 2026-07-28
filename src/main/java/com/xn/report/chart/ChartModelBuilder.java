@@ -568,7 +568,8 @@ public final class ChartModelBuilder {
                         && !occupyingGroup.equals(token)) {
                     throw new ChartBuildException(
                             "Chart stack slot " + renderSlot + " on "
-                                    + axis + " axis has conflicting series groups");
+                                    + axis + " axis has conflicting series groups "
+                                    + "or multiple stackGroup values");
                 }
                 stackSlots.put(slot, token);
             }

@@ -125,7 +125,8 @@ public final class JsonSchemaContract {
                             && !previousGroup.equals(token)) {
                         errors.add(path
                                 + ".series has conflicting groups in "
-                                + renderSlot + " on " + axis);
+                                + renderSlot + " on " + axis
+                                + " or multiple stackGroup values");
                     }
                 }
                 if (group.trim().isEmpty()) {

@@ -245,7 +245,8 @@ public final class ReportDefinitionValidator {
                 result.add("CHART-001", path + ".series",
                         "Chart stack slot " + renderSlot(item.getType())
                                 + " on " + axis
-                                + " axis has conflicting series groups");
+                                + " axis has conflicting series groups "
+                                + "or multiple stackGroup values");
             }
         }
     }

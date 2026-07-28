@@ -245,6 +245,20 @@ class JFreeChartImageRendererTest {
     }
 
     @Test
+    void bubbleFixedLegendUsesACircularBubbleShape() {
+        JFreeChartImageRenderer renderer = new JFreeChartImageRenderer(
+                temporaryDirectory, Collections.singletonList("Dialog"));
+        XYPlot plot = (XYPlot) renderer.createChart(
+                new ChartModelBuilder().build(
+                        definition(ChartType.BUBBLE), xyRows())).getPlot();
+
+        LegendItem item = plot.getLegendItems().get(0);
+        assertThat(item.getShape()).isInstanceOf(java.awt.geom.Ellipse2D.class);
+        assertThat(item.isShapeVisible()).isTrue();
+        assertThat(item.isLineVisible()).isFalse();
+    }
+
+    @Test
     void seriesLevelPieLabelModesReachThePieLabelGenerator() {
         JFreeChartImageRenderer renderer = new JFreeChartImageRenderer(
                 temporaryDirectory, Collections.singletonList("Dialog"));

@@ -128,6 +128,13 @@ class ChartConfigurationTest {
                         + "{\"field\":\"b\",\"name\":\"B\",\"type\":\"stackedColumn\","
                         + "\"stackGroup\":\"two\"}"));
         assertThat(schema().validate(overlapping)).isNotEmpty();
+        JsonNode percentWithLine = mapper.readTree(validChartJson(
+                "generatedNative",
+                "{\"field\":\"a\",\"name\":\"Percent\","
+                        + "\"type\":\"percentStackedColumn\","
+                        + "\"stackGroup\":\"percent\"},"
+                        + "{\"field\":\"b\",\"name\":\"Hours\",\"type\":\"line\"}"));
+        assertThat(schema().validate(percentWithLine)).isNotEmpty();
 
         ReportDefinition report = TestFixtures.report(datasetWithFields("a", "b"));
         ChartDefinition chart = chart(
@@ -150,6 +157,48 @@ class ChartConfigurationTest {
                         Collections.singletonList(DatasetRow.of(
                                 "month", "01", "a", 1, "b", 2)))))
                 .isInstanceOf(com.xn.report.chart.ChartBuildException.class);
+
+        ChartDefinition staticLimit = chart(
+                ChartType.LINE, "a", null);
+        java.util.List<String> categories = new java.util.ArrayList<>();
+        for (int index = 0; index < 2001; index++) {
+            categories.add("C" + index);
+        }
+        staticLimit.setCategories(categories);
+        java.util.List<ChartSeriesDefinition> manySeries =
+                new java.util.ArrayList<>();
+        for (int index = 0; index < 100; index++) {
+            manySeries.add(series(ChartType.LINE, "a", null));
+        }
+        staticLimit.setSeries(manySeries);
+        report.setCharts(Collections.singletonList(staticLimit));
+        assertThat(new ReportDefinitionValidator().validate(report).issues())
+                .anySatisfy(issue -> assertThat(issue.getMessage())
+                        .contains("MAX_POINTS"));
+
+        JsonNode staticReport = mapper.readTree(validChartJson(
+                "generatedNative",
+                "{\"field\":\"a\",\"name\":\"A\",\"type\":\"line\"}"));
+        com.fasterxml.jackson.databind.node.ObjectNode staticJson =
+                (com.fasterxml.jackson.databind.node.ObjectNode)
+                        staticReport.path("charts").get(0);
+        com.fasterxml.jackson.databind.node.ArrayNode jsonCategories =
+                staticJson.putArray("categories");
+        for (int index = 0; index < 2001; index++) {
+            jsonCategories.add("C" + index);
+        }
+        com.fasterxml.jackson.databind.node.ArrayNode jsonSeries =
+                staticJson.putArray("series");
+        for (int index = 0; index < 100; index++) {
+            com.fasterxml.jackson.databind.node.ObjectNode item =
+                    jsonSeries.addObject();
+            item.put("field", "a");
+            item.put("name", "S" + index);
+            item.put("type", "line");
+        }
+        assertThat(schema().validate(staticReport))
+                .anySatisfy(error -> assertThat(error)
+                        .contains("MAX_POINTS"));
     }
 
     @Test

@@ -341,6 +341,45 @@ class ChartModelBuilderTest {
     }
 
     @Test
+    void rejectsMixedColumnStackSlotsAndPercentSeriesSharingANumericAxis() {
+        ChartDefinition mixed = new ChartDefinition();
+        mixed.setId("mixed-stack-slot");
+        mixed.setDataset("values");
+        mixed.setCategoryField("category");
+        ChartSeriesDefinition ordinary = series(
+                "a", "A", ChartType.STACKED_COLUMN, ChartNullHandling.GAP);
+        ordinary.setStackGroup("ordinary");
+        ChartSeriesDefinition percent = series(
+                "b", "B", ChartType.PERCENT_STACKED_COLUMN,
+                ChartNullHandling.GAP);
+        percent.setStackGroup("percent");
+        mixed.setSeries(Arrays.asList(ordinary, percent));
+        DatasetResult rows = DatasetResult.list("values",
+                Collections.singletonList(
+                        DatasetRow.of("category", "x", "a", 1, "b", 2)));
+
+        assertThatThrownBy(() -> builder.build(mixed, rows))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("stack slot");
+
+        ChartDefinition percentAndLine = new ChartDefinition();
+        percentAndLine.setId("percent-axis");
+        percentAndLine.setDataset("values");
+        percentAndLine.setCategoryField("category");
+        ChartSeriesDefinition percentOnly = series(
+                "a", "Percent", ChartType.PERCENT_STACKED_COLUMN,
+                ChartNullHandling.GAP);
+        percentOnly.setStackGroup("percent");
+        ChartSeriesDefinition line = series(
+                "b", "Hours", ChartType.LINE, ChartNullHandling.GAP);
+        percentAndLine.setSeries(Arrays.asList(percentOnly, line));
+
+        assertThatThrownBy(() -> builder.build(percentAndLine, rows))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("percent axis");
+    }
+
+    @Test
     void chartDataLabelsDefaultOnlySeriesThatOmitTheProperty() {
         ChartDefinition definition = new ChartDefinition();
         definition.setId("labels");
@@ -405,6 +444,32 @@ class ChartModelBuilderTest {
                                 new BigDecimal("1E100000"))))))
                 .isInstanceOf(ChartBuildException.class)
                 .hasMessageContaining("finite double");
+    }
+
+    @Test
+    void maxPointsCountsConfiguredCategoriesAcrossEveryOutputGroup() {
+        ChartDefinition definition = simpleDefinition(ChartType.LINE);
+        definition.setGroupByField("group");
+        List<String> categories = new java.util.ArrayList<>();
+        for (int index = 0; index < 2000; index++) {
+            categories.add("C" + index);
+        }
+        definition.setCategories(categories);
+        List<ChartSeriesDefinition> series = new java.util.ArrayList<>();
+        for (int index = 0; index < 100; index++) {
+            series.add(series("value", "S" + index, ChartType.LINE,
+                    ChartNullHandling.GAP));
+        }
+        definition.setSeries(series);
+
+        assertThatThrownBy(() -> builder.buildAll(definition,
+                DatasetResult.list("values", Arrays.asList(
+                        DatasetRow.of("group", "A", "category", "C0",
+                                "value", 1),
+                        DatasetRow.of("group", "B", "category", "C0",
+                                "value", 2)))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("MAX_POINTS");
     }
 
     private static DatasetRow event(

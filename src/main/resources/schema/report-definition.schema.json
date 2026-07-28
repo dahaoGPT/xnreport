@@ -62,6 +62,7 @@
       "x-java-stackGroupConsistency": true,
       "x-java-stockTemplateOnly": true,
       "x-java-chartDataLabelDefaults": true,
+      "x-java-chartPointLimits": true,
       "additionalProperties": false,
       "required": [
         "id",
@@ -116,6 +117,7 @@
         },
         "categories": {
           "type": "array",
+          "maxItems": 5000,
           "uniqueItems": true,
           "items": {
             "type": "string",
@@ -139,6 +141,7 @@
         "series": {
           "type": "array",
           "minItems": 1,
+          "maxItems": 100,
           "items": {
             "$ref": "#/definitions/chartSeries"
           }

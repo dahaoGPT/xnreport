@@ -24,13 +24,15 @@ public final class JsonSchemaContract {
             Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(
                     "$schema", "$id", "$ref", "title", "description", "type",
                     "additionalProperties", "required", "properties", "definitions",
-                    "oneOf", "items", "minItems", "uniqueItems", "enum",
+                    "oneOf", "items", "minItems", "maxItems",
+                    "uniqueItems", "enum",
                     "minLength", "maxLength", "pattern", "minimum", "maximum",
                     "exclusiveMinimum",
                     "x-java-maxUtf16Length", "x-java-nonBlank",
                     "x-java-stackGroupConsistency",
                     "x-java-stockTemplateOnly",
                     "x-java-chartDataLabelDefaults",
+                    "x-java-chartPointLimits",
                     "x-java-chartSeriesPropertyMatrix")));
 
     private final JsonNode rootSchema;
@@ -93,13 +95,42 @@ public final class JsonSchemaContract {
             Map<String, String> axes = new java.util.LinkedHashMap<String, String>();
             Map<String, String> stackSlots =
                     new java.util.LinkedHashMap<String, String>();
+            boolean primaryPercent = false;
+            boolean primaryOrdinary = false;
+            boolean secondaryPercent = false;
+            boolean secondaryOrdinary = false;
             for (JsonNode series : instance.path("series")) {
+                String type = enumName(series.path("type").asText());
+                String axis = enumName(series.path("axis").asText("PRIMARY"));
+                boolean percent = "PERCENT_STACKED_COLUMN".equals(type);
+                boolean axisBearing = !"PIE".equals(type)
+                        && !"DOUGHNUT".equals(type)
+                        && !"RADAR".equals(type);
+                if (axisBearing) {
+                    if ("SECONDARY".equals(axis)) {
+                        secondaryPercent |= percent;
+                        secondaryOrdinary |= !percent;
+                    } else {
+                        primaryPercent |= percent;
+                        primaryOrdinary |= !percent;
+                    }
+                }
                 String group = series.path("stackGroup").asText("");
+                String renderSlot = renderSlot(type);
+                if (renderSlot != null) {
+                    String slot = renderSlot + "|" + axis;
+                    String token = group.trim().isEmpty() ? type : group;
+                    String previousGroup = stackSlots.put(slot, token);
+                    if (previousGroup != null
+                            && !previousGroup.equals(token)) {
+                        errors.add(path
+                                + ".series has conflicting groups in "
+                                + renderSlot + " on " + axis);
+                    }
+                }
                 if (group.trim().isEmpty()) {
                     continue;
                 }
-                String type = enumName(series.path("type").asText());
-                String axis = enumName(series.path("axis").asText("PRIMARY"));
                 if (types.containsKey(group)
                         && !types.get(group).equals(type)) {
                     errors.add(path + ".series has mixed types in stackGroup " + group);
@@ -110,14 +141,14 @@ public final class JsonSchemaContract {
                 }
                 types.put(group, type);
                 axes.put(group, axis);
-                String slot = type + "|" + axis;
-                String previousGroup = stackSlots.put(slot, group);
-                if (previousGroup != null
-                        && !previousGroup.equals(group)) {
-                    errors.add(path
-                            + ".series has multiple stackGroup values for "
-                            + type + " on " + axis);
-                }
+            }
+            if (primaryPercent && primaryOrdinary) {
+                errors.add(path
+                        + ".series shares a percent PRIMARY axis with ordinary values");
+            }
+            if (secondaryPercent && secondaryOrdinary) {
+                errors.add(path
+                        + ".series shares a percent SECONDARY axis with ordinary values");
             }
         }
         if (schema.path("x-java-stockTemplateOnly").asBoolean(false)) {
@@ -147,6 +178,16 @@ public final class JsonSchemaContract {
                     errors.add(path
                             + ".series format requires visible dataLabels");
                 }
+            }
+        }
+        if (schema.path("x-java-chartPointLimits").asBoolean(false)) {
+            long categories = instance.path("categories").isArray()
+                    ? instance.path("categories").size() : 0L;
+            long series = instance.path("series").isArray()
+                    ? instance.path("series").size() : 0L;
+            if (categories * series > 200000L) {
+                errors.add(path
+                        + " configured categories and series exceed MAX_POINTS=200000");
             }
         }
         if (schema.path("x-java-chartSeriesPropertyMatrix")
@@ -212,6 +253,20 @@ public final class JsonSchemaContract {
                 .toUpperCase(java.util.Locale.ROOT);
     }
 
+    private static String renderSlot(String type) {
+        if ("COLUMN".equals(type) || "STACKED_COLUMN".equals(type)
+                || "PERCENT_STACKED_COLUMN".equals(type)) {
+            return "VERTICAL_COLUMN";
+        }
+        if ("BAR".equals(type) || "STACKED_BAR".equals(type)) {
+            return "HORIZONTAL_BAR";
+        }
+        if ("AREA".equals(type) || "STACKED_AREA".equals(type)) {
+            return "VERTICAL_AREA";
+        }
+        return null;
+    }
+
     private void validateObject(
             JsonNode schema,
             JsonNode instance,
@@ -266,6 +321,11 @@ public final class JsonSchemaContract {
         if (schema.has("minItems") && instance.size() < schema.path("minItems").asInt()) {
             errors.add(path + " has fewer than " + schema.path("minItems").asInt()
                     + " items");
+        }
+        if (schema.has("maxItems")
+                && instance.size() > schema.path("maxItems").asInt()) {
+            errors.add(path + " has more than "
+                    + schema.path("maxItems").asInt() + " items");
         }
         if (schema.path("uniqueItems").asBoolean(false)) {
             Set<JsonNode> unique = new LinkedHashSet<JsonNode>();

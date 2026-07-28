@@ -24,6 +24,7 @@ import com.xn.report.text.PlaceholderParser;
 import com.xn.report.text.PlaceholderParser.Part;
 import com.xn.report.chart.ChartType;
 import com.xn.report.chart.ChartAxis;
+import com.xn.report.chart.ChartModelBuilder;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -180,6 +181,24 @@ public final class ReportDefinitionValidator {
                 result.add("CHART-001", path + ".series",
                         "Chart requires at least one series");
             }
+            if (series.size() > ChartModelBuilder.MAX_SERIES) {
+                result.add("CHART-001", path + ".series",
+                        "Chart exceeds MAX_SERIES="
+                                + ChartModelBuilder.MAX_SERIES);
+            }
+            int configuredCategories = safeList(
+                    chart.getCategories()).size();
+            if (configuredCategories > ChartModelBuilder.MAX_CATEGORIES) {
+                result.add("CHART-001", path + ".categories",
+                        "Chart exceeds MAX_CATEGORIES="
+                                + ChartModelBuilder.MAX_CATEGORIES);
+            }
+            if ((long) configuredCategories * series.size()
+                    > ChartModelBuilder.MAX_POINTS) {
+                result.add("CHART-001", path,
+                        "Configured categories and series exceed MAX_POINTS="
+                                + ChartModelBuilder.MAX_POINTS);
+            }
             Set<Integer> legendOrders = new LinkedHashSet<Integer>();
             Map<String, ChartStackContract> stackContracts =
                     new LinkedHashMap<String, ChartStackContract>();
@@ -212,37 +231,69 @@ public final class ReportDefinitionValidator {
         Map<String, String> slots = new LinkedHashMap<String, String>();
         for (ChartSeriesDefinition item : series) {
             if (item == null || item.getType() == null
-                    || !item.getType().isStacked()
-                    || !hasText(item.getStackGroup())) {
+                    || renderSlot(item.getType()) == null) {
                 continue;
             }
             ChartAxis axis = item.getAxis() == null
                     ? ChartAxis.PRIMARY : item.getAxis();
-            String slot = item.getType().name() + "|" + axis.name();
-            String previous = slots.put(slot, item.getStackGroup());
+            String slot = renderSlot(item.getType()) + "|" + axis.name();
+            String token = hasText(item.getStackGroup())
+                    ? item.getStackGroup() : item.getType().name();
+            String previous = slots.put(slot, token);
             if (previous != null
-                    && !previous.equals(item.getStackGroup())) {
+                    && !previous.equals(token)) {
                 result.add("CHART-001", path + ".series",
-                        "Chart cannot use multiple stackGroup values for "
-                                + item.getType() + " on " + axis + " axis");
+                        "Chart stack slot " + renderSlot(item.getType())
+                                + " on " + axis
+                                + " axis has conflicting series groups");
             }
         }
+    }
+
+    private String renderSlot(ChartType type) {
+        if (type == ChartType.COLUMN
+                || type == ChartType.STACKED_COLUMN
+                || type == ChartType.PERCENT_STACKED_COLUMN) {
+            return "VERTICAL_COLUMN";
+        }
+        if (type == ChartType.BAR || type == ChartType.STACKED_BAR) {
+            return "HORIZONTAL_BAR";
+        }
+        if (type == ChartType.AREA || type == ChartType.STACKED_AREA) {
+            return "VERTICAL_AREA";
+        }
+        return null;
     }
 
     private void validatePercentAxisBounds(
             ChartDefinition chart, String path, ValidationResult result) {
         boolean primary = false;
         boolean secondary = false;
+        boolean primaryOrdinary = false;
+        boolean secondaryOrdinary = false;
         for (ChartSeriesDefinition series : safeList(chart.getSeries())) {
-            if (series != null
-                    && series.getType()
-                    == ChartType.PERCENT_STACKED_COLUMN) {
-                if (series.getAxis() == ChartAxis.SECONDARY) {
-                    secondary = true;
-                } else {
-                    primary = true;
-                }
+            if (series == null || series.getType() == null
+                    || series.getType().isPieLike()
+                    || series.getType() == ChartType.RADAR) {
+                continue;
             }
+            boolean percent = series.getType()
+                    == ChartType.PERCENT_STACKED_COLUMN;
+            if (series.getAxis() == ChartAxis.SECONDARY) {
+                secondary |= percent;
+                secondaryOrdinary |= !percent;
+            } else {
+                primary |= percent;
+                primaryOrdinary |= !percent;
+            }
+        }
+        if (primary && primaryOrdinary) {
+            result.add("CHART-001", path + ".series",
+                    "A percent axis cannot share PRIMARY with ordinary numeric series");
+        }
+        if (secondary && secondaryOrdinary) {
+            result.add("CHART-001", path + ".series",
+                    "A percent axis cannot share SECONDARY with ordinary numeric series");
         }
         if (primary) {
             validatePercentBound(chart.getPrimaryAxisMin(),

@@ -453,7 +453,7 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
             boolean lineVisible = series.getType() == ChartType.LINE;
             boolean shapeVisible = !lineVisible || series.isMarker();
             java.awt.Shape shape = series.getType() == ChartType.SCATTER
-                    || lineVisible
+                    || series.getType() == ChartType.BUBBLE || lineVisible
                     ? new Ellipse2D.Double(-4, -4, 8, 8)
                     : new Rectangle2D.Double(-4, -4, 8, 8);
             items.add(new LegendItem(

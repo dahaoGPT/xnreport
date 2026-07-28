@@ -295,6 +295,118 @@ class ChartModelBuilderTest {
                 .allSatisfy(series -> assertThat(series.getValues()).isEmpty());
     }
 
+    @Test
+    void preservesNullAndEmptyKeysAndRejectsAmbiguousTypedLabels() {
+        ChartDefinition grouped = simpleDefinition(ChartType.LINE);
+        grouped.setGroupByField("group");
+        List<ChartModel> models = builder.buildAll(grouped,
+                DatasetResult.list("values", Arrays.asList(
+                        DatasetRow.of("group", null, "category", null, "value", 1),
+                        DatasetRow.of("group", "", "category", "", "value", 2))));
+
+        assertThat(models).hasSize(2);
+        assertThat(models).extracting(ChartModel::getGroupKey)
+                .containsExactly("", "<null>");
+        assertThat(models).extracting(model -> model.getCategories().get(0))
+                .containsExactly("", "<null>");
+
+        ChartDefinition ungrouped = simpleDefinition(ChartType.LINE);
+        assertThatThrownBy(() -> builder.build(ungrouped,
+                DatasetResult.list("values", Arrays.asList(
+                        DatasetRow.of("category", 1, "value", 1),
+                        DatasetRow.of("category", "1", "value", 2)))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("display label collision");
+    }
+
+    @Test
+    void rejectsMultipleStackGroupsForTheSameTypeAndAxis() {
+        ChartDefinition definition = new ChartDefinition();
+        definition.setId("overlap");
+        definition.setDataset("values");
+        definition.setCategoryField("category");
+        ChartSeriesDefinition first = series(
+                "a", "A", ChartType.STACKED_COLUMN, ChartNullHandling.GAP);
+        first.setStackGroup("first");
+        ChartSeriesDefinition second = series(
+                "b", "B", ChartType.STACKED_COLUMN, ChartNullHandling.GAP);
+        second.setStackGroup("second");
+        definition.setSeries(Arrays.asList(first, second));
+
+        assertThatThrownBy(() -> builder.build(definition,
+                DatasetResult.list("values", Collections.singletonList(
+                        DatasetRow.of("category", "x", "a", 1, "b", 2)))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("multiple stackGroup");
+    }
+
+    @Test
+    void chartDataLabelsDefaultOnlySeriesThatOmitTheProperty() {
+        ChartDefinition definition = new ChartDefinition();
+        definition.setId("labels");
+        definition.setDataset("values");
+        definition.setCategoryField("category");
+        definition.setDataLabelMode(ChartDataLabelMode.VALUE);
+        ChartSeriesDefinition inherited = series(
+                "a", "Inherited", ChartType.LINE, ChartNullHandling.GAP);
+        inherited.setFormat("0.0");
+        ChartSeriesDefinition disabled = series(
+                "b", "Disabled", ChartType.LINE, ChartNullHandling.GAP);
+        disabled.setDataLabels(ChartDataLabelMode.NONE);
+        definition.setSeries(Arrays.asList(inherited, disabled));
+
+        ChartModel model = builder.build(definition,
+                DatasetResult.list("values", Collections.singletonList(
+                        DatasetRow.of("category", "x", "a", 1, "b", 2))));
+
+        assertThat(model.getSeries()).extracting(
+                ChartSeriesModel::getDataLabelMode)
+                .containsExactly(ChartDataLabelMode.VALUE,
+                        ChartDataLabelMode.NONE);
+    }
+
+    @Test
+    void rejectsNegativePieValuesWithoutLabelsAndNonPositiveBubbleSizes() {
+        ChartDefinition pie = simpleDefinition(ChartType.PIE);
+        assertThatThrownBy(() -> builder.build(pie,
+                DatasetResult.list("values", Collections.singletonList(
+                        DatasetRow.of("category", "x", "value", -1)))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("must not be negative");
+
+        ChartDefinition bubble = simpleDefinition(ChartType.BUBBLE);
+        assertThatThrownBy(() -> builder.build(bubble,
+                DatasetResult.list("values", Collections.singletonList(
+                        DatasetRow.of("category", "1", "value", 2, "size", 0)))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("greater than zero");
+    }
+
+    @Test
+    void rejectsOversizedAndNonFiniteChartModelsBeforeRendering() {
+        ChartDefinition tooManySeries = simpleDefinition(ChartType.LINE);
+        List<ChartSeriesDefinition> series = new java.util.ArrayList<>();
+        for (int index = 0; index <= ChartModelBuilder.MAX_SERIES; index++) {
+            series.add(series(
+                    "value", "S" + index, ChartType.LINE,
+                    ChartNullHandling.GAP));
+        }
+        tooManySeries.setSeries(series);
+        assertThatThrownBy(() -> builder.build(tooManySeries,
+                DatasetResult.list("values", Collections.singletonList(
+                        DatasetRow.of("category", "x", "value", 1)))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("MAX_SERIES");
+
+        ChartDefinition nonFinite = simpleDefinition(ChartType.LINE);
+        assertThatThrownBy(() -> builder.build(nonFinite,
+                DatasetResult.list("values", Collections.singletonList(
+                        DatasetRow.of("category", "x", "value",
+                                new BigDecimal("1E100000"))))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("finite double");
+    }
+
     private static DatasetRow event(
             String center, String month, int uncertain, int certain, int baseline) {
         return DatasetRow.of(

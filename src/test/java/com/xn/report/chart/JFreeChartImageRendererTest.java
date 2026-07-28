@@ -21,7 +21,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import org.jfree.chart.JFreeChart;
+import org.jfree.chart.LegendItem;
 import org.jfree.chart.LegendItemCollection;
+import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.plot.PiePlot;
 import org.jfree.chart.plot.SpiderWebPlot;
@@ -192,6 +194,54 @@ class JFreeChartImageRendererTest {
         assertThat(items.get(0).getLabel()).isEqualTo("Line first");
         assertThat(items.get(1).getLabel()).isEqualTo("Column second");
         assertThat(items.get(2).getLabel()).isEqualTo("Line third");
+    }
+
+    @Test
+    void percentStackedAxisUsesZeroToOnePercentFormatting() {
+        JFreeChartImageRenderer renderer = new JFreeChartImageRenderer(
+                temporaryDirectory, Collections.singletonList("Dialog"));
+        ChartDefinition definition = definition(
+                ChartType.PERCENT_STACKED_COLUMN);
+        definition.getSeries().get(0).setStackGroup("percent");
+
+        CategoryPlot plot = (CategoryPlot) renderer.createChart(
+                new ChartModelBuilder().build(definition, xyRows())).getPlot();
+        NumberAxis axis = (NumberAxis) plot.getRangeAxis();
+
+        assertThat(axis.getLowerBound()).isEqualTo(0D);
+        assertThat(axis.getUpperBound()).isEqualTo(1D);
+        assertThat(axis.getNumberFormatOverride().format(0.5D))
+                .isEqualTo("50%");
+    }
+
+    @Test
+    void fixedLegendPreservesLineAndFillSemantics() {
+        JFreeChartImageRenderer renderer = new JFreeChartImageRenderer(
+                temporaryDirectory, Collections.singletonList("Dialog"));
+        ChartDefinition definition = new ChartDefinition();
+        definition.setId("legend-shapes");
+        definition.setDataset("render");
+        definition.setCategoryField("x");
+        ChartSeriesDefinition line =
+                series("a", "Line", ChartType.LINE, 0);
+        line.setMarker(true);
+        ChartSeriesDefinition column =
+                series("b", "Column", ChartType.COLUMN, 1);
+        definition.setSeries(Arrays.asList(line, column));
+
+        CategoryPlot plot = (CategoryPlot) renderer.createChart(
+                new ChartModelBuilder().build(definition,
+                        DatasetResult.list("render", Collections.singletonList(
+                                DatasetRow.of("x", "1", "a", 1, "b", 2)))))
+                .getPlot();
+        LegendItem lineItem = plot.getLegendItems().get(0);
+        LegendItem columnItem = plot.getLegendItems().get(1);
+
+        assertThat(lineItem.isLineVisible()).isTrue();
+        assertThat(lineItem.isShapeVisible()).isTrue();
+        assertThat(columnItem.isLineVisible()).isFalse();
+        assertThat(columnItem.isShapeVisible()).isTrue();
+        assertThat(columnItem.isShapeFilled()).isTrue();
     }
 
     @Test

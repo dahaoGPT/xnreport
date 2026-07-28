@@ -7,12 +7,15 @@ import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
 import java.awt.RenderingHints;
 import java.awt.geom.Ellipse2D;
+import java.awt.geom.Line2D;
+import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.DecimalFormat;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -21,6 +24,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -188,7 +192,8 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
     private JFreeChart categoryChart(ChartModel model) {
         CategoryAxis domain = new CategoryAxis("");
         NumberAxis primary = numberAxis(
-                model.getPrimaryAxisMin(), model.getPrimaryAxisMax());
+                model.getPrimaryAxisMin(), model.getPrimaryAxisMax(),
+                axisUsesPercent(model, ChartAxis.PRIMARY));
         CategoryPlot plot = new CategoryPlot(
                 null, domain, primary, null);
         plot.setBackgroundPaint(Color.WHITE);
@@ -206,7 +211,8 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
         if (needsSecondary) {
             plot.setRangeAxis(1, numberAxis(
                     model.getSecondaryAxisMin(),
-                    model.getSecondaryAxisMax()));
+                    model.getSecondaryAxisMax(),
+                    axisUsesPercent(model, ChartAxis.SECONDARY)));
         }
 
         Map<GroupKey, List<ChartSeriesModel>> groups =
@@ -242,7 +248,7 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
     private JFreeChart xyChart(ChartModel model) {
         NumberAxis xAxis = new NumberAxis("");
         NumberAxis yAxis = numberAxis(
-                model.getPrimaryAxisMin(), model.getPrimaryAxisMax());
+                model.getPrimaryAxisMin(), model.getPrimaryAxisMax(), false);
         XYPlot plot = new XYPlot(null, xAxis, yAxis, null);
         plot.setBackgroundPaint(Color.WHITE);
         plot.setRangeGridlinePaint(new Color(220, 220, 220));
@@ -285,7 +291,7 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
                 if (plot.getRangeAxis(1) == null) {
                     plot.setRangeAxis(1, numberAxis(
                             model.getSecondaryAxisMin(),
-                            model.getSecondaryAxisMax()));
+                            model.getSecondaryAxisMax(), false));
                 }
                 plot.mapDatasetToRangeAxis(seriesIndex, 1);
             }
@@ -443,7 +449,19 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
         LegendItemCollection items = new LegendItemCollection();
         for (int index = 0; index < model.getSeries().size(); index++) {
             ChartSeriesModel series = model.getSeries().get(index);
-            items.add(new LegendItem(series.getName(), color(series, index)));
+            Color color = color(series, index);
+            boolean lineVisible = series.getType() == ChartType.LINE;
+            boolean shapeVisible = !lineVisible || series.isMarker();
+            java.awt.Shape shape = series.getType() == ChartType.SCATTER
+                    || lineVisible
+                    ? new Ellipse2D.Double(-4, -4, 8, 8)
+                    : new Rectangle2D.Double(-4, -4, 8, 8);
+            items.add(new LegendItem(
+                    series.getName(), series.getName(), null, null,
+                    shapeVisible, shape, true, color,
+                    false, color, stroke(series),
+                    lineVisible, new Line2D.Double(-8, 0, 8, 0),
+                    stroke(series), color));
         }
         return items;
     }
@@ -510,8 +528,17 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
     }
 
     private static NumberAxis numberAxis(
-            BigDecimal minimum, BigDecimal maximum) {
+            BigDecimal minimum, BigDecimal maximum, boolean percent) {
         NumberAxis axis = new NumberAxis("");
+        if (percent) {
+            NumberFormat format = NumberFormat.getPercentInstance(Locale.ROOT);
+            format.setMaximumFractionDigits(2);
+            axis.setNumberFormatOverride(format);
+            axis.setRange(
+                    minimum == null ? 0D : minimum.doubleValue(),
+                    maximum == null ? 1D : maximum.doubleValue());
+            return axis;
+        }
         if (minimum != null && maximum != null) {
             axis.setRange(minimum.doubleValue(), maximum.doubleValue());
         } else {
@@ -523,6 +550,18 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
             }
         }
         return axis;
+    }
+
+    private static boolean axisUsesPercent(
+            ChartModel model, ChartAxis axis) {
+        for (ChartSeriesModel series : model.getSeries()) {
+            if (series.getAxis() == axis
+                    && series.getType()
+                    == ChartType.PERCENT_STACKED_COLUMN) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static double x(String category, int index) {

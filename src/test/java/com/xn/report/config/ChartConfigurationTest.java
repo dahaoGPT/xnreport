@@ -118,6 +118,41 @@ class ChartConfigurationTest {
     }
 
     @Test
+    void rejectsOverlappingStackGroupsAndPercentBoundsAboveOne()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode overlapping = mapper.readTree(validChartJson(
+                "generatedNative",
+                "{\"field\":\"a\",\"name\":\"A\",\"type\":\"stackedColumn\","
+                        + "\"stackGroup\":\"one\"},"
+                        + "{\"field\":\"b\",\"name\":\"B\",\"type\":\"stackedColumn\","
+                        + "\"stackGroup\":\"two\"}"));
+        assertThat(schema().validate(overlapping)).isNotEmpty();
+
+        ReportDefinition report = TestFixtures.report(datasetWithFields("a", "b"));
+        ChartDefinition chart = chart(
+                ChartType.PERCENT_STACKED_COLUMN, "a", "one");
+        ChartSeriesDefinition second = series(
+                ChartType.PERCENT_STACKED_COLUMN, "b", "two");
+        chart.setSeries(Arrays.asList(chart.getSeries().get(0), second));
+        chart.setPrimaryAxisMax(new java.math.BigDecimal("100"));
+        report.setCharts(Collections.singletonList(chart));
+
+        ValidationResult validation =
+                new ReportDefinitionValidator().validate(report);
+        assertThat(validation.issues())
+                .anySatisfy(issue -> assertThat(issue.getMessage())
+                        .contains("multiple stackGroup"))
+                .anySatisfy(issue -> assertThat(issue.getMessage())
+                        .contains("0 to 1"));
+        assertThatThrownBy(() -> new ChartModelBuilder().build(
+                chart, DatasetResult.list("centerEvents",
+                        Collections.singletonList(DatasetRow.of(
+                                "month", "01", "a", 1, "b", 2)))))
+                .isInstanceOf(com.xn.report.chart.ChartBuildException.class);
+    }
+
+    @Test
     void rejectsStockOutsideTemplateNativeInSchemaAndValidator() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode generated = mapper.readTree(validChartJson(

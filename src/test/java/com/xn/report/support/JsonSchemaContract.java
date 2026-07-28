@@ -30,6 +30,7 @@ public final class JsonSchemaContract {
                     "x-java-maxUtf16Length", "x-java-nonBlank",
                     "x-java-stackGroupConsistency",
                     "x-java-stockTemplateOnly",
+                    "x-java-chartDataLabelDefaults",
                     "x-java-chartSeriesPropertyMatrix")));
 
     private final JsonNode rootSchema;
@@ -90,6 +91,8 @@ public final class JsonSchemaContract {
         if (schema.path("x-java-stackGroupConsistency").asBoolean(false)) {
             Map<String, String> types = new java.util.LinkedHashMap<String, String>();
             Map<String, String> axes = new java.util.LinkedHashMap<String, String>();
+            Map<String, String> stackSlots =
+                    new java.util.LinkedHashMap<String, String>();
             for (JsonNode series : instance.path("series")) {
                 String group = series.path("stackGroup").asText("");
                 if (group.trim().isEmpty()) {
@@ -107,6 +110,14 @@ public final class JsonSchemaContract {
                 }
                 types.put(group, type);
                 axes.put(group, axis);
+                String slot = type + "|" + axis;
+                String previousGroup = stackSlots.put(slot, group);
+                if (previousGroup != null
+                        && !previousGroup.equals(group)) {
+                    errors.add(path
+                            + ".series has multiple stackGroup values for "
+                            + type + " on " + axis);
+                }
             }
         }
         if (schema.path("x-java-stockTemplateOnly").asBoolean(false)) {
@@ -119,6 +130,23 @@ public final class JsonSchemaContract {
                     enumName(instance.path("mode").asText(
                             "GENERATED_NATIVE")))) {
                 errors.add(path + ".mode must be TEMPLATE_NATIVE for STOCK");
+            }
+        }
+        if (schema.path("x-java-chartDataLabelDefaults")
+                .asBoolean(false)) {
+            String chartLabels = enumName(
+                    instance.path("dataLabelMode").asText("NONE"));
+            for (JsonNode series : instance.path("series")) {
+                if (!series.has("format")) {
+                    continue;
+                }
+                String labels = series.has("dataLabels")
+                        ? enumName(series.path("dataLabels").asText())
+                        : chartLabels;
+                if ("NONE".equals(labels)) {
+                    errors.add(path
+                            + ".series format requires visible dataLabels");
+                }
             }
         }
         if (schema.path("x-java-chartSeriesPropertyMatrix")
@@ -157,12 +185,6 @@ public final class JsonSchemaContract {
                     && instance.has("marker")
                     && !instance.path("marker").asBoolean()) {
                 errors.add(path + ".marker must remain visible for SCATTER");
-            }
-            if (instance.has("format")
-                    && (!instance.has("dataLabels")
-                    || "NONE".equals(enumName(
-                            instance.path("dataLabels").asText())))) {
-                errors.add(path + ".format requires visible dataLabels");
             }
             if (("PIE".equals(type) || "DOUGHNUT".equals(type))
                     && instance.has("format")) {

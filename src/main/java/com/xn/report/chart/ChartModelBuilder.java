@@ -15,10 +15,14 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 
 public final class ChartModelBuilder {
+
+    public static final int MAX_CATEGORIES = 5000;
+    public static final int MAX_SERIES = 100;
+    public static final int MAX_POINTS = 200000;
 
     public ChartModel build(
             ChartDefinition definition, DatasetResult dataset) {
@@ -55,11 +59,20 @@ public final class ChartModelBuilder {
             return emptyModels(definition, dataset.id());
         }
 
-        Map<String, List<DatasetRow>> groups = groups(definition, dataset.list());
+        long pointUpperBound = (long) dataset.list().size()
+                * definition.getSeries().size();
+        if (pointUpperBound > MAX_POINTS) {
+            throw new ChartBuildException(
+                    "Chart exceeds MAX_POINTS=" + MAX_POINTS);
+        }
+        Map<TypedKey, List<DatasetRow>> groups =
+                groups(definition, dataset.list());
+        ensureUniqueDisplayLabels(groups.keySet(), "group");
         List<ChartModel> models = new ArrayList<ChartModel>();
-        for (Map.Entry<String, List<DatasetRow>> group : groups.entrySet()) {
+        for (Map.Entry<TypedKey, List<DatasetRow>> group : groups.entrySet()) {
             models.add(buildGroup(definition, dataset.id(),
-                    group.getKey(), group.getValue()));
+                    group.getKey() == null ? null : group.getKey().label(),
+                    group.getValue()));
         }
         return Collections.unmodifiableList(models);
     }
@@ -87,7 +100,7 @@ public final class ChartModelBuilder {
                             ? index : source.getLegendOrder().intValue(),
                     index,
                     seriesModel(
-                            source, index,
+                            definition, source, index,
                             Collections.<BigDecimal>emptyList(),
                             Collections.<BigDecimal>emptyList())));
         }
@@ -129,9 +142,20 @@ public final class ChartModelBuilder {
             values.add(BigDecimal.valueOf(bin.count()));
             labels.add(bin.displayLabel());
         }
+        if (categories.size() > MAX_CATEGORIES) {
+            throw new ChartBuildException(
+                    "Chart exceeds MAX_CATEGORIES=" + MAX_CATEGORIES);
+        }
+        if ((long) categories.size() * definition.getSeries().size()
+                > MAX_POINTS) {
+            throw new ChartBuildException(
+                    "Chart exceeds MAX_POINTS=" + MAX_POINTS);
+        }
         ChartSeriesDefinition source = definition.getSeries().get(0);
+        validateSeriesValues(source, values, Collections.<BigDecimal>emptyList());
         ChartSeriesModel series = seriesModel(
-                source, 0, values, Collections.<BigDecimal>emptyList());
+                definition, source, 0, values,
+                Collections.<BigDecimal>emptyList());
         return model(definition, null, categories,
                 Collections.singletonList(series), labels);
     }
@@ -141,20 +165,31 @@ public final class ChartModelBuilder {
             String datasetId,
             String groupKey,
             List<DatasetRow> rows) {
-        List<String> categories = categories(definition, rows);
-        Map<String, DatasetRow> categoryRows =
-                indexRows(definition.getCategoryField(), rows);
-        Set<String> skipped = skippedCategories(
-                definition, categories, categoryRows);
-        if (!skipped.isEmpty()) {
-            categories.removeAll(skipped);
+        List<TypedKey> categoryKeys = categories(definition, rows);
+        if (categoryKeys.size() > MAX_CATEGORIES) {
+            throw new ChartBuildException(
+                    "Chart exceeds MAX_CATEGORIES=" + MAX_CATEGORIES);
         }
+        if ((long) categoryKeys.size() * definition.getSeries().size()
+                > MAX_POINTS) {
+            throw new ChartBuildException(
+                    "Chart exceeds MAX_POINTS=" + MAX_POINTS);
+        }
+        ensureUniqueDisplayLabels(categoryKeys, "category");
+        Map<TypedKey, DatasetRow> categoryRows =
+                indexRows(definition.getCategoryField(), rows);
+        Set<TypedKey> skipped = skippedCategories(
+                definition, categoryKeys, categoryRows);
+        if (!skipped.isEmpty()) {
+            categoryKeys.removeAll(skipped);
+        }
+        List<String> categoryLabels = labels(categoryKeys);
         List<IndexedSeries> built = new ArrayList<IndexedSeries>();
         for (int index = 0; index < definition.getSeries().size(); index++) {
             ChartSeriesDefinition source = definition.getSeries().get(index);
             List<BigDecimal> values = new ArrayList<BigDecimal>();
             List<BigDecimal> sizes = new ArrayList<BigDecimal>();
-            for (String category : categories) {
+            for (TypedKey category : categoryKeys) {
                 DatasetRow row = categoryRows.get(category);
                 values.add(value(source.getField(), source.getNullHandling(), row));
                 if (source.getType() == ChartType.BUBBLE) {
@@ -162,11 +197,12 @@ public final class ChartModelBuilder {
                             source.getNullHandling(), row));
                 }
             }
+            validateSeriesValues(source, values, sizes);
             built.add(new IndexedSeries(
                     source.getLegendOrder() == null
                             ? index : source.getLegendOrder().intValue(),
                     index,
-                    seriesModel(source, index, values, sizes)));
+                    seriesModel(definition, source, index, values, sizes)));
         }
         Collections.sort(built, new Comparator<IndexedSeries>() {
             @Override
@@ -182,11 +218,11 @@ public final class ChartModelBuilder {
         List<String> labels = series.size() == 1
                 && series.get(0).getType().isPieLike()
                 ? pieLabels(
-                        categories,
+                        categoryLabels,
                         series.get(0).getValues(),
                         effectivePieLabelMode(definition, series.get(0)))
                 : Collections.<String>emptyList();
-        return model(definition, groupKey, categories, series,
+        return model(definition, groupKey, categoryLabels, series,
                 labels, datasetId);
     }
 
@@ -228,6 +264,7 @@ public final class ChartModelBuilder {
     }
 
     private static ChartSeriesModel seriesModel(
+            ChartDefinition definition,
             ChartSeriesDefinition source,
             int defaultOrder,
             List<BigDecimal> values,
@@ -246,8 +283,9 @@ public final class ChartModelBuilder {
                 (source.getType() == ChartType.SCATTER
                         && !source.hasProperty("marker"))
                         || source.isMarker(),
-                source.getDataLabels() == null
-                        ? ChartDataLabelMode.NONE : source.getDataLabels(),
+                source.hasProperty("dataLabels")
+                        ? source.getDataLabels()
+                        : definition.getDataLabelMode(),
                 source.getFormat(),
                 source.getNullHandling() == null
                         ? ChartNullHandling.GAP : source.getNullHandling(),
@@ -257,88 +295,90 @@ public final class ChartModelBuilder {
                 sizes);
     }
 
-    private static Map<String, List<DatasetRow>> groups(
+    private static Map<TypedKey, List<DatasetRow>> groups(
             ChartDefinition definition, List<DatasetRow> rows) {
         if (!hasText(definition.getGroupByField())) {
-            return Collections.singletonMap((String) null, rows);
+            return Collections.singletonMap((TypedKey) null, rows);
         }
-        Map<String, List<DatasetRow>> result =
-                new TreeMap<String, List<DatasetRow>>();
+        Map<TypedKey, List<DatasetRow>> collected =
+                new LinkedHashMap<TypedKey, List<DatasetRow>>();
         for (DatasetRow row : rows) {
             Object raw = row.getOrNull(definition.getGroupByField());
-            String key = raw == null ? "" : String.valueOf(raw);
-            List<DatasetRow> group = result.get(key);
+            TypedKey key = TypedKey.of(raw);
+            List<DatasetRow> group = collected.get(key);
             if (group == null) {
                 group = new ArrayList<DatasetRow>();
-                result.put(key, group);
+                collected.put(key, group);
             }
             group.add(row);
         }
-        if (result.isEmpty()) {
-            result.put("", Collections.<DatasetRow>emptyList());
+        if (collected.isEmpty()) {
+            collected.put(TypedKey.of(null),
+                    Collections.<DatasetRow>emptyList());
+        }
+        List<TypedKey> keys =
+                new ArrayList<TypedKey>(collected.keySet());
+        Collections.sort(keys, TypedKey.DISPLAY_ORDER);
+        Map<TypedKey, List<DatasetRow>> result =
+                new LinkedHashMap<TypedKey, List<DatasetRow>>();
+        for (TypedKey key : keys) {
+            result.put(key, collected.get(key));
         }
         return result;
     }
 
-    private static List<String> categories(
+    private static List<TypedKey> categories(
             ChartDefinition definition, List<DatasetRow> rows) {
-        LinkedHashSet<String> values = new LinkedHashSet<String>();
+        LinkedHashSet<TypedKey> values = new LinkedHashSet<TypedKey>();
         if (definition.getCategories() != null) {
             for (Object category : definition.getCategories()) {
-                if (category == null) {
-                    throw new ChartBuildException(
-                            "Configured chart categories must not contain null");
-                }
-                values.add(String.valueOf(category));
+                values.add(TypedKey.of(category));
             }
         }
         for (DatasetRow row : rows) {
             Object raw = row.getOrNull(definition.getCategoryField());
-            if (raw == null) {
-                throw new ChartBuildException(
-                        "Chart category field contains null: "
-                                + definition.getCategoryField());
-            }
-            String category = String.valueOf(raw);
+            TypedKey category = TypedKey.of(raw);
             if (definition.getCategorySort() == ChartCategorySort.EXPLICIT
                     && !values.contains(category)) {
                 throw new ChartBuildException(
                         "Category is not declared in explicit category order: "
-                                + category);
+                                + category.label());
             }
             values.add(category);
         }
-        List<String> categories = new ArrayList<String>(values);
+        List<TypedKey> categories = new ArrayList<TypedKey>(values);
         ChartCategorySort sort = definition.getCategorySort() == null
                 ? ChartCategorySort.ASC : definition.getCategorySort();
         if (sort == ChartCategorySort.ASC) {
-            Collections.sort(categories);
+            Collections.sort(categories, TypedKey.DISPLAY_ORDER);
         } else if (sort == ChartCategorySort.DESC) {
-            Collections.sort(categories, Collections.reverseOrder());
+            Collections.sort(categories,
+                    Collections.reverseOrder(TypedKey.DISPLAY_ORDER));
         }
         return categories;
     }
 
-    private static Map<String, DatasetRow> indexRows(
+    private static Map<TypedKey, DatasetRow> indexRows(
             String categoryField, List<DatasetRow> rows) {
-        Map<String, DatasetRow> indexed =
-                new LinkedHashMap<String, DatasetRow>();
+        Map<TypedKey, DatasetRow> indexed =
+                new LinkedHashMap<TypedKey, DatasetRow>();
         for (DatasetRow row : rows) {
-            String category = String.valueOf(row.get(categoryField));
+            TypedKey category = TypedKey.of(row.getOrNull(categoryField));
             if (indexed.put(category, row) != null) {
                 throw new ChartBuildException(
-                        "Duplicate chart category in one group: " + category);
+                        "Duplicate chart category in one group: "
+                                + category.label());
             }
         }
         return indexed;
     }
 
-    private static Set<String> skippedCategories(
+    private static Set<TypedKey> skippedCategories(
             ChartDefinition definition,
-            List<String> categories,
-            Map<String, DatasetRow> rows) {
-        Set<String> skipped = new LinkedHashSet<String>();
-        for (String category : categories) {
+            List<TypedKey> categories,
+            Map<TypedKey, DatasetRow> rows) {
+        Set<TypedKey> skipped = new LinkedHashSet<TypedKey>();
+        for (TypedKey category : categories) {
             DatasetRow row = rows.get(category);
             for (ChartSeriesDefinition series : definition.getSeries()) {
                 if (series.getNullHandling() == ChartNullHandling.SKIP_CATEGORY
@@ -364,9 +404,15 @@ public final class ChartModelBuilder {
                     "Chart series field must be numeric: " + field);
         }
         try {
-            return raw instanceof BigDecimal
+            BigDecimal value = raw instanceof BigDecimal
                     ? (BigDecimal) raw
                     : new BigDecimal(String.valueOf(raw));
+            double converted = value.doubleValue();
+            if (Double.isNaN(converted) || Double.isInfinite(converted)) {
+                throw new ChartBuildException(
+                        "Chart series field must fit a finite double: " + field);
+            }
+            return value;
         } catch (NumberFormatException exception) {
             throw new ChartBuildException(
                     "Chart series field must be numeric: " + field, exception);
@@ -409,6 +455,15 @@ public final class ChartModelBuilder {
             throw new ChartBuildException(
                     "Chart must contain at least one series: " + definition.getId());
         }
+        if (definition.getSeries().size() > MAX_SERIES) {
+            throw new ChartBuildException(
+                    "Chart exceeds MAX_SERIES=" + MAX_SERIES);
+        }
+        if (definition.getCategories() != null
+                && definition.getCategories().size() > MAX_CATEGORIES) {
+            throw new ChartBuildException(
+                    "Chart exceeds MAX_CATEGORIES=" + MAX_CATEGORIES);
+        }
         for (String property : definition.getPresentProperties()) {
             if (chartProperty(definition, property) == null) {
                 throw new ChartBuildException(
@@ -429,6 +484,8 @@ public final class ChartModelBuilder {
         int pieSeries = 0;
         Map<String, StackContract> stackContracts =
                 new LinkedHashMap<String, StackContract>();
+        Map<String, String> stackSlots =
+                new LinkedHashMap<String, String>();
         for (ChartSeriesDefinition series : definition.getSeries()) {
             if (series == null || !hasText(series.getField())
                     || !hasText(series.getName()) || series.getType() == null) {
@@ -467,8 +524,19 @@ public final class ChartModelBuilder {
             if (series.getType().isPieLike()) {
                 pieSeries++;
             }
-            validateSeriesPropertyMatrix(series);
+            validateSeriesPropertyMatrix(definition, series);
             if (hasText(series.getStackGroup())) {
+                ChartAxis axis = series.getAxis() == null
+                        ? ChartAxis.PRIMARY : series.getAxis();
+                String slot = series.getType().name() + "|" + axis.name();
+                String occupyingGroup = stackSlots.get(slot);
+                if (occupyingGroup != null
+                        && !occupyingGroup.equals(series.getStackGroup())) {
+                    throw new ChartBuildException(
+                            "Chart cannot use multiple stackGroup values for "
+                                    + series.getType() + " on " + axis + " axis");
+                }
+                stackSlots.put(slot, series.getStackGroup());
                 StackContract contract = stackContracts.get(
                         series.getStackGroup());
                 if (contract == null) {
@@ -495,10 +563,70 @@ public final class ChartModelBuilder {
             throw new ChartBuildException(
                     "PIE and DOUGHNUT charts require exactly one series");
         }
+        if (pieSeries == 0
+                && definition.getDataLabelMode() != ChartDataLabelMode.NONE
+                && definition.getDataLabelMode() != ChartDataLabelMode.VALUE) {
+            throw new ChartBuildException(
+                    "Non-pie charts support only VALUE dataLabelMode");
+        }
+        validateAxisRanges(definition);
+    }
+
+    private static void validateAxisRanges(ChartDefinition definition) {
+        boolean primaryPercent = false;
+        boolean secondaryPercent = false;
+        for (ChartSeriesDefinition series : definition.getSeries()) {
+            if (series.getType() == ChartType.PERCENT_STACKED_COLUMN) {
+                if (series.getAxis() == ChartAxis.SECONDARY) {
+                    secondaryPercent = true;
+                } else {
+                    primaryPercent = true;
+                }
+            }
+        }
+        validateAxisRange("primary",
+                definition.getPrimaryAxisMin(),
+                definition.getPrimaryAxisMax(), primaryPercent);
+        validateAxisRange("secondary",
+                definition.getSecondaryAxisMin(),
+                definition.getSecondaryAxisMax(), secondaryPercent);
+    }
+
+    private static void validateAxisRange(
+            String name, BigDecimal minimum, BigDecimal maximum,
+            boolean percent) {
+        requireFinite(name + "AxisMin", minimum);
+        requireFinite(name + "AxisMax", maximum);
+        if (minimum != null && maximum != null
+                && minimum.compareTo(maximum) >= 0) {
+            throw new ChartBuildException(
+                    name + " axis minimum must be less than maximum");
+        }
+        if (percent
+                && (minimum != null
+                && (minimum.compareTo(BigDecimal.ZERO) < 0
+                || minimum.compareTo(BigDecimal.ONE) > 0)
+                || maximum != null
+                && (maximum.compareTo(BigDecimal.ZERO) < 0
+                || maximum.compareTo(BigDecimal.ONE) > 0))) {
+            throw new ChartBuildException(
+                    name + " percent axis bounds use ratio units from 0 to 1");
+        }
+    }
+
+    private static void requireFinite(String property, BigDecimal value) {
+        if (value == null) {
+            return;
+        }
+        double converted = value.doubleValue();
+        if (Double.isInfinite(converted) || Double.isNaN(converted)) {
+            throw new ChartBuildException(
+                    property + " must fit a finite double");
+        }
     }
 
     private static void validateSeriesPropertyMatrix(
-            ChartSeriesDefinition series) {
+            ChartDefinition definition, ChartSeriesDefinition series) {
         ChartType type = series.getType();
         if ((type == ChartType.SCATTER || type == ChartType.BUBBLE)
                 && (series.hasProperty("lineStyle")
@@ -542,8 +670,10 @@ public final class ChartModelBuilder {
                     "RADAR does not support marker, dataLabels, format, or axis");
         }
         if (series.hasProperty("format")
-                && (!series.hasProperty("dataLabels")
-                || series.getDataLabels() == ChartDataLabelMode.NONE)) {
+                && (series.hasProperty("dataLabels")
+                ? series.getDataLabels() == ChartDataLabelMode.NONE
+                : definition.getDataLabelMode()
+                == ChartDataLabelMode.NONE)) {
             throw new ChartBuildException(
                     "format requires visible dataLabels");
         }
@@ -642,6 +772,55 @@ public final class ChartModelBuilder {
         return Collections.unmodifiableList(labels);
     }
 
+    private static void validateSeriesValues(
+            ChartSeriesDefinition series,
+            List<BigDecimal> values,
+            List<BigDecimal> sizes) {
+        if (series.getType().isPieLike()) {
+            for (BigDecimal value : values) {
+                if (value != null
+                        && value.compareTo(BigDecimal.ZERO) < 0) {
+                    throw new ChartBuildException(
+                            "PIE and DOUGHNUT values must not be negative");
+                }
+            }
+        }
+        if (series.getType() == ChartType.BUBBLE) {
+            for (BigDecimal size : sizes) {
+                if (size != null
+                        && size.compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new ChartBuildException(
+                            "BUBBLE size values must be greater than zero");
+                }
+            }
+        }
+    }
+
+    private static List<String> labels(List<TypedKey> keys) {
+        List<String> labels = new ArrayList<String>(keys.size());
+        for (TypedKey key : keys) {
+            labels.add(key.label());
+        }
+        return labels;
+    }
+
+    private static void ensureUniqueDisplayLabels(
+            Iterable<TypedKey> keys, String kind) {
+        Map<String, TypedKey> seen =
+                new LinkedHashMap<String, TypedKey>();
+        for (TypedKey key : keys) {
+            if (key == null) {
+                continue;
+            }
+            TypedKey previous = seen.put(key.label(), key);
+            if (previous != null && !previous.equals(key)) {
+                throw new ChartBuildException(
+                        "Chart " + kind + " display label collision: "
+                                + key.label());
+            }
+        }
+    }
+
     private static Object chartProperty(
             ChartDefinition chart, String property) {
         if ("id".equals(property)) return chart.getId();
@@ -720,6 +899,52 @@ public final class ChartModelBuilder {
         private StackContract(ChartType type, ChartAxis axis) {
             this.type = type;
             this.axis = axis == null ? ChartAxis.PRIMARY : axis;
+        }
+    }
+
+    private static final class TypedKey {
+        private static final Comparator<TypedKey> DISPLAY_ORDER =
+                new Comparator<TypedKey>() {
+                    @Override
+                    public int compare(TypedKey left, TypedKey right) {
+                        int label = left.label().compareTo(right.label());
+                        if (label != 0) {
+                            return label;
+                        }
+                        return left.typeName.compareTo(right.typeName);
+                    }
+                };
+
+        private final Object value;
+        private final String typeName;
+
+        private TypedKey(Object value) {
+            this.value = value;
+            this.typeName = value == null
+                    ? "<null>" : value.getClass().getName();
+        }
+
+        private static TypedKey of(Object value) {
+            return new TypedKey(value);
+        }
+
+        private String label() {
+            return value == null ? "<null>" : String.valueOf(value);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof TypedKey)) {
+                return false;
+            }
+            TypedKey that = (TypedKey) other;
+            return typeName.equals(that.typeName)
+                    && Objects.equals(value, that.value);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(typeName, value);
         }
     }
 }

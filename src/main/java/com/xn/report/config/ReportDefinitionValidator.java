@@ -23,6 +23,7 @@ import com.xn.report.text.FormatterRegistry;
 import com.xn.report.text.PlaceholderParser;
 import com.xn.report.text.PlaceholderParser.Part;
 import com.xn.report.chart.ChartType;
+import com.xn.report.chart.ChartAxis;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -185,10 +186,11 @@ public final class ReportDefinitionValidator {
             for (int seriesIndex = 0;
                     seriesIndex < series.size(); seriesIndex++) {
                 validateChartSeries(
-                        series.get(seriesIndex), fields, known,
+                        chart, series.get(seriesIndex), fields, known,
                         path + ".series[" + seriesIndex + "]",
                         legendOrders, stackContracts, result);
             }
+            validateStackSlots(series, path, result);
             if (containsChartType(series, ChartType.STOCK)
                     && chart.getMode()
                     != ChartDefinition.Mode.TEMPLATE_NATIVE) {
@@ -199,8 +201,70 @@ public final class ReportDefinitionValidator {
                     chart.getPrimaryAxisMax(), path + ".primaryAxis", result);
             validateAxisBounds(chart.getSecondaryAxisMin(),
                     chart.getSecondaryAxisMax(), path + ".secondaryAxis", result);
+            validatePercentAxisBounds(chart, path, result);
         }
         return ids;
+    }
+
+    private void validateStackSlots(
+            List<ChartSeriesDefinition> series,
+            String path, ValidationResult result) {
+        Map<String, String> slots = new LinkedHashMap<String, String>();
+        for (ChartSeriesDefinition item : series) {
+            if (item == null || item.getType() == null
+                    || !item.getType().isStacked()
+                    || !hasText(item.getStackGroup())) {
+                continue;
+            }
+            ChartAxis axis = item.getAxis() == null
+                    ? ChartAxis.PRIMARY : item.getAxis();
+            String slot = item.getType().name() + "|" + axis.name();
+            String previous = slots.put(slot, item.getStackGroup());
+            if (previous != null
+                    && !previous.equals(item.getStackGroup())) {
+                result.add("CHART-001", path + ".series",
+                        "Chart cannot use multiple stackGroup values for "
+                                + item.getType() + " on " + axis + " axis");
+            }
+        }
+    }
+
+    private void validatePercentAxisBounds(
+            ChartDefinition chart, String path, ValidationResult result) {
+        boolean primary = false;
+        boolean secondary = false;
+        for (ChartSeriesDefinition series : safeList(chart.getSeries())) {
+            if (series != null
+                    && series.getType()
+                    == ChartType.PERCENT_STACKED_COLUMN) {
+                if (series.getAxis() == ChartAxis.SECONDARY) {
+                    secondary = true;
+                } else {
+                    primary = true;
+                }
+            }
+        }
+        if (primary) {
+            validatePercentBound(chart.getPrimaryAxisMin(),
+                    path + ".primaryAxisMin", result);
+            validatePercentBound(chart.getPrimaryAxisMax(),
+                    path + ".primaryAxisMax", result);
+        }
+        if (secondary) {
+            validatePercentBound(chart.getSecondaryAxisMin(),
+                    path + ".secondaryAxisMin", result);
+            validatePercentBound(chart.getSecondaryAxisMax(),
+                    path + ".secondaryAxisMax", result);
+        }
+    }
+
+    private void validatePercentBound(
+            BigDecimal value, String path, ValidationResult result) {
+        if (value != null && (value.compareTo(BigDecimal.ZERO) < 0
+                || value.compareTo(BigDecimal.ONE) > 0)) {
+            result.add("CHART-001", path,
+                    "Percent axis bounds use ratio units from 0 to 1");
+        }
     }
 
     private void rejectExplicitNullChartProperties(
@@ -241,6 +305,7 @@ public final class ReportDefinitionValidator {
     }
 
     private void validateChartSeries(
+            ChartDefinition chart,
             ChartSeriesDefinition series,
             Set<String> fields,
             boolean known,
@@ -310,7 +375,7 @@ public final class ReportDefinitionValidator {
             result.add("CHART-001", path + ".color",
                     "Chart color must be a six-digit RGB hex value");
         }
-        validateChartSeriesPropertyMatrix(series, path, result);
+        validateChartSeriesPropertyMatrix(chart, series, path, result);
         if (hasText(series.getStackGroup())) {
             ChartStackContract contract =
                     stackContracts.get(series.getStackGroup());
@@ -335,6 +400,7 @@ public final class ReportDefinitionValidator {
     }
 
     private void validateChartSeriesPropertyMatrix(
+            ChartDefinition chart,
             ChartSeriesDefinition series,
             String path,
             ValidationResult result) {
@@ -381,9 +447,11 @@ public final class ReportDefinitionValidator {
                     "SCATTER requires a visible marker");
         }
         if (series.hasProperty("format")
-                && (!series.hasProperty("dataLabels")
-                || series.getDataLabels()
-                        == com.xn.report.chart.ChartDataLabelMode.NONE)) {
+                && (series.hasProperty("dataLabels")
+                ? series.getDataLabels()
+                == com.xn.report.chart.ChartDataLabelMode.NONE
+                : chart.getDataLabelMode()
+                == com.xn.report.chart.ChartDataLabelMode.NONE)) {
             result.add("CHART-001", path + ".format",
                     "format requires visible dataLabels");
         }

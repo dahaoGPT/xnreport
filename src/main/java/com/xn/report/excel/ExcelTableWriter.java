@@ -6,17 +6,18 @@ import java.util.ArrayList;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.util.AreaReference;
-import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.ss.SpreadsheetVersion;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFTable;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTTableStyleInfo;
 
 public final class ExcelTableWriter {
 
@@ -73,18 +74,43 @@ public final class ExcelTableWriter {
                     "Dataset table exceeds XLSX row limit");
         }
 
+        ExcelTableNameRules.validate(tableName);
+        AreaReference newArea = area(
+                startRow, fields.size(), rows.size());
+        XSSFTable target = findTargetTable(
+                workbook, sheet, tableName, startRow);
+        AreaReference oldArea =
+                target == null ? null : target.getArea();
+        validateWriteArea(sheet, target, oldArea, newArea);
+        CTTableStyleInfo tableStyleInfo =
+                copyStyleInfo(target);
         List<CellStyle> prototypeDataStyles =
-                prototypeStyles(sheet.getRow(startRow + 1), fields.size());
-        CellStyle prototypeHeaderStyle =
-                firstStyle(sheet.getRow(startRow));
-        clearSheetData(sheet, startRow);
+                prototypeStyles(
+                        sheet.getRow(oldArea == null
+                                ? startRow + 1
+                                : oldArea.getFirstCell().getRow() + 1),
+                        fields.size());
+        List<CellStyle> prototypeHeaderStyles =
+                prototypeStyles(
+                        sheet.getRow(oldArea == null
+                                ? startRow
+                                : oldArea.getFirstCell().getRow()),
+                        fields.size());
+        if (oldArea != null) {
+            clearArea(sheet, oldArea);
+        }
+        if (target != null) {
+            sheet.removeTable(target);
+        }
         CellStyle headerStyle = createHeaderStyle(workbook);
-        Row header = sheet.createRow(startRow);
+        Row header = row(sheet, startRow);
         for (int column = 0; column < fields.size(); column++) {
             Cell cell = header.createCell(column);
             cell.setCellValue(headers.get(column));
-            cell.setCellStyle(prototypeHeaderStyle == null
-                    ? headerStyle : prototypeHeaderStyle);
+            cell.setCellStyle(
+                    prototypeHeaderStyles.get(column) == null
+                            ? headerStyle
+                            : prototypeHeaderStyles.get(column));
         }
 
         ExcelValueBinder binder = new ExcelValueBinder(workbook);
@@ -97,7 +123,7 @@ public final class ExcelTableWriter {
         }
         for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
             DatasetRow datasetRow = rows.get(rowIndex);
-            Row row = sheet.createRow(startRow + rowIndex + 1);
+            Row row = row(sheet, startRow + rowIndex + 1);
             for (int column = 0; column < fields.size(); column++) {
                 String field = fields.get(column);
                 if (!datasetRow.containsField(field)) {
@@ -120,8 +146,7 @@ public final class ExcelTableWriter {
         }
 
         XSSFTable table = recreateTable(
-                sheet, tableName, startRow,
-                fields.size(), rows.size());
+                sheet, tableName, newArea, tableStyleInfo);
         if (sheet.getPaneInformation() == null) {
             sheet.createFreezePane(0, startRow + 1);
         }
@@ -135,39 +160,44 @@ public final class ExcelTableWriter {
                 sheet.setColumnWidth(column, width);
             }
         }
-        sheet.setAutoFilter(new CellRangeAddress(
-                startRow, startRow + rows.size(),
-                0, fields.size() - 1));
         return table;
     }
 
-    private static void clearSheetData(
-            XSSFSheet sheet, int startRow) {
-        for (int rowIndex = sheet.getLastRowNum();
-                rowIndex >= startRow; rowIndex--) {
+    private static Row row(XSSFSheet sheet, int rowIndex) {
+        Row existing = sheet.getRow(rowIndex);
+        return existing == null
+                ? sheet.createRow(rowIndex) : existing;
+    }
+
+    private static void clearArea(
+            XSSFSheet sheet, AreaReference area) {
+        int firstRow = area.getFirstCell().getRow();
+        int lastRow = area.getLastCell().getRow();
+        int firstColumn = area.getFirstCell().getCol();
+        int lastColumn = area.getLastCell().getCol();
+        for (int rowIndex = firstRow;
+                rowIndex <= lastRow; rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             if (row != null) {
-                sheet.removeRow(row);
+                for (int column = firstColumn;
+                        column <= lastColumn; column++) {
+                    Cell cell = row.getCell(column);
+                    if (cell != null) {
+                        row.removeCell(cell);
+                    }
+                }
+                if (row.getPhysicalNumberOfCells() == 0) {
+                    sheet.removeRow(row);
+                }
             }
-        }
-        for (XSSFTable table : sheet.getTables()) {
-            table.getCTTable().setRef("A1:A1");
-        }
-        while (!sheet.getTables().isEmpty()) {
-            sheet.removeTable(sheet.getTables().get(0));
         }
     }
 
     private static XSSFTable recreateTable(
             XSSFSheet sheet,
             String tableName,
-            int startRow,
-            int columnCount,
-            int rowCount) {
-        AreaReference area = new AreaReference(
-                new CellReference(startRow, 0),
-                new CellReference(startRow + rowCount, columnCount - 1),
-                SpreadsheetVersion.EXCEL2007);
+            AreaReference area,
+            CTTableStyleInfo styleInfo) {
         XSSFTable table = sheet.createTable(area);
         table.setName(tableName);
         table.setDisplayName(tableName);
@@ -177,6 +207,9 @@ public final class ExcelTableWriter {
         }
         table.getCTTable().getAutoFilter().setRef(area.formatAsString());
         table.getCTTable().setHeaderRowCount(1L);
+        if (styleInfo != null) {
+            table.getCTTable().setTableStyleInfo(styleInfo);
+        }
         return table;
     }
 
@@ -208,11 +241,6 @@ public final class ExcelTableWriter {
         return styles;
     }
 
-    private static CellStyle firstStyle(Row row) {
-        Cell cell = row == null ? null : row.getCell(0);
-        return cell == null ? null : cell.getCellStyle();
-    }
-
     private static CellStyle[] explicitFormats(
             XSSFWorkbook workbook,
             List<String> formats,
@@ -231,5 +259,148 @@ public final class ExcelTableWriter {
             }
         }
         return styles;
+    }
+
+    private static AreaReference area(
+            int startRow, int columnCount, int rowCount) {
+        return new AreaReference(
+                new CellReference(startRow, 0),
+                new CellReference(
+                        startRow + rowCount, columnCount - 1),
+                SpreadsheetVersion.EXCEL2007);
+    }
+
+    private static XSSFTable findTargetTable(
+            XSSFWorkbook workbook,
+            XSSFSheet sheet,
+            String tableName,
+            int startRow) {
+        XSSFTable named = null;
+        for (int sheetIndex = 0;
+                sheetIndex < workbook.getNumberOfSheets();
+                sheetIndex++) {
+            XSSFSheet candidateSheet =
+                    workbook.getSheetAt(sheetIndex);
+            for (XSSFTable table : candidateSheet.getTables()) {
+                if (table.getName() != null
+                        && table.getName().equalsIgnoreCase(
+                                tableName)) {
+                    if (candidateSheet != sheet) {
+                        throw new IllegalArgumentException(
+                                "Excel table name " + tableName
+                                        + " collides with existing table "
+                                        + table.getName()
+                                        + " on sheet "
+                                        + candidateSheet.getSheetName());
+                    }
+                    if (named != null && named != table) {
+                        throw new IllegalArgumentException(
+                                "Duplicate Excel table name: "
+                                        + tableName);
+                    }
+                    named = table;
+                }
+            }
+        }
+        if (named != null) {
+            return named;
+        }
+        XSSFTable byHeader = null;
+        for (XSSFTable table : sheet.getTables()) {
+            if (table.getArea().getFirstCell().getRow()
+                            == startRow
+                    && table.getArea().getFirstCell().getCol()
+                            == 0) {
+                if (byHeader != null) {
+                    throw new IllegalArgumentException(
+                            "Multiple Excel tables start at header row "
+                                    + (startRow + 1)
+                                    + " on sheet "
+                                    + sheet.getSheetName());
+                }
+                byHeader = table;
+            }
+        }
+        return byHeader;
+    }
+
+    private static void validateWriteArea(
+            XSSFSheet sheet,
+            XSSFTable target,
+            AreaReference oldArea,
+            AreaReference newArea) {
+        for (XSSFTable table : sheet.getTables()) {
+            if (table != target
+                    && intersects(table.getArea(), newArea)) {
+                throw new IllegalArgumentException(
+                        "Excel dataset table range "
+                                + newArea.formatAsString()
+                                + " overlaps table "
+                                + table.getName()
+                                + " on sheet "
+                                + sheet.getSheetName());
+            }
+        }
+        int firstRow = newArea.getFirstCell().getRow();
+        int lastRow = newArea.getLastCell().getRow();
+        int firstColumn = newArea.getFirstCell().getCol();
+        int lastColumn = newArea.getLastCell().getCol();
+        for (int rowIndex = firstRow;
+                rowIndex <= lastRow; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            for (int column = firstColumn;
+                    column <= lastColumn; column++) {
+                if (contains(oldArea, rowIndex, column)) {
+                    continue;
+                }
+                Cell cell = row.getCell(column);
+                if (cell != null
+                        && cell.getCellType() != CellType.BLANK) {
+                    throw new IllegalArgumentException(
+                            "Excel dataset table range "
+                                    + newArea.formatAsString()
+                                    + " conflicts with preserved cell "
+                                    + new CellReference(
+                                            rowIndex, column)
+                                            .formatAsString()
+                                    + " on sheet "
+                                    + sheet.getSheetName());
+                }
+            }
+        }
+    }
+
+    private static boolean intersects(
+            AreaReference left, AreaReference right) {
+        return left.getFirstCell().getRow()
+                        <= right.getLastCell().getRow()
+                && right.getFirstCell().getRow()
+                        <= left.getLastCell().getRow()
+                && left.getFirstCell().getCol()
+                        <= right.getLastCell().getCol()
+                && right.getFirstCell().getCol()
+                        <= left.getLastCell().getCol();
+    }
+
+    private static boolean contains(
+            AreaReference area, int row, int column) {
+        return area != null
+                && row >= area.getFirstCell().getRow()
+                && row <= area.getLastCell().getRow()
+                && column >= area.getFirstCell().getCol()
+                && column <= area.getLastCell().getCol();
+    }
+
+    private static CTTableStyleInfo copyStyleInfo(
+            XSSFTable table) {
+        if (table == null
+                || !table.getCTTable().isSetTableStyleInfo()) {
+            return null;
+        }
+        return (CTTableStyleInfo) table.getCTTable()
+                .getTableStyleInfo().copy();
     }
 }

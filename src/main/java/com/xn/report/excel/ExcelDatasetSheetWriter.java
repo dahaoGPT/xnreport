@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -19,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.poi.ss.usermodel.SheetVisibility;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFTable;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 public final class ExcelDatasetSheetWriter {
@@ -67,11 +69,12 @@ public final class ExcelDatasetSheetWriter {
         workbook.setSheetVisibility(
                 workbook.getSheetIndex(sheet), SheetVisibility.VISIBLE);
 
-        List<String> fields = fields(definition, result);
-        List<String> headers = fields;
-        List<String> formats =
-                new ArrayList<String>(
-                        Collections.nCopies(fields.size(), null));
+        List<DatasetRow> rows = rows(result);
+        LinkedHashMap<String, String> knownFields =
+                knownFields(definition, result, rows);
+        List<String> fields = new ArrayList<String>();
+        List<String> headers = new ArrayList<String>();
+        List<String> formats = new ArrayList<String>();
         int startRow = 0;
         String tableName = null;
         if (binding != null) {
@@ -82,12 +85,46 @@ public final class ExcelDatasetSheetWriter {
                         "Excel table binding does not match dataset "
                                 + definition.getId());
             }
-            fields = new ArrayList<String>();
-            headers = new ArrayList<String>();
-            formats = new ArrayList<String>();
+            Set<String> configuredFields =
+                    new LinkedHashSet<String>();
+            Set<String> configuredHeaders =
+                    new LinkedHashSet<String>();
             for (ExcelTableBinding.ColumnBinding column
                     : binding.getColumns()) {
-                fields.add(column.getField());
+                if (column == null) {
+                    throw new IllegalArgumentException(
+                            "Excel table column must not be null");
+                }
+                String normalized =
+                        normalize(column.getField());
+                if (!configuredFields.add(normalized)) {
+                    throw new IllegalArgumentException(
+                            "Duplicate Excel table column field: "
+                                    + column.getField());
+                }
+                String canonical = knownFields.get(normalized);
+                if (canonical == null) {
+                    throw new IllegalArgumentException(
+                            "Unknown Excel table column field: "
+                                    + column.getField());
+                }
+                String header = requireText(
+                        column.getHeader(), "Excel table column header");
+                if (!configuredHeaders.add(
+                        header.toLowerCase(Locale.ROOT))) {
+                    throw new IllegalArgumentException(
+                            "Duplicate Excel table column header: "
+                                    + header);
+                }
+                if (column.isFormatPresent()
+                        && (column.getFormat() == null
+                        || column.getFormat().trim().isEmpty())) {
+                    throw new IllegalArgumentException(
+                            "Excel table column format must be non-blank "
+                                    + "when configured: "
+                                    + column.getField());
+                }
+                fields.add(canonical);
                 headers.add(column.getHeader());
                 formats.add(column.getFormat());
             }
@@ -95,13 +132,26 @@ public final class ExcelDatasetSheetWriter {
                     ? 0 : binding.getStartRow().intValue();
             tableName = binding.getTable();
         }
-        List<DatasetRow> rows = rows(result);
+        for (Map.Entry<String, String> known : knownFields.entrySet()) {
+            if (!containsIgnoreCase(fields, known.getValue())) {
+                if (containsIgnoreCase(headers, known.getValue())) {
+                    throw new IllegalArgumentException(
+                            "Excel table header " + known.getValue()
+                                    + " conflicts with a configured header");
+                }
+                fields.add(known.getValue());
+                headers.add(known.getValue());
+                formats.add(null);
+            }
+        }
         validateExpectedTypes(definition, result, rows);
         tableWriter.write(
                 workbook,
                 sheet,
                 tableName == null
-                        ? uniqueTableName(workbook, definition.getId())
+                        ? tableName(
+                                workbook, sheet,
+                                definition.getId(), startRow)
                         : tableName,
                 startRow,
                 fields,
@@ -112,13 +162,36 @@ public final class ExcelDatasetSheetWriter {
 
     static List<String> fields(
             DatasetDefinition definition, DatasetResult result) {
-        if (definition.getExpectedFields() != null
-                && !definition.getExpectedFields().isEmpty()) {
-            return Collections.unmodifiableList(
-                    new ArrayList<String>(
-                            definition.getExpectedFields().keySet()));
+        return Collections.unmodifiableList(
+                new ArrayList<String>(knownFields(
+                        definition, result, rows(result)).values()));
+    }
+
+    static List<String> fields(
+            DatasetDefinition definition,
+            DatasetResult result,
+            ExcelTableBinding binding) {
+        List<DatasetRow> rows = rows(result);
+        LinkedHashMap<String, String> known =
+                knownFields(definition, result, rows);
+        List<String> ordered = new ArrayList<String>();
+        if (binding != null) {
+            for (ExcelTableBinding.ColumnBinding column
+                    : binding.getColumns()) {
+                String canonical = known.get(
+                        normalize(column.getField()));
+                if (canonical != null
+                        && !containsIgnoreCase(ordered, canonical)) {
+                    ordered.add(canonical);
+                }
+            }
         }
-        return result.schema().fieldNames();
+        for (String field : known.values()) {
+            if (!containsIgnoreCase(ordered, field)) {
+                ordered.add(field);
+            }
+        }
+        return Collections.unmodifiableList(ordered);
     }
 
     static List<DatasetRow> rows(DatasetResult result) {
@@ -145,8 +218,19 @@ public final class ExcelDatasetSheetWriter {
                 DatasetRow.of(fields.get(0), value));
     }
 
-    private static String uniqueTableName(
-            XSSFWorkbook workbook, String datasetId) {
+    private static String tableName(
+            XSSFWorkbook workbook,
+            XSSFSheet targetSheet,
+            String datasetId,
+            int startRow) {
+        for (XSSFTable table : targetSheet.getTables()) {
+            if (table.getArea().getFirstCell().getRow()
+                            == startRow
+                    && table.getArea().getFirstCell().getCol()
+                            == 0) {
+                return table.getName();
+            }
+        }
         Set<String> existing = new LinkedHashSet<String>();
         for (int index = 0; index < workbook.getNumberOfSheets(); index++) {
             for (org.apache.poi.xssf.usermodel.XSSFTable table
@@ -163,7 +247,68 @@ public final class ExcelDatasetSheetWriter {
         while (existing.contains(candidate.toLowerCase(Locale.ROOT))) {
             candidate = base + "_" + suffix++;
         }
+        ExcelTableNameRules.validate(candidate);
         return candidate;
+    }
+
+    private static LinkedHashMap<String, String> knownFields(
+            DatasetDefinition definition,
+            DatasetResult result,
+            List<DatasetRow> rows) {
+        LinkedHashMap<String, String> fields =
+                new LinkedHashMap<String, String>();
+        if (definition.getExpectedFields() != null) {
+            for (String field
+                    : definition.getExpectedFields().keySet()) {
+                addField(fields, field);
+            }
+        }
+        for (String field : result.schema().fieldNames()) {
+            addField(fields, field);
+        }
+        for (DatasetRow row : rows) {
+            for (String field : row.fieldNames()) {
+                addField(fields, field);
+            }
+        }
+        if (fields.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Excel dataset table requires at least one field: "
+                            + definition.getId());
+        }
+        return fields;
+    }
+
+    private static void addField(
+            LinkedHashMap<String, String> fields, String field) {
+        String normalized = normalize(field);
+        if (!fields.containsKey(normalized)) {
+            fields.put(normalized, field);
+        }
+    }
+
+    private static boolean containsIgnoreCase(
+            Iterable<String> fields, String candidate) {
+        for (String field : fields) {
+            if (field.equalsIgnoreCase(candidate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String normalize(String field) {
+        return requireText(field, "Excel table column field")
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private static String requireText(
+            String value, String description) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalArgumentException(
+                    description + " must not be blank");
+        }
+        return value;
     }
 
     private static void validateExpectedTypes(

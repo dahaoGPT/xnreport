@@ -18,6 +18,7 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.SheetVisibility;
+import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFTable;
@@ -431,6 +433,416 @@ class ExcelDatasetSheetWriterTest {
         }
     }
 
+    @Test
+    void configuredColumnsLeadButAllResultAndRowFieldsAreAppended()
+            throws Exception {
+        Path template = tempDir.resolve("complete-schema-template.xlsx");
+        createTemplate(template);
+        DatasetDefinition definition = dataset(
+                "complete", "完整数据", DatasetType.LIST,
+                fields("expectedOnly", "STRING"));
+        DatasetResult result = DatasetResult.list(
+                "complete",
+                DatasetSchema.of(
+                        "actualA", String.class,
+                        "extra", BigDecimal.class,
+                        "expectedOnly", String.class),
+                Collections.singletonList(DatasetRow.of(
+                        "actualA", "A",
+                        "extra", new BigDecimal("2.50"),
+                        "expectedOnly", "E",
+                        "rowOnly", true)));
+        ExcelTableBinding binding = new ExcelTableBinding();
+        binding.setDataset("complete");
+        binding.setSheet("完整数据");
+        binding.setTable("tbl_complete");
+        binding.setStartRow(0);
+        ExcelTableBinding.ColumnBinding configured =
+                new ExcelTableBinding.ColumnBinding();
+        configured.setField("actualA");
+        configured.setHeader("配置列");
+        binding.setColumns(Collections.singletonList(configured));
+        ReportDefinition report = new ReportDefinition();
+        report.setDatasets(Collections.singletonList(definition));
+        ExcelDefinition excel = new ExcelDefinition();
+        excel.setTableBindings(Collections.singletonList(binding));
+        report.setExcel(excel);
+        Path output = tempDir.resolve("complete-schema.xlsx");
+
+        new ExcelWorkbookWriter().write(
+                template,
+                output,
+                report,
+                DatasetContext.builder().put(result).build(),
+                Collections.<String, Object>emptyMap());
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(
+                Files.newInputStream(output))) {
+            XSSFSheet sheet = workbook.getSheet("完整数据");
+            org.apache.poi.ss.usermodel.Row header = sheet.getRow(0);
+            assertThat(Arrays.asList(
+                    header.getCell(0).getStringCellValue(),
+                    header.getCell(1).getStringCellValue(),
+                    header.getCell(2).getStringCellValue(),
+                    header.getCell(3).getStringCellValue()))
+                    .isEqualTo(Arrays.asList(
+                            "配置列", "expectedOnly", "extra", "rowOnly"));
+            assertThat(sheet.getRow(1).getCell(3).getBooleanCellValue())
+                    .isTrue();
+            assertThat(sheet.getTables().get(0).getCTTable().getRef())
+                    .isEqualTo("A1:D2");
+        }
+    }
+
+    @Test
+    void rejectsDuplicateOrUnknownConfiguredColumnsBeforeWriting()
+            throws Exception {
+        Path template = tempDir.resolve("column-errors-template.xlsx");
+        createTemplate(template);
+        DatasetDefinition definition = dataset(
+                "columns", "列校验", DatasetType.LIST,
+                fields("known", "STRING"));
+        DatasetResult result = DatasetResult.list(
+                "columns",
+                DatasetSchema.of("known", String.class),
+                Collections.singletonList(DatasetRow.of("known", "x")));
+
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                writeWithColumns(template, definition, result,
+                        column("known", "一"),
+                        column("KNOWN", "二")))
+                .withMessageContaining("Duplicate");
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                writeWithColumns(template, definition, result,
+                        column("missing", "未知")))
+                .withMessageContaining("Unknown");
+        ExcelTableBinding.ColumnBinding nullFormat =
+                column("known", "Null format");
+        nullFormat.setFormat(null);
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                writeWithColumns(
+                        template, definition, result, nullFormat))
+                .withMessageContaining("format")
+                .withMessageContaining("non-blank");
+    }
+
+    @Test
+    void preservesFixtureContentOtherTablesAndStylesWhenTableExpandsAndShrinks()
+            throws Exception {
+        Path fixture = Paths.get(
+                "src/test/resources/fixtures/templates/report-template.xlsx");
+        assertThat(fixture).isRegularFile();
+        DatasetDefinition definition = dataset(
+                "centerMonthly", "中心-每月", DatasetType.LIST,
+                fields("month", "STRING", "hours", "DECIMAL"));
+        ReportDefinition report = reportWithTableBinding(
+                definition, "tbl_center_monthly", 2,
+                column("month", "月份"),
+                column("hours", "耗时"));
+        DatasetResult expanded = DatasetResult.list(
+                "centerMonthly",
+                DatasetSchema.of(
+                        "month", String.class,
+                        "hours", BigDecimal.class),
+                Arrays.asList(
+                        DatasetRow.of("month", "2026-01",
+                                "hours", new BigDecimal("1.00")),
+                        DatasetRow.of("month", "2026-02",
+                                "hours", new BigDecimal("2.00")),
+                        DatasetRow.of("month", "2026-03",
+                                "hours", new BigDecimal("3.00")),
+                        DatasetRow.of("month", "2026-04",
+                                "hours", new BigDecimal("4.00"))));
+        Path expandedOutput = tempDir.resolve("expanded.xlsx");
+
+        new ExcelWorkbookWriter().write(
+                fixture,
+                expandedOutput,
+                report,
+                DatasetContext.builder().put(expanded).build(),
+                Collections.<String, Object>emptyMap());
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(
+                Files.newInputStream(expandedOutput))) {
+            XSSFSheet sheet = workbook.getSheet("中心-每月");
+            assertThat(sheet.getTables()).extracting(XSSFTable::getName)
+                    .containsExactlyInAnyOrder(
+                            "tbl_center_monthly", "tbl_attachment");
+            assertThat(sheet.getRow(10).getCell(0).getStringCellValue())
+                    .isEqualTo("表下说明：必须保留");
+            assertThat(sheet.getRow(12).getCell(0).getStringCellValue())
+                    .isEqualTo("附件：approval-detail.xlsx");
+            assertThat(sheet.getTables().stream()
+                    .filter(table -> "tbl_center_monthly"
+                            .equals(table.getName()))
+                    .findFirst().get().getCTTable().getRef())
+                    .isEqualTo("A3:B7");
+            assertThat(sheet.getRow(6).getCell(0).getCellStyle()
+                    .getBorderBottom()).isEqualTo(BorderStyle.THIN);
+            assertThat(sheet.getTables().stream()
+                    .filter(table -> "tbl_center_monthly"
+                            .equals(table.getName()))
+                    .findFirst().get().getStyle().getName())
+                    .isEqualTo("TableStyleMedium2");
+            org.openxmlformats.schemas.spreadsheetml.x2006.main
+                    .CTTableStyleInfo styleInfo =
+                    sheet.getTables().stream()
+                            .filter(table -> "tbl_center_monthly"
+                                    .equals(table.getName()))
+                            .findFirst().get().getCTTable()
+                            .getTableStyleInfo();
+            assertThat(styleInfo.getShowFirstColumn()).isFalse();
+            assertThat(styleInfo.getShowLastColumn()).isFalse();
+            assertThat(styleInfo.getShowRowStripes()).isTrue();
+            assertThat(styleInfo.getShowColumnStripes()).isFalse();
+        }
+
+        DatasetResult shrunk = DatasetResult.list(
+                "centerMonthly",
+                DatasetSchema.of(
+                        "month", String.class,
+                        "hours", BigDecimal.class),
+                Collections.singletonList(DatasetRow.of(
+                        "month", "2026-06",
+                        "hours", new BigDecimal("6.00"))));
+        Path shrunkOutput = tempDir.resolve("shrunk.xlsx");
+        new ExcelWorkbookWriter().write(
+                expandedOutput,
+                shrunkOutput,
+                report,
+                DatasetContext.builder().put(shrunk).build(),
+                Collections.<String, Object>emptyMap());
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(
+                Files.newInputStream(shrunkOutput))) {
+            XSSFSheet sheet = workbook.getSheet("中心-每月");
+            assertThat(sheet.getTables().stream()
+                    .filter(table -> "tbl_center_monthly"
+                            .equals(table.getName()))
+                    .findFirst().get().getCTTable().getRef())
+                    .isEqualTo("A3:B4");
+            assertThat((Object) sheet.getRow(4)).isNull();
+            assertThat(sheet.getRow(10).getCell(0).getStringCellValue())
+                    .isEqualTo("表下说明：必须保留");
+            assertThat(sheet.getTables()).extracting(XSSFTable::getName)
+                    .contains("tbl_attachment");
+        }
+    }
+
+    @Test
+    void preservesCellsOutsideTargetColumnsOnTheSameRows()
+            throws Exception {
+        Path template = tempDir.resolve("same-row-content-template.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Home");
+            XSSFSheet sheet = workbook.createSheet("Data");
+            sheet.createRow(0).createCell(0).setCellValue("value");
+            sheet.getRow(0).createCell(3).setCellValue("side heading");
+            sheet.createRow(1).createCell(0).setCellValue("old");
+            sheet.getRow(1).createCell(3).setCellValue("side note");
+            XSSFTable table = sheet.createTable(
+                    new org.apache.poi.ss.util.AreaReference(
+                            "A1:A2",
+                            org.apache.poi.ss.SpreadsheetVersion.EXCEL2007));
+            table.setName("tbl_same_rows");
+            table.setDisplayName("tbl_same_rows");
+            try (java.io.OutputStream stream =
+                    Files.newOutputStream(template)) {
+                workbook.write(stream);
+            }
+        }
+        DatasetDefinition definition = dataset(
+                "sameRows", "Data", DatasetType.LIST,
+                fields("value", "STRING"));
+        ReportDefinition report = reportWithTableBinding(
+                definition, "tbl_same_rows", 0,
+                column("value", "Value"));
+        DatasetResult result = DatasetResult.list(
+                "sameRows",
+                DatasetSchema.of("value", String.class),
+                Collections.singletonList(
+                        DatasetRow.of("value", "new")));
+        Path output = tempDir.resolve("same-row-content.xlsx");
+
+        new ExcelWorkbookWriter().write(
+                template,
+                output,
+                report,
+                DatasetContext.builder().put(result).build(),
+                Collections.<String, Object>emptyMap());
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(
+                Files.newInputStream(output))) {
+            XSSFSheet sheet = workbook.getSheet("Data");
+            assertThat(sheet.getRow(0).getCell(3)
+                    .getStringCellValue()).isEqualTo("side heading");
+            assertThat(sheet.getRow(1).getCell(3)
+                    .getStringCellValue()).isEqualTo("side note");
+        }
+    }
+
+    @Test
+    void rejectsWritesThatOverlapOtherTablesOrPreservedCells()
+            throws Exception {
+        DatasetDefinition definition = dataset(
+                "conflict", "Data", DatasetType.LIST,
+                fields("value", "STRING"));
+        DatasetResult result = DatasetResult.list(
+                "conflict",
+                DatasetSchema.of("value", String.class),
+                Collections.singletonList(
+                        DatasetRow.of("value", "new")));
+
+        Path cellTemplate = tempDir.resolve(
+                "preserved-cell-conflict-template.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Home");
+            workbook.createSheet("Data")
+                    .createRow(1).createCell(0)
+                    .setCellValue("keep me");
+            try (java.io.OutputStream stream =
+                    Files.newOutputStream(cellTemplate)) {
+                workbook.write(stream);
+            }
+        }
+        ReportDefinition cellReport = reportWithTableBinding(
+                definition, "tbl_conflict", 0,
+                column("value", "Value"));
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                new ExcelWorkbookWriter().write(
+                        cellTemplate,
+                        tempDir.resolve("preserved-cell-conflict.xlsx"),
+                        cellReport,
+                        DatasetContext.builder().put(result).build(),
+                        Collections.<String, Object>emptyMap()))
+                .withMessageContaining("conflicts with preserved cell")
+                .withMessageContaining("A2");
+
+        Path tableTemplate = tempDir.resolve(
+                "overlapping-table-conflict-template.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Home");
+            XSSFSheet sheet = workbook.createSheet("Data");
+            sheet.createRow(0).createCell(0).setCellValue("first");
+            sheet.getRow(0).createCell(1).setCellValue("second");
+            sheet.createRow(1).createCell(0).setCellValue("one");
+            sheet.getRow(1).createCell(1).setCellValue("two");
+            XSSFTable table = sheet.createTable(
+                    new org.apache.poi.ss.util.AreaReference(
+                            "A1:B2",
+                            org.apache.poi.ss.SpreadsheetVersion.EXCEL2007));
+            table.setName("tbl_other");
+            table.setDisplayName("tbl_other");
+            try (java.io.OutputStream stream =
+                    Files.newOutputStream(tableTemplate)) {
+                workbook.write(stream);
+            }
+        }
+        ReportDefinition tableReport = reportWithTableBinding(
+                definition, "tbl_conflict", 1,
+                column("value", "Value"));
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                new ExcelWorkbookWriter().write(
+                        tableTemplate,
+                        tempDir.resolve("overlapping-table-conflict.xlsx"),
+                        tableReport,
+                        DatasetContext.builder().put(result).build(),
+                        Collections.<String, Object>emptyMap()))
+                .withMessageContaining("overlaps table")
+                .withMessageContaining("tbl_other");
+    }
+
+    @Test
+    void dateFormattingClonesPrototypeStyleInsteadOfReplacingIt()
+            throws Exception {
+        Path template = tempDir.resolve("date-style-template.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("报表首页");
+            XSSFSheet sheet = workbook.createSheet("日期");
+            sheet.createRow(0).createCell(0).setCellValue("date");
+            org.apache.poi.ss.usermodel.Cell prototype =
+                    sheet.createRow(1).createCell(0);
+            org.apache.poi.ss.usermodel.CellStyle style =
+                    workbook.createCellStyle();
+            style.setBorderBottom(BorderStyle.THICK);
+            style.setFillForegroundColor(
+                    org.apache.poi.ss.usermodel.IndexedColors.YELLOW
+                            .getIndex());
+            style.setFillPattern(
+                    org.apache.poi.ss.usermodel.FillPatternType
+                            .SOLID_FOREGROUND);
+            prototype.setCellStyle(style);
+            XSSFTable table = sheet.createTable(
+                    new org.apache.poi.ss.util.AreaReference(
+                            "A1:A2",
+                            org.apache.poi.ss.SpreadsheetVersion.EXCEL2007));
+            table.setName("tbl_dates");
+            table.setDisplayName("tbl_dates");
+            try (java.io.OutputStream stream = Files.newOutputStream(template)) {
+                workbook.write(stream);
+            }
+        }
+        DatasetDefinition definition = dataset(
+                "dates", "日期", DatasetType.LIST,
+                fields("date", "DATE"));
+        ReportDefinition report = reportWithTableBinding(
+                definition, "tbl_dates", 0,
+                column("date", "日期"));
+        DatasetResult result = DatasetResult.list(
+                "dates",
+                DatasetSchema.of("date", LocalDate.class),
+                Collections.singletonList(
+                        DatasetRow.of("date", LocalDate.of(2026, 6, 1))));
+        Path output = tempDir.resolve("date-style.xlsx");
+
+        new ExcelWorkbookWriter().write(
+                template,
+                output,
+                report,
+                DatasetContext.builder().put(result).build(),
+                Collections.<String, Object>emptyMap());
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(
+                Files.newInputStream(output))) {
+            org.apache.poi.ss.usermodel.Cell cell =
+                    workbook.getSheet("日期").getRow(1).getCell(0);
+            assertThat(cell.getCellStyle().getBorderBottom())
+                    .isEqualTo(BorderStyle.THICK);
+            assertThat(cell.getCellStyle().getFillForegroundColor())
+                    .isEqualTo(org.apache.poi.ss.usermodel.IndexedColors
+                            .YELLOW.getIndex());
+            assertThat(cell.getCellStyle().getDataFormatString())
+                    .isEqualTo("yyyy-mm-dd");
+        }
+    }
+
+    @Test
+    void rejectsConfiguredTableNameCollidingWithAnotherSheetIgnoringCase()
+            throws Exception {
+        Path template = tempDir.resolve("global-table-template.xlsx");
+        createTemplateWithNamedTable(template, "Tbl_Collision");
+        DatasetDefinition definition = dataset(
+                "collision", "数据", DatasetType.LIST,
+                fields("value", "STRING"));
+        ReportDefinition report = reportWithTableBinding(
+                definition, "tbl_collision", 0,
+                column("value", "值"));
+        DatasetResult result = DatasetResult.list(
+                "collision",
+                DatasetSchema.of("value", String.class),
+                Collections.singletonList(DatasetRow.of("value", "x")));
+
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                new ExcelWorkbookWriter().write(
+                        template,
+                        tempDir.resolve("collision.xlsx"),
+                        report,
+                        DatasetContext.builder().put(result).build(),
+                        Collections.<String, Object>emptyMap()))
+                .withMessageContaining("table name")
+                .withMessageContaining("Tbl_Collision");
+    }
+
     private static void assertVisibleTable(
             XSSFWorkbook workbook,
             String sheetName,
@@ -502,5 +914,48 @@ class ExcelDatasetSheetWriterTest {
                 workbook.write(stream);
             }
         }
+    }
+
+    private void writeWithColumns(
+            Path template,
+            DatasetDefinition definition,
+            DatasetResult result,
+            ExcelTableBinding.ColumnBinding... columns) throws Exception {
+        ReportDefinition report = reportWithTableBinding(
+                definition, "tbl_columns", 0, columns);
+        new ExcelWorkbookWriter().write(
+                template,
+                tempDir.resolve("column-result-" + System.nanoTime() + ".xlsx"),
+                report,
+                DatasetContext.builder().put(result).build(),
+                Collections.<String, Object>emptyMap());
+    }
+
+    private static ReportDefinition reportWithTableBinding(
+            DatasetDefinition definition,
+            String tableName,
+            int startRow,
+            ExcelTableBinding.ColumnBinding... columns) {
+        ExcelTableBinding binding = new ExcelTableBinding();
+        binding.setDataset(definition.getId());
+        binding.setSheet(definition.getSheetName());
+        binding.setTable(tableName);
+        binding.setStartRow(startRow);
+        binding.setColumns(Arrays.asList(columns));
+        ExcelDefinition excel = new ExcelDefinition();
+        excel.setTableBindings(Collections.singletonList(binding));
+        ReportDefinition report = new ReportDefinition();
+        report.setDatasets(Collections.singletonList(definition));
+        report.setExcel(excel);
+        return report;
+    }
+
+    private static ExcelTableBinding.ColumnBinding column(
+            String field, String header) {
+        ExcelTableBinding.ColumnBinding column =
+                new ExcelTableBinding.ColumnBinding();
+        column.setField(field);
+        column.setHeader(header);
+        return column;
     }
 }

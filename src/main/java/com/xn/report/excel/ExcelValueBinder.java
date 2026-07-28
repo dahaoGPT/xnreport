@@ -9,6 +9,8 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Base64;
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CreationHelper;
@@ -17,9 +19,10 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 public final class ExcelValueBinder {
 
     private final FormulaInjectionGuard formulaGuard;
-    private final CellStyle dateStyle;
-    private final CellStyle dateTimeStyle;
-    private final CellStyle timeStyle;
+    private final XSSFWorkbook workbook;
+    private final CreationHelper creationHelper;
+    private final Map<String, CellStyle> formattedStyles =
+            new LinkedHashMap<String, CellStyle>();
 
     public ExcelValueBinder(XSSFWorkbook workbook) {
         this(workbook, new FormulaInjectionGuard());
@@ -31,11 +34,8 @@ public final class ExcelValueBinder {
             throw new IllegalArgumentException("workbook must not be null");
         }
         this.formulaGuard = formulaGuard;
-        CreationHelper helper = workbook.getCreationHelper();
-        this.dateStyle = style(workbook, helper, "yyyy-mm-dd");
-        this.dateTimeStyle = style(
-                workbook, helper, "yyyy-mm-dd hh:mm:ss");
-        this.timeStyle = style(workbook, helper, "hh:mm:ss");
+        this.workbook = workbook;
+        this.creationHelper = workbook.getCreationHelper();
     }
 
     public void bind(Cell cell, Object value) {
@@ -56,20 +56,20 @@ public final class ExcelValueBinder {
             LocalDateTime dateTime = (LocalDateTime) value;
             cell.setCellValue(Date.from(dateTime.atZone(
                     ZoneId.systemDefault()).toInstant()));
-            cell.setCellStyle(dateTimeStyle);
+            applyNumberFormat(cell, "yyyy-mm-dd hh:mm:ss");
         } else if (value instanceof LocalDate) {
             LocalDate date = (LocalDate) value;
             cell.setCellValue(Date.from(date.atStartOfDay(
                     ZoneId.systemDefault()).toInstant()));
-            cell.setCellStyle(dateStyle);
+            applyNumberFormat(cell, "yyyy-mm-dd");
         } else if (value instanceof LocalTime) {
             LocalTime time = (LocalTime) value;
             cell.setCellValue(time.toSecondOfDay() / 86400.0d
                     + time.getNano() / 86400000000000.0d);
-            cell.setCellStyle(timeStyle);
+            applyNumberFormat(cell, "hh:mm:ss");
         } else if (value instanceof Date) {
             cell.setCellValue((Date) value);
-            cell.setCellStyle(dateTimeStyle);
+            applyNumberFormat(cell, "yyyy-mm-dd hh:mm:ss");
         } else if (value instanceof byte[]) {
             cell.setCellValue(Base64.getEncoder()
                     .encodeToString((byte[]) value));
@@ -78,11 +78,17 @@ public final class ExcelValueBinder {
         }
     }
 
-    private static CellStyle style(
-            XSSFWorkbook workbook, CreationHelper helper, String format) {
-        CellStyle style = workbook.createCellStyle();
-        style.setDataFormat(
-                helper.createDataFormat().getFormat(format));
-        return style;
+    private void applyNumberFormat(Cell cell, String format) {
+        CellStyle base = cell.getCellStyle();
+        String key = base.getIndex() + "|" + format;
+        CellStyle formatted = formattedStyles.get(key);
+        if (formatted == null) {
+            formatted = workbook.createCellStyle();
+            formatted.cloneStyleFrom(base);
+            formatted.setDataFormat(
+                    creationHelper.createDataFormat().getFormat(format));
+            formattedStyles.put(key, formatted);
+        }
+        cell.setCellStyle(formatted);
     }
 }

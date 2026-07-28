@@ -131,6 +131,72 @@ class ExcelConfigurationTest {
                 });
     }
 
+    @Test
+    void columnFormatPresenceDistinguishesOmittedFromNullAndEmpty() {
+        String prefix = "schemaVersion: '1.0'\n"
+                + "report: { code: r, name: R }\n"
+                + "datasets:\n"
+                + "  - id: center\n"
+                + "    sheetName: 中心\n"
+                + "    sql: SELECT 1\n"
+                + "    expectedFields: { value: { type: DECIMAL } }\n"
+                + "excel:\n"
+                + "  tableBindings:\n"
+                + "    - dataset: center\n"
+                + "      sheet: 中心\n"
+                + "      table: tbl_center\n"
+                + "      columns:\n";
+        ReportDefinition omitted = loadYaml(prefix
+                + "        - { field: value, header: 值 }\n");
+        ReportDefinition explicitNull = loadYaml(prefix
+                + "        - { field: value, header: 值, format: null }\n");
+        ReportDefinition empty = loadYaml(prefix
+                + "        - { field: value, header: 值, format: '' }\n");
+
+        assertThat(omitted.getExcel().getTableBindings().get(0)
+                .getColumns().get(0).isFormatPresent()).isFalse();
+        assertThat(new ReportDefinitionValidator()
+                .validate(omitted).issues()).isEmpty();
+        assertThat(explicitNull.getExcel().getTableBindings().get(0)
+                .getColumns().get(0).isFormatPresent()).isTrue();
+        assertThat(new ReportDefinitionValidator()
+                .validate(explicitNull).issues())
+                .extracting(ValidationIssue::getPath)
+                .contains("$.excel.tableBindings[0].columns[0].format");
+        assertThat(new ReportDefinitionValidator()
+                .validate(empty).issues())
+                .extracting(ValidationIssue::getPath)
+                .contains("$.excel.tableBindings[0].columns[0].format");
+    }
+
+    @Test
+    void schemaRejectsCellLikeTableNamesAndNullOrEmptyFormats()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonSchemaContract schema = schema();
+        String base = "{"
+                + "\"schemaVersion\":\"1.0\","
+                + "\"report\":{\"code\":\"r\",\"name\":\"R\"},"
+                + "\"datasets\":[{\"id\":\"d\",\"sheetName\":\"D\","
+                + "\"sql\":\"SELECT 1\"}],"
+                + "\"excel\":{\"tableBindings\":[{"
+                + "\"dataset\":\"d\",\"sheet\":\"D\",\"table\":%s,"
+                + "\"columns\":[{\"field\":\"value\",\"header\":\"值\"%s}]}]}}";
+
+        assertThat(schema.validate(mapper.readTree(String.format(
+                base, "\"tbl_valid\"", "")))).isEmpty();
+        assertThat(schema.validate(mapper.readTree(String.format(
+                base, "\"A1\"", "")))).isNotEmpty();
+        assertThat(schema.validate(mapper.readTree(String.format(
+                base, "\"R1C1\"", "")))).isNotEmpty();
+        assertThat(schema.validate(mapper.readTree(String.format(
+                base, "\"tbl_valid\"", ",\"format\":null"))))
+                .isNotEmpty();
+        assertThat(schema.validate(mapper.readTree(String.format(
+                base, "\"tbl_valid\"", ",\"format\":\"\""))))
+                .isNotEmpty();
+    }
+
     private ReportDefinition loadYaml(String yaml) {
         try {
             Path path = tempDir.resolve("report.yml");

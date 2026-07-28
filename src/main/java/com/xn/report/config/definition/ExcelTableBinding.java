@@ -66,6 +66,8 @@ public class ExcelTableBinding {
         private String field;
         private String header;
         private String format;
+        @JsonIgnore
+        private boolean formatPresent;
 
         public String getField() {
             return field;
@@ -88,7 +90,13 @@ public class ExcelTableBinding {
         }
 
         public void setFormat(String format) {
+            this.formatPresent = true;
             this.format = format;
+        }
+
+        @JsonIgnore
+        public boolean isFormatPresent() {
+            return formatPresent;
         }
     }
 }

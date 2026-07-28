@@ -20,6 +20,7 @@ import com.xn.report.config.definition.ExcelDefinition;
 import com.xn.report.config.definition.ExcelTableBinding;
 import com.xn.report.config.definition.ExcelValueBinding;
 import com.xn.report.excel.ExcelSheetNameRules;
+import com.xn.report.excel.ExcelTableNameRules;
 import com.xn.report.dataset.DatasetType;
 import com.xn.report.rule.RuleEngine;
 import com.xn.report.text.FormatterRegistry;
@@ -1090,6 +1091,11 @@ public final class ReportDefinitionValidator {
                             "Duplicate table column header: "
                                     + column.getHeader());
                 }
+                if (column.isFormatPresent()
+                        && !hasText(column.getFormat())) {
+                    result.add("EXCEL-001", columnPath + ".format",
+                            "Column format must be non-blank when configured");
+                }
             }
         }
     }
@@ -1132,19 +1138,14 @@ public final class ReportDefinitionValidator {
             String path,
             Set<String> seen,
             ValidationResult result) {
-        if (!hasText(tableName)
-                || tableName.length() > 255
-                || !tableName.matches(
-                        "^[A-Za-z_][A-Za-z0-9_.]*$")
-                || tableName.matches(
-                        "(?i)^[A-Z]{1,3}[1-9][0-9]*$")
-                || tableName.matches(
-                        "(?i)^R[1-9][0-9]*C[1-9][0-9]*$")) {
+        try {
+            ExcelTableNameRules.validate(tableName);
+        } catch (IllegalArgumentException exception) {
             result.add("EXCEL-001", path,
                     "Invalid Excel table name: " + tableName);
             return;
         }
-        String normalized = tableName.toLowerCase(Locale.ROOT);
+        String normalized = ExcelTableNameRules.normalized(tableName);
         if (!seen.add(normalized)) {
             result.add("EXCEL-001", path,
                     "Duplicate Excel table name: " + tableName);

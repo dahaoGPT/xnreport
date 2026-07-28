@@ -8,6 +8,7 @@ import com.xn.report.config.definition.SortFieldDefinition;
 import com.xn.report.config.definition.ValueReferenceDefinition;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
+import com.xn.report.dataset.DatasetSchema;
 import com.xn.report.dataset.DatasetType;
 import com.xn.report.error.ReportException;
 import com.xn.report.transform.Direction;
@@ -75,6 +76,8 @@ public final class RuleEngine {
                             + exception.getMessage(), exception);
         }
 
+        validateActualSchema(
+                definition.getCondition(), resultDefinition, dataset.schema());
         preResolveExternalReferences(definition.getCondition(), context);
         List<DatasetRow> input = rows(dataset);
         List<DatasetRow> current = filter(input, condition, context);
@@ -332,6 +335,66 @@ public final class RuleEngine {
             for (ConditionDefinition child : condition.getChildren()) {
                 preResolveExternalReferences(child, context);
             }
+        }
+    }
+
+    private static void validateActualSchema(
+            ConditionDefinition condition,
+            ResultDefinition result,
+            DatasetSchema schema) {
+        if (schema == null || schema.fieldNames().isEmpty()) {
+            return;
+        }
+        validateCurrentReferences(condition, schema);
+        validateSchemaFields(result.getDistinctFields(), schema);
+        validateSchemaFields(result.getGroupByFields(), schema);
+        for (SortFieldDefinition sort : safe(result.getSort())) {
+            validateSchemaField(sort.getField(), schema);
+        }
+        for (SummaryDefinition summary : safe(result.getSummaries())) {
+            validateSchemaField(summary.getField(), schema);
+        }
+    }
+
+    private static void validateCurrentReferences(
+            ConditionDefinition condition,
+            DatasetSchema schema) {
+        if (condition == null) {
+            return;
+        }
+        validateCurrentReference(condition.getLeft(), schema);
+        validateCurrentReference(condition.getRight(), schema);
+        if (condition.getChildren() != null) {
+            for (ConditionDefinition child : condition.getChildren()) {
+                validateCurrentReferences(child, schema);
+            }
+        }
+    }
+
+    private static void validateCurrentReference(
+            ValueReferenceDefinition reference,
+            DatasetSchema schema) {
+        if (reference != null
+                && reference.getSource()
+                        == ValueReferenceDefinition.Source.CURRENT_FIELD) {
+            validateSchemaField(reference.getField(), schema);
+        }
+    }
+
+    private static void validateSchemaFields(
+            List<String> fields,
+            DatasetSchema schema) {
+        for (String field : safe(fields)) {
+            validateSchemaField(field, schema);
+        }
+    }
+
+    private static void validateSchemaField(
+            String field,
+            DatasetSchema schema) {
+        if (!schema.containsField(field)) {
+            throw RuleErrors.reference(
+                    "Missing actual dataset schema field: " + field);
         }
     }
 

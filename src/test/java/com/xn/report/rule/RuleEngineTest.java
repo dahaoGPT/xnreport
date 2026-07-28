@@ -9,6 +9,7 @@ import com.xn.report.config.definition.ValueReferenceDefinition;
 import com.xn.report.dataset.DatasetContext;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
+import com.xn.report.dataset.DatasetSchema;
 import com.xn.report.error.ReportErrorCode;
 import com.xn.report.error.ReportException;
 import com.xn.report.support.TestFixtures;
@@ -514,6 +515,54 @@ class RuleEngineTest {
                 new StringBuilder("mutable")))
                 .isInstanceOf(ReportException.class)
                 .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_001);
+    }
+
+    @Test
+    void validatesResultFieldsAgainstActualSchemaBeforeNoMatchFiltering() {
+        DatasetResult rows = DatasetResult.list(
+                "actualSchema",
+                Collections.singletonList(DatasetRow.of(
+                        "name", "A",
+                        "hours", new BigDecimal("5"))));
+        RuleDefinition rule = ruleWithCondition(
+                "actualSchema",
+                "actualSchema",
+                configuredComparison(
+                        currentFieldDefinition("hours"),
+                        ConditionDefinition.Operator.GT,
+                        literalDefinition(new BigDecimal("10"))));
+        RuleDefinition.ResultDefinition result =
+                new RuleDefinition.ResultDefinition();
+        com.xn.report.config.definition.SortFieldDefinition sort =
+                new com.xn.report.config.definition.SortFieldDefinition();
+        sort.setField("hurs");
+        sort.setDirection(Direction.ASC);
+        sort.setNullOrder(NullOrder.LAST);
+        result.setSort(Collections.singletonList(sort));
+        rule.setResult(result);
+
+        assertThatThrownBy(() -> engine.evaluate(rule, rows, emptyContext()))
+                .isInstanceOf(ReportException.class)
+                .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_002);
+    }
+
+    @Test
+    void validatesCurrentFieldAgainstExplicitSchemaForEmptyDataset() {
+        DatasetResult empty = DatasetResult.list(
+                "emptyKnown",
+                DatasetSchema.of("hours", BigDecimal.class),
+                Collections.<DatasetRow>emptyList());
+        RuleDefinition rule = ruleWithCondition(
+                "emptyKnown",
+                "emptyKnown",
+                configuredComparison(
+                        currentFieldDefinition("hurs"),
+                        ConditionDefinition.Operator.GT,
+                        literalDefinition(new BigDecimal("10"))));
+
+        assertThatThrownBy(() -> engine.evaluate(rule, empty, emptyContext()))
+                .isInstanceOf(ReportException.class)
+                .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_002);
     }
 
     private void assertMatches(

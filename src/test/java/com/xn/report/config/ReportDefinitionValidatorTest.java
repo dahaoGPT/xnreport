@@ -185,7 +185,7 @@ class ReportDefinitionValidatorTest {
                 "CFG-COMPONENT-REFERENCE",
                 "CFG-EMPTY-STRATEGY",
                 "CFG-TOC-LEVEL",
-                "CFG-NARRATIVE-SOURCE-TYPE");
+                "TEXT-001");
     }
 
     @Test
@@ -797,7 +797,20 @@ class ReportDefinitionValidatorTest {
     private static NarrativeDefinition narrative(String id, String sourceType) {
         NarrativeDefinition narrative = new NarrativeDefinition();
         narrative.setId(id);
-        narrative.setSourceType(sourceType);
+        try {
+            narrative.setSourceType(
+                    NarrativeDefinition.SourceType.valueOf(sourceType));
+            if (narrative.getSourceType()
+                    == NarrativeDefinition.SourceType.RULE_GENERATED) {
+                narrative.setAnalyzer("testAnalyzer");
+                narrative.setDataset("source");
+                narrative.setSentence("test sentence");
+            } else {
+                narrative.setTemplate("test template");
+            }
+        } catch (IllegalArgumentException exception) {
+            narrative.setSourceType(null);
+        }
         return narrative;
     }
 

@@ -42,8 +42,6 @@ public final class ReportDefinitionValidator {
             unmodifiableSet("SCENARIO", "KEY_FACTORS", "FIXED_TEXT", "UNIT", "ATTACHMENT");
     private static final Set<String> EMPTY_STRATEGIES =
             unmodifiableSet("KEEP", "SHOW_EMPTY", "SKIP");
-    private static final Set<String> NARRATIVE_SOURCE_TYPES =
-            unmodifiableSet("FIXED_TEMPLATE", "RULE_GENERATED");
 
     public ValidationResult validate(ReportDefinition definition) {
         ValidationResult result = new ValidationResult();
@@ -78,6 +76,10 @@ public final class ReportDefinitionValidator {
                 datasetIds,
                 definition.getParameters(),
                 result);
+        if (definition.isNarrativesExplicitNull()) {
+            result.add("TEXT-001", "$.narratives",
+                    "narratives must not be null");
+        }
         Set<String> narrativeIds =
                 validateNarratives(definition.getNarratives(), datasetIds, result);
         validateWord(definition.getWord(), narrativeIds, result);
@@ -885,19 +887,91 @@ public final class ReportDefinitionValidator {
                 result.add("CFG-DUPLICATE-NARRATIVE", path + ".id",
                         "Duplicate narrative id: " + narrative.getId());
             }
-            if (!NARRATIVE_SOURCE_TYPES.contains(narrative.getSourceType())) {
-                result.add("CFG-NARRATIVE-SOURCE-TYPE", path + ".sourceType",
+            if (narrative.getSourceType() == null) {
+                result.add("TEXT-001", path + ".sourceType",
                         "Narrative sourceType must be FIXED_TEMPLATE or RULE_GENERATED");
+            }
+            if (narrative.hasProperty("parameters")
+                    && narrative.getParameters() == null) {
+                result.add("TEXT-001", path + ".parameters",
+                        "Narrative parameters must not be null");
+            }
+            if (narrative.hasProperty("emptyStrategy")
+                    && narrative.getEmptyStrategy() == null) {
+                result.add("TEXT-001", path + ".emptyStrategy",
+                        "Narrative emptyStrategy must not be null");
             }
             if (hasText(narrative.getDataset())
                     && !datasetIds.contains(narrative.getDataset())) {
                 result.add("CFG-UNKNOWN-DATASET-REFERENCE", path + ".dataset",
                         "Unknown dataset reference: " + narrative.getDataset());
             }
-            validateDistribution(narrative.getDistribution(),
-                    path + ".distribution", result);
+            validateNarrativeVariant(narrative, path, result);
+            if (narrative.hasProperty("distribution")
+                    && narrative.getDistribution() == null) {
+                result.add("TEXT-001", path + ".distribution",
+                        "Narrative distribution must not be null");
+            }
+            if (narrative.hasProperty("distribution")
+                    || hasDistributionContent(narrative.getDistribution())) {
+                validateDistribution(narrative.getDistribution(),
+                        path + ".distribution", result);
+            }
         }
         return narrativeIds;
+    }
+
+    private boolean hasDistributionContent(DistributionDefinition distribution) {
+        return distribution != null
+                && (hasText(distribution.getField())
+                || (distribution.getBins() != null
+                && !distribution.getBins().isEmpty())
+                || distribution.hasProperty("labelMode"));
+    }
+
+    private void validateNarrativeVariant(
+            NarrativeDefinition narrative,
+            String path,
+            ValidationResult result) {
+        if (narrative.getSourceType()
+                == NarrativeDefinition.SourceType.FIXED_TEMPLATE) {
+            if (!hasText(narrative.getTemplate())) {
+                result.add("TEXT-001", path + ".template",
+                        "FIXED_TEMPLATE requires template");
+            }
+            rejectNarrativeProperties(
+                    narrative, path, result,
+                    "analyzer", "baseline", "format", "sentence", "distribution");
+        } else if (narrative.getSourceType()
+                == NarrativeDefinition.SourceType.RULE_GENERATED) {
+            if (!hasText(narrative.getAnalyzer())) {
+                result.add("TEXT-001", path + ".analyzer",
+                        "RULE_GENERATED requires analyzer");
+            }
+            if (!hasText(narrative.getDataset())) {
+                result.add("TEXT-001", path + ".dataset",
+                        "RULE_GENERATED requires dataset");
+            }
+            if (!hasText(narrative.getSentence())) {
+                result.add("TEXT-001", path + ".sentence",
+                        "RULE_GENERATED requires sentence");
+            }
+            rejectNarrativeProperties(narrative, path, result, "template");
+        }
+    }
+
+    private void rejectNarrativeProperties(
+            NarrativeDefinition narrative,
+            String path,
+            ValidationResult result,
+            String... properties) {
+        for (String property : properties) {
+            if (narrative.hasProperty(property)) {
+                result.add("TEXT-001", path + "." + property,
+                        property + " is not allowed for "
+                                + narrative.getSourceType());
+            }
+        }
     }
 
     private void validateDistribution(
@@ -907,13 +981,64 @@ public final class ReportDefinitionValidator {
         if (distribution == null) {
             return;
         }
+        if (!hasText(distribution.getField())) {
+            result.add("TEXT-001", path + ".field",
+                    "Distribution field is required");
+        }
+        if (distribution.hasProperty("bins")
+                && distribution.getBins() == null) {
+            result.add("TEXT-001", path + ".bins",
+                    "Distribution bins must not be null");
+        }
+        if (distribution.getBins() == null
+                || distribution.getBins().isEmpty()) {
+            result.add("TEXT-001", path + ".bins",
+                    "Distribution requires at least one bin");
+        }
+        if (!distribution.hasProperty("labelMode")) {
+            result.add("TEXT-001", path + ".labelMode",
+                    "Distribution labelMode is required");
+        } else if (distribution.getLabelMode() == null) {
+            result.add("TEXT-001", path + ".labelMode",
+                    "Distribution labelMode must not be null");
+        }
         List<BinDefinition> bins = safeList(distribution.getBins());
+        Set<String> binIds = new LinkedHashSet<String>();
         for (int index = 0; index < bins.size(); index++) {
             BinDefinition bin = bins.get(index);
             if (bin == null) {
                 result.add("CFG-DISTRIBUTION-BIN", path + ".bins[" + index + "]",
                         "Distribution bin must not be null");
                 continue;
+            }
+            if (!hasText(bin.getId())) {
+                result.add("TEXT-001", path + ".bins[" + index + "].id",
+                        "Distribution bin id is required");
+            } else if (!binIds.add(bin.getId())) {
+                result.add("TEXT-001", path + ".bins[" + index + "].id",
+                        "Duplicate distribution bin id: " + bin.getId());
+            }
+            if (!hasText(bin.getLabel())) {
+                result.add("TEXT-001", path + ".bins[" + index + "].label",
+                        "Distribution bin label is required");
+            }
+            rejectExplicitNullBinProperty(
+                    bin, "min", path + ".bins[" + index + "]", result);
+            rejectExplicitNullBinProperty(
+                    bin, "max", path + ".bins[" + index + "]", result);
+            rejectExplicitNullBinProperty(
+                    bin, "minInclusive", path + ".bins[" + index + "]", result);
+            rejectExplicitNullBinProperty(
+                    bin, "maxInclusive", path + ".bins[" + index + "]", result);
+            if (bin.isMinInclusive() && bin.getMin() == null) {
+                result.add("TEXT-001",
+                        path + ".bins[" + index + "].minInclusive",
+                        "minInclusive requires min");
+            }
+            if (bin.isMaxInclusive() && bin.getMax() == null) {
+                result.add("TEXT-001",
+                        path + ".bins[" + index + "].maxInclusive",
+                        "maxInclusive requires max");
             }
             if (isEmptyOrReversed(bin)) {
                 result.add("CFG-DISTRIBUTION-BOUNDS", path + ".bins[" + index + "]",
@@ -927,6 +1052,30 @@ public final class ReportDefinitionValidator {
                                     + other.getId() + " and " + bin.getId());
                 }
             }
+        }
+    }
+
+    private void rejectExplicitNullBinProperty(
+            BinDefinition bin,
+            String property,
+            String path,
+            ValidationResult result) {
+        if (!bin.hasProperty(property)) {
+            return;
+        }
+        Object value;
+        if ("min".equals(property)) {
+            value = bin.getMin();
+        } else if ("max".equals(property)) {
+            value = bin.getMax();
+        } else if ("minInclusive".equals(property)) {
+            value = bin.getMinInclusive();
+        } else {
+            value = bin.getMaxInclusive();
+        }
+        if (value == null) {
+            result.add("TEXT-001", path + "." + property,
+                    property + " must not be null");
         }
     }
 

@@ -8,7 +8,8 @@ public enum ReportErrorCode {
     DATA_003("DATA-003"),
     DATA_004("DATA-004"),
     RULE_001("RULE-001"),
-    RULE_002("RULE-002");
+    RULE_002("RULE-002"),
+    TEXT_001("TEXT-001");
 
     private final String code;
 

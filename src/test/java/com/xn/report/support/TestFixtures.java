@@ -21,6 +21,7 @@ import com.xn.report.rule.RuleEvaluationContext;
 import com.xn.report.rule.ValueReference;
 import com.xn.report.transform.Direction;
 import com.xn.report.transform.NullOrder;
+import com.xn.report.text.TextRenderContext;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
@@ -179,6 +180,23 @@ public final class TestFixtures {
         result.setSummaries(Collections.singletonList(maximum));
         rule.setResult(result);
         return rule;
+    }
+
+    public static TextRenderContext textContext() {
+        DatasetContext datasets = DatasetContext.builder()
+                .put(DatasetResult.single(
+                        "baseline",
+                        Collections.singletonList(DatasetRow.of(
+                                "standardHours", new BigDecimal("10.00")))))
+                .build();
+        return TextRenderContext.builder()
+                .currentRow(DatasetRow.of(
+                        "personName", "张三",
+                        "avgHours", new BigDecimal("12.50")))
+                .summary(parameters("matchedCount", 2))
+                .runtime(parameters("period", "2026H1"))
+                .datasets(datasets)
+                .build();
     }
 
     private static ValueReferenceDefinition currentField(String field) {

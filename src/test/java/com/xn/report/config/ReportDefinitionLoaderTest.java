@@ -56,7 +56,8 @@ class ReportDefinitionLoaderTest {
 
         NarrativeDefinition yamlNarrative = yaml.getNarratives().get(0);
         NarrativeDefinition jsonNarrative = json.getNarratives().get(0);
-        assertThat(yamlNarrative.getSourceType()).isEqualTo("RULE_GENERATED");
+        assertThat(yamlNarrative.getSourceType())
+                .isEqualTo(NarrativeDefinition.SourceType.RULE_GENERATED);
         assertThat(jsonNarrative.getAnalyzer()).isEqualTo(yamlNarrative.getAnalyzer());
         assertThat(jsonNarrative.getDataset()).isEqualTo(yamlNarrative.getDataset());
         assertThat(jsonNarrative.getBaseline()).isEqualTo(yamlNarrative.getBaseline());

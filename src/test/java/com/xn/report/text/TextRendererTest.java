@@ -1,0 +1,127 @@
+package com.xn.report.text;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.xn.report.support.TestFixtures;
+import com.xn.report.error.ReportErrorCode;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+class TextRendererTest {
+
+    private final TextRenderer renderer = TextRenderer.createDefault();
+
+    @Test
+    void rendersCurrentSummaryRuntimeAndDatasetValues() {
+        String template = "${personName}平均耗时${avgHours|number:0.00}小时，"
+                + "标准${dataset.baseline.standardHours|number:0.00}小时，"
+                + "周期${runtime.period}，命中${summary.matchedCount}人";
+
+        assertThat(renderer.render(template, TestFixtures.textContext()))
+                .isEqualTo("张三平均耗时12.50小时，标准10.00小时，周期2026H1，命中2人");
+    }
+
+    @Test
+    void rejectsUnresolvedAmbiguousAndExecutablePlaceholders() {
+        assertThatThrownBy(() -> renderer.render(
+                "${missingField}", TestFixtures.textContext()))
+                .isInstanceOf(TextRenderException.class)
+                .hasMessageContaining("missingField")
+                .satisfies(error -> assertThat(
+                        ((TextRenderException) error).getErrorCode())
+                        .isEqualTo(ReportErrorCode.TEXT_001));
+        assertThatThrownBy(() -> renderer.render(
+                "${period}", TestFixtures.textContext()))
+                .isInstanceOf(TextRenderException.class)
+                .hasMessageContaining("qualified");
+        assertThatThrownBy(() -> renderer.render(
+                "${T(java.lang.Runtime).getRuntime()}", TestFixtures.textContext()))
+                .isInstanceOf(TextRenderException.class);
+        assertThatThrownBy(() -> renderer.render(
+                "${personName + 'x'}", TestFixtures.textContext()))
+                .isInstanceOf(TextRenderException.class);
+    }
+
+    @Test
+    void supportsExplicitUnresolvedPolicies() {
+        assertThat(renderer.render(
+                "x${missing}y",
+                TestFixtures.textContext(),
+                UnresolvedPlaceholderPolicy.KEEP))
+                .isEqualTo("x${missing}y");
+        assertThat(renderer.render(
+                "x${missing}y",
+                TestFixtures.textContext(),
+                UnresolvedPlaceholderPolicy.EMPTY))
+                .isEqualTo("xy");
+    }
+
+    @Test
+    void formatsAllWhitelistedValuesDeterministically() {
+        TextRenderContext context = TextRenderContext.builder()
+                .currentRow(TestFixtures.row(
+                        "number", "12.5",
+                        "ratio", "0.125",
+                        "date", LocalDate.of(2026, 7, 28),
+                        "instant", Instant.parse("2026-07-28T01:02:03Z"),
+                        "duration", Duration.ofMinutes(90),
+                        "missing", null,
+                        "items", Arrays.asList("A", "B")))
+                .build();
+
+        assertThat(renderer.render(
+                "${number|number:0.00}|${ratio|percent:0.0}|"
+                        + "${date|date:yyyy-MM-dd}|"
+                        + "${instant|datetime:yyyy-MM-dd HH:mm:ss}|"
+                        + "${duration|durationHours:0.00}|"
+                        + "${missing|default:无}|${items|join:、}",
+                context))
+                .isEqualTo("12.50|12.5%|2026-07-28|2026-07-28 01:02:03|1.50|无|A、B");
+    }
+
+    @Test
+    void parserRejectsUnknownFormatterAndMalformedGrammar() {
+        assertThatThrownBy(() -> renderer.render(
+                "${avgHours|script:run}", TestFixtures.textContext()))
+                .isInstanceOf(TextRenderException.class)
+                .hasMessageContaining("script");
+        assertThatThrownBy(() -> renderer.render(
+                "${avgHours|number:0.0|join:,}", TestFixtures.textContext()))
+                .isInstanceOf(TextRenderException.class);
+        assertThatThrownBy(() -> renderer.render(
+                "prefix ${avgHours", TestFixtures.textContext()))
+                .isInstanceOf(TextRenderException.class);
+    }
+
+    @Test
+    void contextDeeplySnapshotsValuesAndRejectsCycles() {
+        List<String> source = new ArrayList<String>();
+        source.add("A");
+        Map<String, Object> runtime = new LinkedHashMap<String, Object>();
+        runtime.put("items", source);
+        TextRenderContext context = TextRenderContext.builder()
+                .runtime(runtime)
+                .build();
+        source.add("B");
+
+        assertThat(renderer.render(
+                "${runtime.items|join:,}", context)).isEqualTo("A");
+
+        List<Object> cycle = new ArrayList<Object>();
+        cycle.add(cycle);
+        runtime.put("cycle", cycle);
+        assertThatThrownBy(() -> TextRenderContext.builder()
+                .runtime(runtime)
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cyclic");
+    }
+}

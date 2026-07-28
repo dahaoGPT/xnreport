@@ -912,11 +912,144 @@
       }
     },
     "narrative": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "sourceType",
+            "template"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "sourceType": {
+              "type": "string",
+              "enum": [
+                "FIXED_TEMPLATE"
+              ]
+            },
+            "template": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dataset": {
+              "type": "string",
+              "minLength": 1
+            },
+            "emptyStrategy": {
+              "$ref": "#/definitions/narrativeEmptyStrategy"
+            },
+            "parameters": {
+              "type": "object"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "sourceType",
+            "analyzer",
+            "dataset",
+            "sentence"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "sourceType": {
+              "type": "string",
+              "enum": [
+                "RULE_GENERATED"
+              ]
+            },
+            "analyzer": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "dataset": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "baseline": {
+              "type": "string",
+              "minLength": 1
+            },
+            "format": {
+              "type": "string"
+            },
+            "sentence": {
+              "type": "string",
+              "minLength": 1
+            },
+            "emptyStrategy": {
+              "$ref": "#/definitions/narrativeEmptyStrategy"
+            },
+            "parameters": {
+              "type": "object"
+            },
+            "distribution": {
+              "$ref": "#/definitions/distribution"
+            }
+          }
+        }
+      ]
+    },
+    "narrativeEmptyStrategy": {
+      "type": "string",
+      "enum": [
+        "FAIL",
+        "OUTPUT_MESSAGE",
+        "SKIP"
+      ]
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "bins",
+        "labelMode"
+      ],
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "bins": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/distributionBin"
+          }
+        },
+        "labelMode": {
+          "type": "string",
+          "enum": [
+            "COUNT",
+            "PERCENT",
+            "COUNT_AND_PERCENT"
+          ]
+        }
+      }
+    },
+    "distributionBin": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "id",
-        "sourceType"
+        "label"
       ],
       "properties": {
         "id": {
@@ -924,69 +1057,10 @@
           "minLength": 1,
           "x-java-nonBlank": true
         },
-        "sourceType": {
-          "type": "string",
-          "enum": [
-            "FIXED_TEMPLATE",
-            "RULE_GENERATED"
-          ]
-        },
-        "template": {
-          "type": "string"
-        },
-        "analyzer": {
-          "type": "string"
-        },
-        "dataset": {
-          "type": "string"
-        },
-        "baseline": {
-          "type": "string"
-        },
-        "format": {
-          "type": "string"
-        },
-        "sentence": {
-          "type": "string"
-        },
-        "emptyStrategy": {
-          "type": "string"
-        },
-        "parameters": {
-          "type": "object"
-        },
-        "distribution": {
-          "$ref": "#/definitions/distribution"
-        }
-      }
-    },
-    "distribution": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "field": {
-          "type": "string"
-        },
-        "bins": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/distributionBin"
-          }
-        },
-        "labelMode": {
-          "type": "string"
-        }
-      }
-    },
-    "distributionBin": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "type": "string"
-        },
         "label": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
         },
         "min": {
           "type": "number"

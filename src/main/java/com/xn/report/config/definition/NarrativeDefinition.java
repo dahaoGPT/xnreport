@@ -1,35 +1,54 @@
 package com.xn.report.config.definition;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 public class NarrativeDefinition {
 
+    public enum SourceType {
+        FIXED_TEMPLATE,
+        RULE_GENERATED
+    }
+
+    public enum EmptyStrategy {
+        FAIL,
+        OUTPUT_MESSAGE,
+        SKIP
+    }
+
     private String id;
-    private String sourceType;
+    private SourceType sourceType;
     private String template;
     private String analyzer;
     private String dataset;
     private String baseline;
     private String format;
     private String sentence;
-    private String emptyStrategy;
+    private EmptyStrategy emptyStrategy = EmptyStrategy.OUTPUT_MESSAGE;
     private Map<String, Object> parameters = new LinkedHashMap<String, Object>();
     private DistributionDefinition distribution = new DistributionDefinition();
+    @JsonIgnore
+    private final Set<String> presentProperties = new LinkedHashSet<String>();
 
     public String getId() {
         return id;
     }
 
     public void setId(String id) {
+        mark("id");
         this.id = id;
     }
 
-    public String getSourceType() {
+    public SourceType getSourceType() {
         return sourceType;
     }
 
-    public void setSourceType(String sourceType) {
+    public void setSourceType(SourceType sourceType) {
+        mark("sourceType");
         this.sourceType = sourceType;
     }
 
@@ -38,6 +57,7 @@ public class NarrativeDefinition {
     }
 
     public void setTemplate(String template) {
+        mark("template");
         this.template = template;
     }
 
@@ -46,6 +66,7 @@ public class NarrativeDefinition {
     }
 
     public void setAnalyzer(String analyzer) {
+        mark("analyzer");
         this.analyzer = analyzer;
     }
 
@@ -54,6 +75,7 @@ public class NarrativeDefinition {
     }
 
     public void setDataset(String dataset) {
+        mark("dataset");
         this.dataset = dataset;
     }
 
@@ -62,6 +84,7 @@ public class NarrativeDefinition {
     }
 
     public void setBaseline(String baseline) {
+        mark("baseline");
         this.baseline = baseline;
     }
 
@@ -70,6 +93,7 @@ public class NarrativeDefinition {
     }
 
     public void setFormat(String format) {
+        mark("format");
         this.format = format;
     }
 
@@ -78,14 +102,16 @@ public class NarrativeDefinition {
     }
 
     public void setSentence(String sentence) {
+        mark("sentence");
         this.sentence = sentence;
     }
 
-    public String getEmptyStrategy() {
+    public EmptyStrategy getEmptyStrategy() {
         return emptyStrategy;
     }
 
-    public void setEmptyStrategy(String emptyStrategy) {
+    public void setEmptyStrategy(EmptyStrategy emptyStrategy) {
+        mark("emptyStrategy");
         this.emptyStrategy = emptyStrategy;
     }
 
@@ -94,8 +120,8 @@ public class NarrativeDefinition {
     }
 
     public void setParameters(Map<String, Object> parameters) {
-        this.parameters = parameters == null
-                ? new LinkedHashMap<String, Object>() : parameters;
+        mark("parameters");
+        this.parameters = parameters;
     }
 
     public DistributionDefinition getDistribution() {
@@ -103,7 +129,22 @@ public class NarrativeDefinition {
     }
 
     public void setDistribution(DistributionDefinition distribution) {
-        this.distribution = distribution == null
-                ? new DistributionDefinition() : distribution;
+        mark("distribution");
+        this.distribution = distribution;
+    }
+
+    @JsonIgnore
+    public boolean hasProperty(String property) {
+        return presentProperties.contains(property);
+    }
+
+    @JsonIgnore
+    public Set<String> getPresentProperties() {
+        return Collections.unmodifiableSet(
+                new LinkedHashSet<String>(presentProperties));
+    }
+
+    private void mark(String property) {
+        presentProperties.add(property);
     }
 }

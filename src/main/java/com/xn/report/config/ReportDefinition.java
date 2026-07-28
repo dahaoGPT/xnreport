@@ -19,6 +19,8 @@ public class ReportDefinition {
             new LinkedHashMap<String, ParameterDefinition>();
     private List<DatasetDefinition> datasets = new ArrayList<DatasetDefinition>();
     private List<NarrativeDefinition> narratives = new ArrayList<NarrativeDefinition>();
+    @JsonIgnore
+    private boolean narrativesExplicitNull;
     private List<RuleDefinition> rules = new ArrayList<RuleDefinition>();
     @JsonIgnore
     private boolean rulesExplicitNull;
@@ -62,6 +64,11 @@ public class ReportDefinition {
         return narratives;
     }
 
+    @JsonIgnore
+    public boolean isNarrativesExplicitNull() {
+        return narrativesExplicitNull;
+    }
+
     public List<RuleDefinition> getRules() {
         return rules;
     }
@@ -77,6 +84,7 @@ public class ReportDefinition {
     }
 
     public void setNarratives(List<NarrativeDefinition> narratives) {
+        this.narrativesExplicitNull = narratives == null;
         this.narratives = narratives == null
                 ? new ArrayList<NarrativeDefinition>() : narratives;
     }

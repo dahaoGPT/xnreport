@@ -7,7 +7,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import javax.sql.DataSource;
@@ -36,7 +35,7 @@ public final class NamedSqlExecutor {
         this.rowMapper = new ResultSetRowMapper();
     }
 
-    public List<DatasetRow> query(
+    public SqlQueryResult query(
             String sql,
             ResolvedSqlParameters parameters,
             int queryTimeoutSeconds,
@@ -44,7 +43,7 @@ public final class NamedSqlExecutor {
         return query(null, sql, parameters, queryTimeoutSeconds, maxRows);
     }
 
-    public List<DatasetRow> query(
+    public SqlQueryResult query(
             String datasetId,
             String sql,
             ResolvedSqlParameters parameters,
@@ -57,22 +56,24 @@ public final class NamedSqlExecutor {
         try {
             return jdbcTemplate.getJdbcTemplate().execute(
                     statementCreator,
-                    new PreparedStatementCallback<List<DatasetRow>>() {
+                    new PreparedStatementCallback<SqlQueryResult>() {
                         @Override
-                        public List<DatasetRow> doInPreparedStatement(
+                        public SqlQueryResult doInPreparedStatement(
                                 PreparedStatement statement) throws SQLException {
                             statement.setQueryTimeout(queryTimeoutSeconds);
                             statement.setMaxRows(maxRows + 1);
                             List<DatasetRow> rows = new ArrayList<DatasetRow>();
                             try (ResultSet resultSet = statement.executeQuery()) {
+                                com.xn.report.dataset.DatasetSchema schema =
+                                        rowMapper.schema(resultSet.getMetaData());
                                 while (resultSet.next()) {
                                     if (rows.size() == maxRows) {
                                         throw tooManyRows(datasetId, maxRows);
                                     }
                                     rows.add(rowMapper.map(resultSet));
                                 }
+                                return new SqlQueryResult(schema, rows);
                             }
-                            return Collections.unmodifiableList(rows);
                         }
                     });
         } catch (ReportException exception) {

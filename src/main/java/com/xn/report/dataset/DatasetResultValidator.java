@@ -4,6 +4,7 @@ import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.FieldDefinition;
 import com.xn.report.error.ReportErrorCode;
 import com.xn.report.error.ReportException;
+import com.xn.report.sql.SqlQueryResult;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDate;
@@ -23,20 +24,47 @@ public final class DatasetResultValidator {
 
     public DatasetResult validate(
             DatasetDefinition definition, List<DatasetRow> sourceRows) {
+        List<DatasetRow> rows = copyRows(
+                definition == null ? "<unknown>" : definition.getId(), sourceRows);
+        return validateInternal(
+                definition,
+                new SqlQueryResult(DatasetSchema.infer(rows), rows),
+                false);
+    }
+
+    public DatasetResult validate(
+            DatasetDefinition definition, SqlQueryResult queryResult) {
+        return validateInternal(definition, queryResult, true);
+    }
+
+    private DatasetResult validateInternal(
+            DatasetDefinition definition,
+            SqlQueryResult queryResult,
+            boolean validateMetadataTypes) {
         Objects.requireNonNull(definition, "definition");
+        Objects.requireNonNull(queryResult, "queryResult");
         String datasetId = requireText(definition.getId(), "dataset id");
         DatasetType resultType = Objects.requireNonNull(
                 definition.getResultType(),
                 "resultType for dataset " + datasetId);
-        List<DatasetRow> rows = copyRows(datasetId, sourceRows);
+        List<DatasetRow> rows = copyRows(datasetId, queryResult.rows());
+        DatasetSchema schema = queryResult.schema();
 
-        validateShape(datasetId, resultType, rows);
-        validateFields(datasetId, definition.getExpectedFields(), rows);
-        return buildResult(datasetId, resultType, rows);
+        validateShape(datasetId, resultType, schema, rows);
+        validateFields(
+                datasetId,
+                definition.getExpectedFields(),
+                schema,
+                rows,
+                validateMetadataTypes);
+        return buildResult(datasetId, resultType, schema, rows);
     }
 
     private static void validateShape(
-            String datasetId, DatasetType resultType, List<DatasetRow> rows) {
+            String datasetId,
+            DatasetType resultType,
+            DatasetSchema schema,
+            List<DatasetRow> rows) {
         if ((resultType == DatasetType.SCALAR || resultType == DatasetType.SINGLE)
                 && rows.size() > 1) {
             throw error(
@@ -46,8 +74,7 @@ public final class DatasetResultValidator {
                             + " returned " + rows.size() + " rows");
         }
         if (resultType == DatasetType.SCALAR
-                && rows.size() == 1
-                && rows.get(0).fieldNames().size() != 1) {
+                && schema.fieldNames().size() != 1) {
             throw error(
                     ReportErrorCode.DATA_001,
                     datasetId,
@@ -59,7 +86,9 @@ public final class DatasetResultValidator {
     private static void validateFields(
             String datasetId,
             Map<String, FieldDefinition> expectedFields,
-            List<DatasetRow> rows) {
+            DatasetSchema schema,
+            List<DatasetRow> rows,
+            boolean validateMetadataTypes) {
         if (expectedFields == null || expectedFields.isEmpty()) {
             return;
         }
@@ -70,6 +99,25 @@ public final class DatasetResultValidator {
                     expected.getValue(),
                     "field definition for " + fieldName);
             Class<?> expectedType = resolveType(fieldName, field.getType());
+            if (validateMetadataTypes && !schema.containsField(fieldName)) {
+                throw error(
+                        ReportErrorCode.DATA_002,
+                        datasetId,
+                        "Dataset " + datasetId + " is missing expected alias "
+                                + fieldName);
+            }
+            Class<?> actualType = schema.containsField(fieldName)
+                    ? schema.typeOf(fieldName) : Object.class;
+            if (validateMetadataTypes
+                    && !schemaMatches(expectedType, actualType)) {
+                throw error(
+                        ReportErrorCode.DATA_003,
+                        datasetId,
+                        "Field " + fieldName + " in dataset " + datasetId
+                                + " expected " + normalizedType(field.getType())
+                                + " but JDBC metadata declared "
+                                + actualType.getSimpleName());
+            }
             for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
                 DatasetRow row = rows.get(rowIndex);
                 if (!row.containsField(fieldName)) {
@@ -109,6 +157,13 @@ public final class DatasetResultValidator {
         return expectedType.isInstance(value);
     }
 
+    private static boolean schemaMatches(
+            Class<?> expectedType, Class<?> actualType) {
+        return expectedType == Long.class
+                ? actualType == Long.class
+                : expectedType.equals(actualType);
+    }
+
     private static Class<?> resolveType(String fieldName, String type) {
         String normalized = normalizedType(type);
         Class<?> resolved = FIELD_TYPES.get(normalized);
@@ -126,14 +181,17 @@ public final class DatasetResultValidator {
     }
 
     private static DatasetResult buildResult(
-            String datasetId, DatasetType resultType, List<DatasetRow> rows) {
+            String datasetId,
+            DatasetType resultType,
+            DatasetSchema schema,
+            List<DatasetRow> rows) {
         if (resultType == DatasetType.SCALAR) {
-            return DatasetResult.scalar(datasetId, rows);
+            return DatasetResult.scalar(datasetId, schema, rows);
         }
         if (resultType == DatasetType.SINGLE) {
-            return DatasetResult.single(datasetId, rows);
+            return DatasetResult.single(datasetId, schema, rows);
         }
-        return DatasetResult.list(datasetId, rows);
+        return DatasetResult.list(datasetId, schema, rows);
     }
 
     private static List<DatasetRow> copyRows(

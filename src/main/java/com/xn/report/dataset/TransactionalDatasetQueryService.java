@@ -7,9 +7,10 @@ import com.xn.report.sql.ReadOnlySqlGuard;
 import com.xn.report.sql.ResolvedSqlParameters;
 import com.xn.report.sql.SqlFileRepository;
 import com.xn.report.sql.SqlParameterResolver;
-import java.util.List;
+import com.xn.report.sql.SqlQueryResult;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,7 @@ public class TransactionalDatasetQueryService
     private final SqlParameterResolver parameterResolver;
     private final NamedSqlExecutor executor;
     private final DatasetResultValidator resultValidator;
+    private final BiConsumer<DatasetDefinition, DatasetResult> executionObserver;
 
     public TransactionalDatasetQueryService(
             DatasetPlanner planner,
@@ -33,6 +35,31 @@ public class TransactionalDatasetQueryService
             SqlParameterResolver parameterResolver,
             NamedSqlExecutor executor,
             DatasetResultValidator resultValidator) {
+        this(
+                planner,
+                sqlFileRepository,
+                sqlGuard,
+                parameterResolver,
+                executor,
+                resultValidator,
+                new BiConsumer<DatasetDefinition, DatasetResult>() {
+                    @Override
+                    public void accept(
+                            DatasetDefinition definition,
+                            DatasetResult result) {
+                        // No-op by default.
+                    }
+                });
+    }
+
+    public TransactionalDatasetQueryService(
+            DatasetPlanner planner,
+            SqlFileRepository sqlFileRepository,
+            ReadOnlySqlGuard sqlGuard,
+            SqlParameterResolver parameterResolver,
+            NamedSqlExecutor executor,
+            DatasetResultValidator resultValidator,
+            BiConsumer<DatasetDefinition, DatasetResult> executionObserver) {
         this.planner = Objects.requireNonNull(planner, "planner");
         this.sqlFileRepository =
                 Objects.requireNonNull(sqlFileRepository, "sqlFileRepository");
@@ -42,6 +69,8 @@ public class TransactionalDatasetQueryService
         this.executor = Objects.requireNonNull(executor, "executor");
         this.resultValidator =
                 Objects.requireNonNull(resultValidator, "resultValidator");
+        this.executionObserver =
+                Objects.requireNonNull(executionObserver, "executionObserver");
     }
 
     @Override
@@ -59,6 +88,7 @@ public class TransactionalDatasetQueryService
             DatasetResult result = executeOne(
                     dataset, runtimeParameters, context.buildView());
             context.put(result);
+            executionObserver.accept(dataset, result);
         }
         return context.build();
     }
@@ -71,7 +101,7 @@ public class TransactionalDatasetQueryService
         sqlGuard.validate(sql);
         ResolvedSqlParameters parameters = parameterResolver.resolve(
                 definition, runtimeParameters, contextSnapshot);
-        List<DatasetRow> rows = executor.query(
+        SqlQueryResult queryResult = executor.query(
                 definition.getId(),
                 sql,
                 parameters,
@@ -83,7 +113,7 @@ public class TransactionalDatasetQueryService
                         definition.getMaxRows(),
                         DEFAULT_MAX_ROWS,
                         "maxRows"));
-        return resultValidator.validate(definition, rows);
+        return resultValidator.validate(definition, queryResult);
     }
 
     private String resolveSql(DatasetDefinition definition) {

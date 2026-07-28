@@ -11,7 +11,11 @@ public final class DatasetResult {
     private final DatasetSchema schema;
     private final List<DatasetRow> rows;
 
-    private DatasetResult(String id, DatasetType type, List<DatasetRow> sourceRows) {
+    private DatasetResult(
+            String id,
+            DatasetType type,
+            DatasetSchema explicitSchema,
+            List<DatasetRow> sourceRows) {
         this.id = requireId(id);
         this.type = type;
         if (sourceRows == null) {
@@ -28,19 +32,35 @@ public final class DatasetResult {
         }
         validateShape(id, type, copiedRows);
         this.rows = Collections.unmodifiableList(copiedRows);
-        this.schema = DatasetSchema.infer(copiedRows);
+        this.schema = explicitSchema == null
+                ? DatasetSchema.infer(copiedRows) : explicitSchema;
     }
 
     public static DatasetResult scalar(String id, List<DatasetRow> rows) {
-        return new DatasetResult(id, DatasetType.SCALAR, rows);
+        return new DatasetResult(id, DatasetType.SCALAR, null, rows);
+    }
+
+    public static DatasetResult scalar(
+            String id, DatasetSchema schema, List<DatasetRow> rows) {
+        return new DatasetResult(id, DatasetType.SCALAR, requireSchema(schema), rows);
     }
 
     public static DatasetResult single(String id, List<DatasetRow> rows) {
-        return new DatasetResult(id, DatasetType.SINGLE, rows);
+        return new DatasetResult(id, DatasetType.SINGLE, null, rows);
+    }
+
+    public static DatasetResult single(
+            String id, DatasetSchema schema, List<DatasetRow> rows) {
+        return new DatasetResult(id, DatasetType.SINGLE, requireSchema(schema), rows);
     }
 
     public static DatasetResult list(String id, List<DatasetRow> rows) {
-        return new DatasetResult(id, DatasetType.LIST, rows);
+        return new DatasetResult(id, DatasetType.LIST, null, rows);
+    }
+
+    public static DatasetResult list(
+            String id, DatasetSchema schema, List<DatasetRow> rows) {
+        return new DatasetResult(id, DatasetType.LIST, requireSchema(schema), rows);
     }
 
     public String id() {
@@ -101,5 +121,12 @@ public final class DatasetResult {
             throw new IllegalArgumentException("Dataset id must not be blank");
         }
         return id;
+    }
+
+    private static DatasetSchema requireSchema(DatasetSchema schema) {
+        if (schema == null) {
+            throw new IllegalArgumentException("Dataset schema must not be null");
+        }
+        return schema;
     }
 }

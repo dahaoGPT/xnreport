@@ -1,18 +1,41 @@
 package com.xn.report.sql;
 
 import com.xn.report.dataset.DatasetRow;
+import com.xn.report.dataset.DatasetSchema;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.sql.Blob;
+import java.sql.Clob;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.sql.Types;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
 public final class ResultSetRowMapper {
+
+    public DatasetSchema schema(ResultSetMetaData metadata) throws SQLException {
+        if (metadata == null) {
+            throw new IllegalArgumentException("ResultSetMetaData must not be null");
+        }
+        int columnCount = metadata.getColumnCount();
+        Object[] pairs = new Object[columnCount * 2];
+        Map<String, String> normalizedLabels = new LinkedHashMap<String, String>();
+        for (int index = 1; index <= columnCount; index++) {
+            String label = uniqueLabel(metadata, index, normalizedLabels);
+            pairs[(index - 1) * 2] = label;
+            pairs[(index - 1) * 2 + 1] =
+                    normalizedClass(metadata.getColumnType(index));
+        }
+        return DatasetSchema.of(pairs);
+    }
 
     public DatasetRow map(ResultSet resultSet) throws SQLException {
         if (resultSet == null) {
@@ -23,14 +46,13 @@ public final class ResultSetRowMapper {
         Map<String, Object> values = new LinkedHashMap<String, Object>();
         Map<String, String> normalizedLabels = new LinkedHashMap<String, String>();
         for (int index = 1; index <= columnCount; index++) {
-            String label = requireLabel(metadata.getColumnLabel(index), index);
-            String normalized = label.toLowerCase(Locale.ROOT);
-            if (normalizedLabels.containsKey(normalized)) {
-                throw new IllegalArgumentException(
-                        "Duplicate column label ignoring case: " + label);
-            }
-            normalizedLabels.put(normalized, label);
-            values.put(label, normalize(resultSet.getObject(index)));
+            String label = uniqueLabel(metadata, index, normalizedLabels);
+            values.put(
+                    label,
+                    normalize(
+                            label,
+                            metadata.getColumnType(index),
+                            resultSet.getObject(index)));
         }
         return toRow(values);
     }
@@ -45,42 +67,236 @@ public final class ResultSetRowMapper {
         return DatasetRow.of(pairs);
     }
 
-    private static Object normalize(Object value) {
+    private static Object normalize(
+            String label, int columnType, Object value) throws SQLException {
         if (value == null) {
             return null;
         }
-        if (value instanceof Timestamp) {
-            return ((Timestamp) value).toLocalDateTime();
+        if (isInteger(columnType)) {
+            return normalizeInteger(label, value);
         }
-        if (value instanceof java.sql.Date) {
-            return ((java.sql.Date) value).toLocalDate();
+        if (columnType == Types.DECIMAL || columnType == Types.NUMERIC) {
+            return value instanceof BigDecimal
+                    ? value : decimal(label, value);
         }
-        if (value instanceof Time) {
-            return ((Time) value).toLocalTime();
+        if (columnType == Types.FLOAT
+                || columnType == Types.REAL
+                || columnType == Types.DOUBLE) {
+            return decimal(label, value);
         }
-        if (value instanceof BigDecimal) {
-            return value;
-        }
-        if (value instanceof Float || value instanceof Double) {
-            return new BigDecimal(String.valueOf(value));
-        }
-        if (value instanceof BigInteger) {
-            BigInteger integer = (BigInteger) value;
-            if (integer.bitLength() < Long.SIZE) {
-                return Long.valueOf(integer.longValue());
+        if (columnType == Types.DATE) {
+            if (value instanceof java.sql.Date) {
+                return ((java.sql.Date) value).toLocalDate();
             }
-            return integer;
+            if (value instanceof LocalDate) {
+                return value;
+            }
+            throw incompatible(label, columnType, value);
         }
-        if (value instanceof Byte
-                || value instanceof Short
-                || value instanceof Integer
-                || value instanceof Long) {
-            return Long.valueOf(((Number) value).longValue());
+        if (columnType == Types.TIME) {
+            if (value instanceof Time) {
+                return ((Time) value).toLocalTime();
+            }
+            if (value instanceof LocalTime) {
+                return value;
+            }
+            throw incompatible(label, columnType, value);
+        }
+        if (columnType == Types.TIMESTAMP
+                || columnType == Types.TIMESTAMP_WITH_TIMEZONE) {
+            if (value instanceof Timestamp) {
+                return ((Timestamp) value).toLocalDateTime();
+            }
+            if (value instanceof LocalDateTime) {
+                return value;
+            }
+            throw incompatible(label, columnType, value);
+        }
+        if (columnType == Types.BIT || columnType == Types.BOOLEAN) {
+            return normalizeBoolean(label, columnType, value);
+        }
+        if (isCharacter(columnType)) {
+            if (value instanceof Clob) {
+                Clob clob = (Clob) value;
+                long length = clob.length();
+                if (length > Integer.MAX_VALUE) {
+                    throw new IllegalArgumentException(
+                            "JDBC character column " + label + " is too large");
+                }
+                try {
+                    return clob.getSubString(1L, (int) length);
+                } finally {
+                    clob.free();
+                }
+            }
+            return String.valueOf(value);
+        }
+        if (isBinary(columnType)) {
+            return normalizeBinary(label, columnType, value);
         }
         if (value instanceof byte[]) {
             return ((byte[]) value).clone();
         }
         return value;
+    }
+
+    private static Long normalizeInteger(String label, Object value) {
+        try {
+            if (value instanceof BigInteger) {
+                return Long.valueOf(((BigInteger) value).longValueExact());
+            }
+            if (value instanceof BigDecimal) {
+                return Long.valueOf(((BigDecimal) value).longValueExact());
+            }
+            if (value instanceof Byte
+                    || value instanceof Short
+                    || value instanceof Integer
+                    || value instanceof Long) {
+                return Long.valueOf(((Number) value).longValue());
+            }
+            if (value instanceof Number) {
+                return Long.valueOf(
+                        new BigDecimal(String.valueOf(value)).longValueExact());
+            }
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException(
+                    "JDBC integer column " + label
+                            + " is outside the Long range: " + value,
+                    exception);
+        }
+        throw incompatible(label, Types.BIGINT, value);
+    }
+
+    private static BigDecimal decimal(String label, Object value) {
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "JDBC decimal column " + label
+                            + " cannot be represented as BigDecimal",
+                    exception);
+        }
+    }
+
+    private static Boolean normalizeBoolean(
+            String label, int columnType, Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value instanceof byte[]) {
+            for (byte current : (byte[]) value) {
+                if (current != 0) {
+                    return Boolean.TRUE;
+                }
+            }
+            return Boolean.FALSE;
+        }
+        if (value instanceof Number) {
+            return new BigDecimal(String.valueOf(value))
+                    .compareTo(BigDecimal.ZERO) != 0;
+        }
+        throw incompatible(label, columnType, value);
+    }
+
+    private static byte[] normalizeBinary(
+            String label, int columnType, Object value) throws SQLException {
+        if (value instanceof byte[]) {
+            return ((byte[]) value).clone();
+        }
+        if (value instanceof Blob) {
+            Blob blob = (Blob) value;
+            long length = blob.length();
+            if (length > Integer.MAX_VALUE) {
+                throw new IllegalArgumentException(
+                        "JDBC binary column " + label + " is too large");
+            }
+            try {
+                return blob.getBytes(1L, (int) length);
+            } finally {
+                blob.free();
+            }
+        }
+        throw incompatible(label, columnType, value);
+    }
+
+    private static boolean isInteger(int columnType) {
+        return columnType == Types.TINYINT
+                || columnType == Types.SMALLINT
+                || columnType == Types.INTEGER
+                || columnType == Types.BIGINT;
+    }
+
+    private static boolean isCharacter(int columnType) {
+        return columnType == Types.CHAR
+                || columnType == Types.VARCHAR
+                || columnType == Types.LONGVARCHAR
+                || columnType == Types.NCHAR
+                || columnType == Types.NVARCHAR
+                || columnType == Types.LONGNVARCHAR
+                || columnType == Types.CLOB
+                || columnType == Types.NCLOB;
+    }
+
+    private static boolean isBinary(int columnType) {
+        return columnType == Types.BINARY
+                || columnType == Types.VARBINARY
+                || columnType == Types.LONGVARBINARY
+                || columnType == Types.BLOB;
+    }
+
+    private static Class<?> normalizedClass(int columnType) {
+        if (isInteger(columnType)) {
+            return Long.class;
+        }
+        if (columnType == Types.DECIMAL
+                || columnType == Types.NUMERIC
+                || columnType == Types.FLOAT
+                || columnType == Types.REAL
+                || columnType == Types.DOUBLE) {
+            return BigDecimal.class;
+        }
+        if (columnType == Types.DATE) {
+            return LocalDate.class;
+        }
+        if (columnType == Types.TIME) {
+            return LocalTime.class;
+        }
+        if (columnType == Types.TIMESTAMP
+                || columnType == Types.TIMESTAMP_WITH_TIMEZONE) {
+            return LocalDateTime.class;
+        }
+        if (columnType == Types.BIT || columnType == Types.BOOLEAN) {
+            return Boolean.class;
+        }
+        if (isCharacter(columnType)) {
+            return String.class;
+        }
+        if (isBinary(columnType)) {
+            return byte[].class;
+        }
+        return Object.class;
+    }
+
+    private static String uniqueLabel(
+            ResultSetMetaData metadata,
+            int index,
+            Map<String, String> normalizedLabels) throws SQLException {
+        String label = requireLabel(metadata.getColumnLabel(index), index);
+        String normalized = label.toLowerCase(Locale.ROOT);
+        if (normalizedLabels.containsKey(normalized)) {
+            throw new IllegalArgumentException(
+                    "Duplicate column label ignoring case: " + label);
+        }
+        normalizedLabels.put(normalized, label);
+        return label;
+    }
+
+    private static IllegalArgumentException incompatible(
+            String label, int columnType, Object value) {
+        return new IllegalArgumentException(
+                "JDBC column " + label + " of type " + columnType
+                        + " returned unsupported value "
+                        + value.getClass().getName());
     }
 
     private static String requireLabel(String label, int index) {

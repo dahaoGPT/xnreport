@@ -7,6 +7,7 @@ import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.FieldDefinition;
 import com.xn.report.error.ReportErrorCode;
 import com.xn.report.error.ReportException;
+import com.xn.report.sql.SqlQueryResult;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Arrays;
@@ -19,6 +20,56 @@ import org.junit.jupiter.api.Test;
 class DatasetResultValidatorTest {
 
     private final DatasetResultValidator validator = new DatasetResultValidator();
+
+    @Test
+    void validatesAliasesAndTypesFromMetadataWhenListHasNoRows() {
+        DatasetDefinition definition = definition(
+                DatasetType.LIST,
+                field("centerName", "STRING", true),
+                field("avgHours", "DECIMAL", false));
+        SqlQueryResult missingAlias = new SqlQueryResult(
+                DatasetSchema.of("centerName", String.class),
+                Collections.<DatasetRow>emptyList());
+        SqlQueryResult wrongType = new SqlQueryResult(
+                DatasetSchema.of(
+                        "centerName", String.class,
+                        "avgHours", String.class),
+                Collections.<DatasetRow>emptyList());
+
+        assertThatThrownBy(() -> validator.validate(definition, missingAlias))
+                .isInstanceOfSatisfying(ReportException.class, exception ->
+                        assertThat(exception.getErrorCode())
+                                .isEqualTo(ReportErrorCode.DATA_002))
+                .hasMessageContaining("avgHours");
+        assertThatThrownBy(() -> validator.validate(definition, wrongType))
+                .isInstanceOfSatisfying(ReportException.class, exception ->
+                        assertThat(exception.getErrorCode())
+                                .isEqualTo(ReportErrorCode.DATA_003))
+                .hasMessageContaining("avgHours")
+                .hasMessageContaining("DECIMAL");
+    }
+
+    @Test
+    void preservesJdbcMetadataSchemaOnValidatedEmptyResult() {
+        DatasetDefinition definition = definition(
+                DatasetType.LIST,
+                field("centerName", "STRING", true),
+                field("avgHours", "DECIMAL", false));
+        DatasetSchema metadataSchema = DatasetSchema.of(
+                "centerName", String.class,
+                "avgHours", BigDecimal.class);
+
+        DatasetResult result = validator.validate(
+                definition,
+                new SqlQueryResult(
+                        metadataSchema, Collections.<DatasetRow>emptyList()));
+
+        assertThat(result.list()).isEmpty();
+        assertThat(result.schema().fieldNames())
+                .containsExactly("centerName", "avgHours");
+        assertThat(result.schema().typeOf("avgHours"))
+                .isEqualTo(BigDecimal.class);
+    }
 
     @Test
     void validatesRequiredAliasesTypesAndOptionalNulls() {

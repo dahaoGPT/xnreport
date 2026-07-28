@@ -1,32 +1,34 @@
 package com.xn.report.config.definition;
 
+import com.xn.report.transform.DivideByZeroStrategy;
+import com.xn.report.transform.FieldConflictStrategy;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
 public class TransformDefinition {
 
-    private String type;
+    private TransformType type;
     private String field;
     private List<String> fields = new ArrayList<String>();
-    private String operator;
+    private List<SortFieldDefinition> sortFields =
+            new ArrayList<SortFieldDefinition>();
+    private TransformOperator operator;
     private Object value;
     private String sourceField;
     private String targetField;
     private BigDecimal operand;
-    private String direction;
-    private String nullOrder;
     private Integer limit;
     private Integer scale;
-    private String divideByZeroStrategy;
+    private DivideByZeroStrategy divideByZeroStrategy;
     private BigDecimal divideByZeroDefault;
-    private String fieldConflictStrategy;
+    private FieldConflictStrategy fieldConflictStrategy;
 
-    public String getType() {
+    public TransformType getType() {
         return type;
     }
 
-    public void setType(String type) {
+    public void setType(TransformType type) {
         this.type = type;
     }
 
@@ -46,11 +48,20 @@ public class TransformDefinition {
         this.fields = fields == null ? new ArrayList<String>() : fields;
     }
 
-    public String getOperator() {
+    public List<SortFieldDefinition> getSortFields() {
+        return sortFields;
+    }
+
+    public void setSortFields(List<SortFieldDefinition> sortFields) {
+        this.sortFields = sortFields == null
+                ? new ArrayList<SortFieldDefinition>() : sortFields;
+    }
+
+    public TransformOperator getOperator() {
         return operator;
     }
 
-    public void setOperator(String operator) {
+    public void setOperator(TransformOperator operator) {
         this.operator = operator;
     }
 
@@ -86,22 +97,6 @@ public class TransformDefinition {
         this.operand = operand;
     }
 
-    public String getDirection() {
-        return direction;
-    }
-
-    public void setDirection(String direction) {
-        this.direction = direction;
-    }
-
-    public String getNullOrder() {
-        return nullOrder;
-    }
-
-    public void setNullOrder(String nullOrder) {
-        this.nullOrder = nullOrder;
-    }
-
     public Integer getLimit() {
         return limit;
     }
@@ -118,11 +113,12 @@ public class TransformDefinition {
         this.scale = scale;
     }
 
-    public String getDivideByZeroStrategy() {
+    public DivideByZeroStrategy getDivideByZeroStrategy() {
         return divideByZeroStrategy;
     }
 
-    public void setDivideByZeroStrategy(String divideByZeroStrategy) {
+    public void setDivideByZeroStrategy(
+            DivideByZeroStrategy divideByZeroStrategy) {
         this.divideByZeroStrategy = divideByZeroStrategy;
     }
 
@@ -134,11 +130,12 @@ public class TransformDefinition {
         this.divideByZeroDefault = divideByZeroDefault;
     }
 
-    public String getFieldConflictStrategy() {
+    public FieldConflictStrategy getFieldConflictStrategy() {
         return fieldConflictStrategy;
     }
 
-    public void setFieldConflictStrategy(String fieldConflictStrategy) {
+    public void setFieldConflictStrategy(
+            FieldConflictStrategy fieldConflictStrategy) {
         this.fieldConflictStrategy = fieldConflictStrategy;
     }
 }

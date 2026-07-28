@@ -4,6 +4,9 @@ import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.DistributionDefinition;
 import com.xn.report.config.definition.DistributionDefinition.BinDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
+import com.xn.report.config.definition.SortFieldDefinition;
+import com.xn.report.config.definition.TransformDefinition;
+import com.xn.report.config.definition.TransformOperator;
 import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
@@ -16,6 +19,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -95,8 +99,211 @@ public final class ReportDefinitionValidator {
             }
             validateSheetName(dataset.getSheetName(), path + ".sheetName",
                     sheetNames, result);
+            validateTransforms(dataset, path, result);
         }
         return ids;
+    }
+
+    private void validateTransforms(
+            DatasetDefinition dataset,
+            String datasetPath,
+            ValidationResult result) {
+        List<TransformDefinition> transforms = safeList(dataset.getTransforms());
+        Set<String> derivedTargets = new LinkedHashSet<String>();
+        for (int index = 0; index < transforms.size(); index++) {
+            TransformDefinition transform = transforms.get(index);
+            String path = datasetPath + ".transforms[" + index + "]";
+            if (transform == null) {
+                result.add("CFG-TRANSFORM", path,
+                        "Transform must not be null");
+                continue;
+            }
+            if (transform.getType() == null) {
+                result.add("CFG-TRANSFORM-TYPE", path + ".type",
+                        "Transform type is required");
+                continue;
+            }
+            switch (transform.getType()) {
+                case FILTER:
+                    validateFilterTransform(transform, path, result);
+                    break;
+                case SORT:
+                    validateSortTransform(transform, path, result);
+                    break;
+                case DISTINCT:
+                    validateDistinctTransform(transform, path, result);
+                    break;
+                case LIMIT:
+                    if (transform.getLimit() == null
+                            || transform.getLimit().intValue() < 0) {
+                        result.add("CFG-TRANSFORM-LIMIT", path + ".limit",
+                                "LIMIT requires a non-negative limit");
+                    }
+                    break;
+                case DERIVED_FIELD:
+                    validateDerivedTransform(
+                            dataset, transform, path, derivedTargets, result);
+                    break;
+                default:
+                    result.add("CFG-TRANSFORM-TYPE", path + ".type",
+                            "Unsupported transform type: " + transform.getType());
+            }
+        }
+    }
+
+    private void validateFilterTransform(
+            TransformDefinition transform,
+            String path,
+            ValidationResult result) {
+        if (!hasText(transform.getField())) {
+            result.add("CFG-TRANSFORM-FIELD", path + ".field",
+                    "FILTER requires a non-blank field");
+        }
+        TransformOperator operator = transform.getOperator();
+        if (!isFilterOperator(operator)) {
+            result.add("CFG-TRANSFORM-OPERATOR", path + ".operator",
+                    "FILTER requires a filter operator");
+        } else if (operator != TransformOperator.IS_NULL
+                && operator != TransformOperator.IS_NOT_NULL
+                && transform.getValue() == null) {
+            result.add("CFG-TRANSFORM-VALUE", path + ".value",
+                    "FILTER comparison requires a value");
+        }
+    }
+
+    private void validateSortTransform(
+            TransformDefinition transform,
+            String path,
+            ValidationResult result) {
+        List<SortFieldDefinition> fields = safeList(transform.getSortFields());
+        if (fields.isEmpty()) {
+            result.add("CFG-TRANSFORM-SORT-FIELDS", path + ".sortFields",
+                    "SORT requires at least one sort field");
+        }
+        Set<String> seenFields = new LinkedHashSet<String>();
+        for (int index = 0; index < fields.size(); index++) {
+            SortFieldDefinition field = fields.get(index);
+            String fieldPath = path + ".sortFields[" + index + "]";
+            if (field == null) {
+                result.add("CFG-TRANSFORM-SORT-FIELD", fieldPath,
+                        "Sort field must not be null");
+                continue;
+            }
+            if (!hasText(field.getField())) {
+                result.add("CFG-TRANSFORM-SORT-FIELD", fieldPath + ".field",
+                        "Sort field name is required");
+            } else if (!seenFields.add(
+                    field.getField().toLowerCase(Locale.ROOT))) {
+                result.add("CFG-TRANSFORM-SORT-FIELD", fieldPath + ".field",
+                        "Duplicate sort field: " + field.getField());
+            }
+            if (field.getDirection() == null) {
+                result.add("CFG-TRANSFORM-DIRECTION", fieldPath + ".direction",
+                        "Sort direction is required");
+            }
+            if (field.getNullOrder() == null) {
+                result.add("CFG-TRANSFORM-NULL-ORDER", fieldPath + ".nullOrder",
+                        "Sort null order is required");
+            }
+        }
+    }
+
+    private void validateDistinctTransform(
+            TransformDefinition transform,
+            String path,
+            ValidationResult result) {
+        List<String> fields = safeList(transform.getFields());
+        if (fields.isEmpty()) {
+            result.add("CFG-TRANSFORM-DISTINCT-FIELDS", path + ".fields",
+                    "DISTINCT requires at least one field");
+            return;
+        }
+        Set<String> seenFields = new LinkedHashSet<String>();
+        for (int index = 0; index < fields.size(); index++) {
+            String field = fields.get(index);
+            if (!hasText(field)
+                    || !seenFields.add(field.toLowerCase(Locale.ROOT))) {
+                result.add("CFG-TRANSFORM-DISTINCT-FIELDS",
+                        path + ".fields[" + index + "]",
+                        "DISTINCT fields must be non-blank and unique");
+            }
+        }
+    }
+
+    private void validateDerivedTransform(
+            DatasetDefinition dataset,
+            TransformDefinition transform,
+            String path,
+            Set<String> derivedTargets,
+            ValidationResult result) {
+        if (dataset.getResultType() == com.xn.report.dataset.DatasetType.SCALAR) {
+            result.add("CFG-TRANSFORM-DATASET-TYPE", path,
+                    "DERIVED_FIELD supports only LIST or SINGLE datasets");
+        }
+        if (!hasText(transform.getSourceField())) {
+            result.add("CFG-TRANSFORM-SOURCE-FIELD", path + ".sourceField",
+                    "DERIVED_FIELD requires a sourceField");
+        }
+        if (!hasText(transform.getTargetField())) {
+            result.add("CFG-TRANSFORM-TARGET-FIELD", path + ".targetField",
+                    "DERIVED_FIELD requires a targetField");
+        } else if (!derivedTargets.add(
+                transform.getTargetField().toLowerCase(Locale.ROOT))) {
+            result.add("CFG-TRANSFORM-DUPLICATE-TARGET", path + ".targetField",
+                    "Duplicate derived target: " + transform.getTargetField());
+        }
+        if (!isArithmeticOperator(transform.getOperator())) {
+            result.add("CFG-TRANSFORM-OPERATOR", path + ".operator",
+                    "DERIVED_FIELD requires an arithmetic operator");
+        }
+        if (transform.getOperand() == null) {
+            result.add("CFG-TRANSFORM-OPERAND", path + ".operand",
+                    "DERIVED_FIELD requires a numeric operand");
+        }
+        if (transform.getScale() != null
+                && transform.getScale().intValue() < 0) {
+            result.add("CFG-TRANSFORM-SCALE", path + ".scale",
+                    "DERIVED_FIELD scale must be non-negative");
+        }
+        if (transform.getDivideByZeroStrategy()
+                == com.xn.report.transform.DivideByZeroStrategy.DEFAULT_VALUE
+                && transform.getDivideByZeroDefault() == null) {
+            result.add("CFG-TRANSFORM-DIVIDE-DEFAULT",
+                    path + ".divideByZeroDefault",
+                    "DEFAULT_VALUE requires divideByZeroDefault");
+        }
+    }
+
+    private static boolean isFilterOperator(TransformOperator operator) {
+        if (operator == null) {
+            return false;
+        }
+        switch (operator) {
+            case EQUAL:
+            case EQ:
+            case NOT_EQUAL:
+            case NE:
+            case GREATER_THAN:
+            case GT:
+            case GREATER_THAN_OR_EQUAL:
+            case GTE:
+            case LESS_THAN:
+            case LT:
+            case LESS_THAN_OR_EQUAL:
+            case LTE:
+            case IS_NULL:
+            case IS_NOT_NULL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static boolean isArithmeticOperator(TransformOperator operator) {
+        return operator == TransformOperator.ADD
+                || operator == TransformOperator.SUBTRACT
+                || operator == TransformOperator.MULTIPLY
+                || operator == TransformOperator.DIVIDE;
     }
 
     private void validateSheetName(

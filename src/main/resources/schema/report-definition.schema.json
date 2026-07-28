@@ -167,6 +167,12 @@
             "$ref": "#/definitions/field"
           }
         },
+        "transforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/transform"
+          }
+        },
         "timeoutSeconds": {
           "type": "integer",
           "minimum": 1
@@ -174,6 +180,214 @@
         "maxRows": {
           "type": "integer",
           "minimum": 1
+        }
+      }
+    },
+    "transform": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "field",
+            "operator"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "FILTER"
+              ]
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "EQUAL",
+                "EQ",
+                "NOT_EQUAL",
+                "NE",
+                "GREATER_THAN",
+                "GT",
+                "GREATER_THAN_OR_EQUAL",
+                "GTE",
+                "LESS_THAN",
+                "LT",
+                "LESS_THAN_OR_EQUAL",
+                "LTE",
+                "IS_NULL",
+                "IS_NOT_NULL"
+              ]
+            },
+            "value": {}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "sortFields"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "SORT"
+              ]
+            },
+            "sortFields": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/definitions/sortField"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "fields"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "DISTINCT"
+              ]
+            },
+            "fields": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "x-java-nonBlank": true
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "limit"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "LIMIT"
+              ]
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "targetField",
+            "sourceField",
+            "operator",
+            "operand"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "DERIVED_FIELD"
+              ]
+            },
+            "targetField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "sourceField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "ADD",
+                "SUBTRACT",
+                "MULTIPLY",
+                "DIVIDE"
+              ]
+            },
+            "operand": {
+              "type": "number"
+            },
+            "scale": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "divideByZeroStrategy": {
+              "type": "string",
+              "enum": [
+                "FAIL",
+                "NULL",
+                "DEFAULT_VALUE"
+              ]
+            },
+            "divideByZeroDefault": {
+              "type": "number"
+            },
+            "fieldConflictStrategy": {
+              "type": "string",
+              "enum": [
+                "FAIL",
+                "REPLACE"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "sortField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "direction",
+        "nullOrder"
+      ],
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "ASC",
+            "DESC"
+          ]
+        },
+        "nullOrder": {
+          "type": "string",
+          "enum": [
+            "FIRST",
+            "LAST"
+          ]
         }
       }
     },

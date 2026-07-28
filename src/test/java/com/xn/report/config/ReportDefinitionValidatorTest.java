@@ -11,10 +11,18 @@ import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.DistributionDefinition;
 import com.xn.report.config.definition.DistributionDefinition.BinDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
+import com.xn.report.config.definition.SortFieldDefinition;
+import com.xn.report.config.definition.TransformDefinition;
+import com.xn.report.config.definition.TransformOperator;
+import com.xn.report.config.definition.TransformType;
 import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.support.JsonSchemaContract;
 import com.xn.report.support.TestFixtures;
+import com.xn.report.dataset.DatasetType;
+import com.xn.report.transform.Direction;
+import com.xn.report.transform.DivideByZeroStrategy;
+import com.xn.report.transform.NullOrder;
 import java.math.BigDecimal;
 import java.nio.file.Paths;
 import java.util.Arrays;
@@ -252,6 +260,108 @@ class ReportDefinitionValidatorTest {
     }
 
     @Test
+    void validatesEveryDatasetTransformAndReportsAllProblems() {
+        DatasetDefinition dataset = TestFixtures.dataset("source");
+        dataset.setResultType(DatasetType.SCALAR);
+
+        TransformDefinition missingType = new TransformDefinition();
+
+        TransformDefinition filter = new TransformDefinition();
+        filter.setType(TransformType.FILTER);
+        filter.setField(" ");
+        filter.setOperator(TransformOperator.GREATER_THAN);
+
+        TransformDefinition sort = new TransformDefinition();
+        sort.setType(TransformType.SORT);
+        sort.setSortFields(Arrays.asList(new SortFieldDefinition()));
+
+        TransformDefinition distinct = new TransformDefinition();
+        distinct.setType(TransformType.DISTINCT);
+
+        TransformDefinition limit = new TransformDefinition();
+        limit.setType(TransformType.LIMIT);
+        limit.setLimit(-1);
+
+        TransformDefinition derived = new TransformDefinition();
+        derived.setType(TransformType.DERIVED_FIELD);
+        derived.setTargetField("Result");
+        derived.setSourceField(" ");
+        derived.setScale(-1);
+        derived.setDivideByZeroStrategy(DivideByZeroStrategy.DEFAULT_VALUE);
+
+        TransformDefinition duplicateDerived = new TransformDefinition();
+        duplicateDerived.setType(TransformType.DERIVED_FIELD);
+        duplicateDerived.setTargetField("result");
+        duplicateDerived.setSourceField("value");
+        duplicateDerived.setOperator(TransformOperator.ADD);
+        duplicateDerived.setOperand(BigDecimal.ONE);
+
+        dataset.setTransforms(Arrays.asList(
+                missingType, filter, sort, distinct, limit, derived, duplicateDerived));
+
+        ValidationResult result = validator.validate(TestFixtures.report(dataset));
+
+        assertThat(result.codes()).contains(
+                "CFG-TRANSFORM-TYPE",
+                "CFG-TRANSFORM-FIELD",
+                "CFG-TRANSFORM-VALUE",
+                "CFG-TRANSFORM-SORT-FIELD",
+                "CFG-TRANSFORM-DIRECTION",
+                "CFG-TRANSFORM-NULL-ORDER",
+                "CFG-TRANSFORM-DISTINCT-FIELDS",
+                "CFG-TRANSFORM-LIMIT",
+                "CFG-TRANSFORM-SOURCE-FIELD",
+                "CFG-TRANSFORM-OPERATOR",
+                "CFG-TRANSFORM-OPERAND",
+                "CFG-TRANSFORM-SCALE",
+                "CFG-TRANSFORM-DIVIDE-DEFAULT",
+                "CFG-TRANSFORM-DUPLICATE-TARGET",
+                "CFG-TRANSFORM-DATASET-TYPE");
+    }
+
+    @Test
+    void acceptsCompleteStronglyTypedTransformDefinitions() {
+        DatasetDefinition dataset = TestFixtures.dataset("source");
+
+        TransformDefinition filter = new TransformDefinition();
+        filter.setType(TransformType.FILTER);
+        filter.setField("avgHours");
+        filter.setOperator(TransformOperator.GREATER_THAN);
+        filter.setValue(new BigDecimal("5"));
+
+        SortFieldDefinition sortField = new SortFieldDefinition();
+        sortField.setField("avgHours");
+        sortField.setDirection(Direction.DESC);
+        sortField.setNullOrder(NullOrder.LAST);
+        TransformDefinition sort = new TransformDefinition();
+        sort.setType(TransformType.SORT);
+        sort.setSortFields(Arrays.asList(sortField));
+
+        TransformDefinition distinct = new TransformDefinition();
+        distinct.setType(TransformType.DISTINCT);
+        distinct.setFields(Arrays.asList("personName"));
+
+        TransformDefinition limit = new TransformDefinition();
+        limit.setType(TransformType.LIMIT);
+        limit.setLimit(10);
+
+        TransformDefinition derived = new TransformDefinition();
+        derived.setType(TransformType.DERIVED_FIELD);
+        derived.setTargetField("overHours");
+        derived.setSourceField("avgHours");
+        derived.setOperator(TransformOperator.SUBTRACT);
+        derived.setOperand(new BigDecimal("5"));
+        derived.setScale(2);
+        derived.setDivideByZeroStrategy(DivideByZeroStrategy.FAIL);
+
+        dataset.setTransforms(Arrays.asList(filter, sort, distinct, limit, derived));
+
+        ValidationResult result = validator.validate(TestFixtures.report(dataset));
+
+        assertThat(result.isValid()).isTrue();
+    }
+
+    @Test
     void schemaValidatesCompleteValidAndInvalidInstances() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode schemaDocument = mapper.readTree(Paths.get(
@@ -259,8 +369,59 @@ class ReportDefinitionValidatorTest {
         JsonSchemaContract schema = new JsonSchemaContract(schemaDocument);
         ObjectNode valid = (ObjectNode) mapper.readTree(Paths.get(
                 "src/test/resources/fixtures/configs/minimal-report.json").toFile());
+        ObjectNode validDataset = (ObjectNode) valid.path("datasets").get(0);
+        validDataset.set("transforms", mapper.readTree("["
+                + "{\"type\":\"FILTER\",\"field\":\"avgHours\","
+                + "\"operator\":\"GREATER_THAN\",\"value\":5},"
+                + "{\"type\":\"SORT\",\"sortFields\":["
+                + "{\"field\":\"team\",\"direction\":\"ASC\",\"nullOrder\":\"FIRST\"},"
+                + "{\"field\":\"avgHours\",\"direction\":\"DESC\",\"nullOrder\":\"LAST\"}]},"
+                + "{\"type\":\"DISTINCT\",\"fields\":[\"personName\",\"team\"]},"
+                + "{\"type\":\"LIMIT\",\"limit\":10},"
+                + "{\"type\":\"DERIVED_FIELD\",\"targetField\":\"overHours\","
+                + "\"sourceField\":\"avgHours\",\"operator\":\"SUBTRACT\","
+                + "\"operand\":5,\"scale\":2,\"divideByZeroStrategy\":\"FAIL\","
+                + "\"fieldConflictStrategy\":\"REPLACE\"}"
+                + "]"));
 
         assertThat(schema.validate(valid)).isEmpty();
+
+        ObjectNode unknownTransformType = valid.deepCopy();
+        ((ObjectNode) unknownTransformType.path("datasets").get(0)
+                .path("transforms").get(0)).put("type", "UNKNOWN");
+        assertSchemaRejects(schema, unknownTransformType);
+
+        ObjectNode missingFilterField = valid.deepCopy();
+        ((ObjectNode) missingFilterField.path("datasets").get(0)
+                .path("transforms").get(0)).remove("field");
+        assertSchemaRejects(schema, missingFilterField);
+
+        ObjectNode emptySortFields = valid.deepCopy();
+        ((ObjectNode) emptySortFields.path("datasets").get(0)
+                .path("transforms").get(1)).set(
+                        "sortFields", mapper.createArrayNode());
+        assertSchemaRejects(schema, emptySortFields);
+
+        ObjectNode unknownSortProperty = valid.deepCopy();
+        ((ObjectNode) unknownSortProperty.path("datasets").get(0)
+                .path("transforms").get(1).path("sortFields").get(0))
+                .put("unknown", true);
+        assertSchemaRejects(schema, unknownSortProperty);
+
+        ObjectNode negativeLimit = valid.deepCopy();
+        ((ObjectNode) negativeLimit.path("datasets").get(0)
+                .path("transforms").get(3)).put("limit", -1);
+        assertSchemaRejects(schema, negativeLimit);
+
+        ObjectNode unknownArithmeticOperator = valid.deepCopy();
+        ((ObjectNode) unknownArithmeticOperator.path("datasets").get(0)
+                .path("transforms").get(4)).put("operator", "POWER");
+        assertSchemaRejects(schema, unknownArithmeticOperator);
+
+        ObjectNode unknownTransformProperty = valid.deepCopy();
+        ((ObjectNode) unknownTransformProperty.path("datasets").get(0)
+                .path("transforms").get(4)).put("script", "arbitrary()");
+        assertSchemaRejects(schema, unknownTransformProperty);
 
         ObjectNode unknownRootProperty = valid.deepCopy();
         unknownRootProperty.put("unknown", true);

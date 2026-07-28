@@ -6,7 +6,6 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Predicate;
 
 public final class FilterTransform implements Transform {
 
@@ -30,7 +29,6 @@ public final class FilterTransform implements Transform {
     private final String field;
     private final Operator operator;
     private final Object expected;
-    private final Predicate<DatasetRow> predicate;
 
     public FilterTransform(String field, Operator operator, Object expected) {
         this.field = requireField(field);
@@ -39,23 +37,12 @@ public final class FilterTransform implements Transform {
         }
         this.operator = operator;
         this.expected = expected;
-        this.predicate = null;
-    }
-
-    public FilterTransform(Predicate<DatasetRow> predicate) {
-        if (predicate == null) {
-            throw new IllegalArgumentException("Filter predicate must not be null");
-        }
-        this.field = null;
-        this.operator = null;
-        this.expected = null;
-        this.predicate = predicate;
     }
 
     @Override
     public DatasetResult apply(DatasetResult input) {
         List<DatasetRow> source = TransformSupport.rows(input);
-        if (field != null && !input.schema().containsField(field)) {
+        if (!input.schema().containsField(field)) {
             throw new IllegalArgumentException("Missing filter field: " + field);
         }
         List<DatasetRow> selected = new ArrayList<DatasetRow>();
@@ -68,9 +55,6 @@ public final class FilterTransform implements Transform {
     }
 
     private boolean matches(DatasetRow row) {
-        if (predicate != null) {
-            return predicate.test(row);
-        }
         Object actual = row.get(field);
         if (operator == Operator.IS_NULL) {
             return actual == null;

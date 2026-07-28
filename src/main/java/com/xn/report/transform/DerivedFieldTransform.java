@@ -3,6 +3,7 @@ package com.xn.report.transform;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetSchema;
+import com.xn.report.dataset.DatasetType;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -79,6 +80,14 @@ public final class DerivedFieldTransform implements Transform {
 
     @Override
     public DatasetResult apply(DatasetResult input) {
+        if (input == null) {
+            throw new IllegalArgumentException("Input dataset must not be null");
+        }
+        if (input.type() != DatasetType.LIST
+                && input.type() != DatasetType.SINGLE) {
+            throw new IllegalArgumentException(
+                    "Derived fields require a LIST or SINGLE dataset");
+        }
         if (!input.schema().containsField(sourceField)) {
             throw new IllegalArgumentException(
                     "Missing derived source field: " + sourceField);

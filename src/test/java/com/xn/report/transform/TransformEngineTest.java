@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.xn.report.config.definition.DatasetDefinition;
+import com.xn.report.config.definition.SortFieldDefinition;
+import com.xn.report.config.definition.TransformType;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetSchema;
@@ -14,6 +17,8 @@ import com.xn.report.support.TestFixtures;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
 class TransformEngineTest {
@@ -128,9 +133,41 @@ class TransformEngineTest {
         DatasetResult source = TestFixtures.people(TestFixtures.person("A", "8.00"));
 
         assertThat(new LimitTransform(0).apply(source).list()).isEmpty();
+        assertThat(new LimitTransform(5).apply(source).list())
+                .containsExactlyElementsOf(source.list());
         assertThatThrownBy(() -> new LimitTransform(-1))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("non-negative");
+    }
+
+    @Test
+    void filterExposesNoArbitraryCallbackAndHandlesNullOperators() {
+        assertThat(Arrays.stream(FilterTransform.class.getConstructors())
+                .flatMap(constructor -> Arrays.stream(constructor.getParameterTypes())))
+                .noneMatch(Predicate.class::isAssignableFrom);
+
+        DatasetResult source = DatasetResult.list(
+                "values",
+                Arrays.asList(
+                        DatasetRow.of("value", null, "sequence", 1),
+                        DatasetRow.of("value", "x", "sequence", 2)));
+
+        assertThat(new FilterTransform(
+                "value", FilterTransform.Operator.IS_NULL, null)
+                .apply(source).list())
+                .extracting(row -> row.get("sequence"))
+                .containsExactly(1);
+        assertThat(new FilterTransform(
+                "value", FilterTransform.Operator.IS_NOT_NULL, null)
+                .apply(source).list())
+                .extracting(row -> row.get("sequence"))
+                .containsExactly(2);
+
+        FilterTransform incompatible = new FilterTransform(
+                "value", FilterTransform.Operator.GREATER_THAN, Integer.valueOf(1));
+        assertThatThrownBy(() -> incompatible.apply(source))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("safely comparable");
     }
 
     @Test
@@ -145,6 +182,19 @@ class TransformEngineTest {
                 .isEqualTo(new BigDecimal("30.00"));
         assertThat(derived(source, ArithmeticOperator.DIVIDE, "6.00", 2))
                 .isEqualTo(new BigDecimal("1.67"));
+        assertThat(derived(
+                TestFixtures.people(TestFixtures.person("A", "1.50")),
+                ArithmeticOperator.ADD,
+                "0.00",
+                0)).isEqualTo(new BigDecimal("2"));
+        assertThatThrownBy(() -> new DerivedFieldTransform(
+                "result",
+                "avgHours",
+                ArithmeticOperator.ADD,
+                BigDecimal.ONE,
+                -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("non-negative");
     }
 
     @Test
@@ -237,31 +287,161 @@ class TransformEngineTest {
     }
 
     @Test
-    void keepsTransformDefinitionsInYamlDeclarationOrder() throws Exception {
+    void derivedFieldSupportsSingleAndEmptyRowsButRejectsScalarBeforeExecution() {
+        DerivedFieldTransform transform = new DerivedFieldTransform(
+                "result", "value", ArithmeticOperator.ADD, BigDecimal.ONE, 2);
+        DatasetSchema sourceSchema = DatasetSchema.of("value", BigDecimal.class);
+
+        DatasetResult single = DatasetResult.single(
+                "single",
+                sourceSchema,
+                Collections.singletonList(
+                        DatasetRow.of("value", new BigDecimal("2.00"))));
+        DatasetResult singleResult = transform.apply(single);
+        assertThat(singleResult.type()).isEqualTo(DatasetType.SINGLE);
+        assertThat(singleResult.single().get("result"))
+                .isEqualTo(new BigDecimal("3.00"));
+
+        DatasetResult emptySingle = DatasetResult.single(
+                "emptySingle", sourceSchema, Collections.<DatasetRow>emptyList());
+        DatasetResult emptySingleResult = transform.apply(emptySingle);
+        assertThat(emptySingleResult.single()).isNull();
+        assertThat(emptySingleResult.schema().fieldNames())
+                .containsExactly("value", "result");
+
+        DatasetResult emptyList = DatasetResult.list(
+                "emptyList", sourceSchema, Collections.<DatasetRow>emptyList());
+        DatasetResult emptyListResult = transform.apply(emptyList);
+        assertThat(emptyListResult.list()).isEmpty();
+        assertThat(emptyListResult.schema().fieldNames())
+                .containsExactly("value", "result");
+
+        DatasetResult scalar = DatasetResult.scalar(
+                "scalar",
+                sourceSchema,
+                Collections.singletonList(
+                        DatasetRow.of("value", new BigDecimal("2.00"))));
+        assertThatThrownBy(() -> transform.apply(scalar))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("LIST or SINGLE");
+    }
+
+    @Test
+    void derivedFieldReplacesCaseInsensitiveTargetWithoutDuplicatingSchema() {
+        DatasetResult source = DatasetResult.list(
+                "values",
+                DatasetSchema.of("value", BigDecimal.class, "Result", String.class),
+                Collections.singletonList(DatasetRow.of(
+                        "value", new BigDecimal("2.00"), "Result", "old")));
+        DerivedFieldTransform transform = new DerivedFieldTransform(
+                "result",
+                "value",
+                ArithmeticOperator.MULTIPLY,
+                BigDecimal.TEN,
+                2,
+                DivideByZeroStrategy.FAIL,
+                null,
+                FieldConflictStrategy.REPLACE);
+
+        DatasetResult result = transform.apply(source);
+
+        assertThat(result.schema().fieldNames()).containsExactly("value", "Result");
+        assertThat(result.list().get(0).fieldNames()).containsExactly("value", "Result");
+        assertThat(result.list().get(0).get("RESULT"))
+                .isEqualTo(new BigDecimal("20.00"));
+    }
+
+    @Test
+    void distinctUsesDeepArrayContentInCompositeKeys() {
+        DatasetResult source = DatasetResult.list(
+                "binary",
+                Arrays.asList(
+                        DatasetRow.of(
+                                "key", new byte[]{1, 2},
+                                "nested", new Object[]{new int[]{3, 4}, "x"},
+                                "sequence", 1),
+                        DatasetRow.of(
+                                "key", new byte[]{1, 2},
+                                "nested", new Object[]{new int[]{3, 4}, "x"},
+                                "sequence", 2),
+                        DatasetRow.of(
+                                "key", new byte[]{2, 1},
+                                "nested", new Object[]{new int[]{3, 4}, "x"},
+                                "sequence", 3)));
+
+        DatasetResult result =
+                new DistinctTransform(Arrays.asList("key", "nested")).apply(source);
+
+        assertThat(result.list())
+                .extracting(row -> row.get("sequence"))
+                .containsExactly(1, 3);
+    }
+
+    @Test
+    void parsesOrderedSortFieldsAndBuildsRuntimeTransforms() throws Exception {
         String yaml = "id: people\n"
                 + "sheetName: People\n"
                 + "sqlFile: people.sql\n"
                 + "resultType: LIST\n"
                 + "transforms:\n"
-                + "  - type: FILTER\n"
-                + "    field: avgHours\n"
-                + "    operator: GREATER_THAN\n"
-                + "    value: 5\n"
-                + "  - type: DISTINCT\n"
-                + "    fields: [personName]\n"
+                + "  - type: SORT\n"
+                + "    sortFields:\n"
+                + "      - field: team\n"
+                + "        direction: ASC\n"
+                + "        nullOrder: FIRST\n"
+                + "      - field: score\n"
+                + "        direction: DESC\n"
+                + "        nullOrder: LAST\n"
                 + "  - type: LIMIT\n"
-                + "    limit: 10\n";
+                + "    limit: 3\n";
 
         DatasetDefinition definition = new ObjectMapper(new YAMLFactory())
                 .readValue(yaml, DatasetDefinition.class);
 
         assertThat(definition.getTransforms())
                 .extracting(transform -> transform.getType())
-                .containsExactly("FILTER", "DISTINCT", "LIMIT");
-        assertThat(definition.getTransforms().get(0).getField()).isEqualTo("avgHours");
-        assertThat(definition.getTransforms().get(1).getFields())
-                .containsExactly("personName");
-        assertThat(definition.getTransforms().get(2).getLimit()).isEqualTo(10);
+                .containsExactly(TransformType.SORT, TransformType.LIMIT);
+        List<SortFieldDefinition> sortFields =
+                definition.getTransforms().get(0).getSortFields();
+        assertThat(sortFields)
+                .extracting(SortFieldDefinition::getField)
+                .containsExactly("team", "score");
+        assertThat(sortFields)
+                .extracting(SortFieldDefinition::getDirection)
+                .containsExactly(Direction.ASC, Direction.DESC);
+        assertThat(sortFields)
+                .extracting(SortFieldDefinition::getNullOrder)
+                .containsExactly(NullOrder.FIRST, NullOrder.LAST);
+
+        DatasetResult source = DatasetResult.list(
+                "people",
+                Arrays.asList(
+                        DatasetRow.of("team", "B", "score", 1, "sequence", 0),
+                        DatasetRow.of("team", "A", "score", null, "sequence", 1),
+                        DatasetRow.of("team", "A", "score", 1, "sequence", 2),
+                        DatasetRow.of("team", "A", "score", 2, "sequence", 3)));
+        DatasetResult result = engine.apply(
+                source,
+                new TransformFactory().createAll(definition.getTransforms()));
+        assertThat(result.list())
+                .extracting(row -> row.get("sequence"))
+                .containsExactly(3, 2, 1);
+    }
+
+    @Test
+    void rejectsUnknownStronglyTypedTransformConfiguration() {
+        String yaml = "id: people\n"
+                + "sheetName: People\n"
+                + "sqlFile: people.sql\n"
+                + "resultType: LIST\n"
+                + "transforms:\n"
+                + "  - type: UNKNOWN\n";
+
+        ObjectMapper mapper = new ObjectMapper(new YAMLFactory())
+                .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+
+        assertThatThrownBy(() -> mapper.readValue(yaml, DatasetDefinition.class))
+                .hasMessageContaining("UNKNOWN");
     }
 
     private Object derived(

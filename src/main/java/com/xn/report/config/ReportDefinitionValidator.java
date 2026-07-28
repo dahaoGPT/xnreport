@@ -272,20 +272,21 @@ public final class ReportDefinitionValidator {
         }
         if (transform.getDivideByZeroStrategy()
                 == com.xn.report.transform.DivideByZeroStrategy.DEFAULT_VALUE
-                && transform.getDivideByZeroDefault() == null) {
+                && (!transform.hasProperty("divideByZeroDefault")
+                        || transform.getDivideByZeroDefault() == null)) {
             result.add("CFG-TRANSFORM-DIVIDE-DEFAULT",
                     path + ".divideByZeroDefault",
                     "DEFAULT_VALUE requires divideByZeroDefault");
         }
         if (transform.getOperator() != TransformOperator.DIVIDE
-                && (transform.getDivideByZeroStrategy() != null
-                || transform.getDivideByZeroDefault() != null)) {
+                && (transform.hasProperty("divideByZeroStrategy")
+                || transform.hasProperty("divideByZeroDefault"))) {
             result.add("CFG-TRANSFORM-ATTRIBUTE", path,
                     "Divide-by-zero settings require DIVIDE operator");
         } else if (transform.getOperator() == TransformOperator.DIVIDE
                 && transform.getDivideByZeroStrategy()
                         != com.xn.report.transform.DivideByZeroStrategy.DEFAULT_VALUE
-                && transform.getDivideByZeroDefault() != null) {
+                && transform.hasProperty("divideByZeroDefault")) {
             result.add("CFG-TRANSFORM-ATTRIBUTE",
                     path + ".divideByZeroDefault",
                     "divideByZeroDefault requires DEFAULT_VALUE strategy");
@@ -297,18 +298,23 @@ public final class ReportDefinitionValidator {
             String path,
             ValidationResult result) {
         Set<String> allowed;
+        Set<String> required;
         switch (transform.getType()) {
             case FILTER:
                 allowed = unmodifiableSet("type", "field", "operator", "value");
+                required = unmodifiableSet("type", "field", "operator");
                 break;
             case SORT:
                 allowed = unmodifiableSet("type", "sortFields");
+                required = unmodifiableSet("type", "sortFields");
                 break;
             case DISTINCT:
                 allowed = unmodifiableSet("type", "fields");
+                required = unmodifiableSet("type", "fields");
                 break;
             case LIMIT:
                 allowed = unmodifiableSet("type", "limit");
+                required = unmodifiableSet("type", "limit");
                 break;
             case DERIVED_FIELD:
                 allowed = unmodifiableSet(
@@ -321,16 +327,69 @@ public final class ReportDefinitionValidator {
                         "divideByZeroStrategy",
                         "divideByZeroDefault",
                         "fieldConflictStrategy");
+                required = unmodifiableSet(
+                        "type",
+                        "sourceField",
+                        "targetField",
+                        "operator",
+                        "operand");
                 break;
             default:
                 allowed = Collections.emptySet();
+                required = Collections.emptySet();
         }
         for (String property : transform.getPresentProperties()) {
             if (!allowed.contains(property)) {
                 result.add("CFG-TRANSFORM-ATTRIBUTE", path + "." + property,
                         property + " is not allowed for "
                                 + transform.getType());
+            } else if (transformPropertyValue(transform, property) == null) {
+                result.add("CFG-TRANSFORM-ATTRIBUTE", path + "." + property,
+                        property + " must not be null");
             }
+        }
+        for (String property : required) {
+            if (!transform.hasProperty(property)) {
+                result.add("CFG-TRANSFORM-ATTRIBUTE", path + "." + property,
+                        property + " is required for " + transform.getType());
+            }
+        }
+    }
+
+    private static Object transformPropertyValue(
+            TransformDefinition transform, String property) {
+        switch (property) {
+            case "type":
+                return transform.getType();
+            case "field":
+                return transform.getField();
+            case "fields":
+                return transform.getFields();
+            case "sortFields":
+                return transform.getSortFields();
+            case "operator":
+                return transform.getOperator();
+            case "value":
+                return transform.getValue();
+            case "sourceField":
+                return transform.getSourceField();
+            case "targetField":
+                return transform.getTargetField();
+            case "operand":
+                return transform.getOperand();
+            case "limit":
+                return transform.getLimit();
+            case "scale":
+                return transform.getScale();
+            case "divideByZeroStrategy":
+                return transform.getDivideByZeroStrategy();
+            case "divideByZeroDefault":
+                return transform.getDivideByZeroDefault();
+            case "fieldConflictStrategy":
+                return transform.getFieldConflictStrategy();
+            default:
+                throw new IllegalArgumentException(
+                        "Unknown transform property: " + property);
         }
     }
 

@@ -113,18 +113,23 @@ public final class TransformFactory {
 
     private static void validateAttributes(TransformDefinition definition) {
         Set<String> allowed;
+        Set<String> required;
         switch (definition.getType()) {
             case FILTER:
                 allowed = names("field", "operator", "value");
+                required = names("field", "operator");
                 break;
             case SORT:
                 allowed = names("sortFields");
+                required = names("sortFields");
                 break;
             case DISTINCT:
                 allowed = names("fields");
+                required = names("fields");
                 break;
             case LIMIT:
                 allowed = names("limit");
+                required = names("limit");
                 break;
             case DERIVED_FIELD:
                 allowed = names(
@@ -136,6 +141,11 @@ public final class TransformFactory {
                         "divideByZeroStrategy",
                         "divideByZeroDefault",
                         "fieldConflictStrategy");
+                required = names(
+                        "sourceField",
+                        "targetField",
+                        "operator",
+                        "operand");
                 break;
             default:
                 throw new IllegalArgumentException(
@@ -162,25 +172,82 @@ public final class TransformFactory {
                 == com.xn.report.config.definition.TransformType.DERIVED_FIELD) {
             boolean divide =
                     definition.getOperator() == TransformOperator.DIVIDE;
-            if (!divide && (definition.getDivideByZeroStrategy() != null
-                    || definition.getDivideByZeroDefault() != null)) {
+            if (!divide && (definition.hasProperty("divideByZeroStrategy")
+                    || definition.hasProperty("divideByZeroDefault"))) {
                 throw new IllegalArgumentException(
                         "Divide-by-zero settings require DIVIDE operator");
             }
             if (divide
                     && definition.getDivideByZeroStrategy()
                             == DivideByZeroStrategy.DEFAULT_VALUE
-                    && definition.getDivideByZeroDefault() == null) {
+                    && (!definition.hasProperty("divideByZeroDefault")
+                            || definition.getDivideByZeroDefault() == null)) {
                 throw new IllegalArgumentException(
                         "DEFAULT_VALUE requires divideByZeroDefault");
             }
             if (divide
                     && definition.getDivideByZeroStrategy()
                             != DivideByZeroStrategy.DEFAULT_VALUE
-                    && definition.getDivideByZeroDefault() != null) {
+                    && definition.hasProperty("divideByZeroDefault")) {
                 throw new IllegalArgumentException(
                         "divideByZeroDefault requires DEFAULT_VALUE strategy");
             }
+        }
+        rejectMissingOrNull(definition, allowed, required);
+    }
+
+    private static void rejectMissingOrNull(
+            TransformDefinition definition,
+            Set<String> allowed,
+            Set<String> required) {
+        for (String property : required) {
+            if (!definition.hasProperty(property)) {
+                throw new IllegalArgumentException(
+                        property + " is required for this transform type");
+            }
+        }
+        for (String property : definition.getPresentProperties()) {
+            if (!"type".equals(property)
+                    && allowed.contains(property)
+                    && transformPropertyValue(definition, property) == null) {
+                throw new IllegalArgumentException(
+                        property + " must not be null");
+            }
+        }
+    }
+
+    private static Object transformPropertyValue(
+            TransformDefinition definition, String property) {
+        switch (property) {
+            case "field":
+                return definition.getField();
+            case "fields":
+                return definition.getFields();
+            case "sortFields":
+                return definition.getSortFields();
+            case "operator":
+                return definition.getOperator();
+            case "value":
+                return definition.getValue();
+            case "sourceField":
+                return definition.getSourceField();
+            case "targetField":
+                return definition.getTargetField();
+            case "operand":
+                return definition.getOperand();
+            case "limit":
+                return definition.getLimit();
+            case "scale":
+                return definition.getScale();
+            case "divideByZeroStrategy":
+                return definition.getDivideByZeroStrategy();
+            case "divideByZeroDefault":
+                return definition.getDivideByZeroDefault();
+            case "fieldConflictStrategy":
+                return definition.getFieldConflictStrategy();
+            default:
+                throw new IllegalArgumentException(
+                        "Unknown transform property: " + property);
         }
     }
 

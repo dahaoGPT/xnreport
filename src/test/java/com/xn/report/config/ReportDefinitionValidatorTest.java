@@ -32,9 +32,13 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class ReportDefinitionValidatorTest {
 
@@ -407,6 +411,35 @@ class ReportDefinitionValidatorTest {
                 "CFG-TRANSFORM-ATTRIBUTE");
     }
 
+    @ParameterizedTest(name = "{0} rejects explicit null property {1}")
+    @MethodSource("transformPropertyMatrix")
+    void schemaValidatorAndFactoryRejectExplicitNullForEveryTransformProperty(
+            TransformType type,
+            String property,
+            @TempDir Path temporaryDirectory) throws Exception {
+        assertCompleteJsonTransformRejected(
+                temporaryDirectory,
+                type.name() + "-" + property,
+                type,
+                property,
+                validTransformJson(type));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("derivedConditionalExplicitNullCases")
+    void derivedConditionalPropertiesRejectExplicitNull(
+            String name,
+            String property,
+            String transformJson,
+            @TempDir Path temporaryDirectory) throws Exception {
+        assertCompleteJsonTransformRejected(
+                temporaryDirectory,
+                name,
+                TransformType.DERIVED_FIELD,
+                property,
+                transformJson);
+    }
+
     @Test
     void schemaValidatesCompleteValidAndInvalidInstances() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
@@ -601,6 +634,103 @@ class ReportDefinitionValidatorTest {
                 .isEqualTo(255);
         assertThat(sectionTitle.path("description").asText()).contains("UTF-16");
         assertThat(sectionTitle.path("pattern").asText()).contains("\\S");
+    }
+
+    private static Stream<Arguments> transformPropertyMatrix() {
+        List<String> properties = Arrays.asList(
+                "type",
+                "field",
+                "fields",
+                "sortFields",
+                "operator",
+                "value",
+                "sourceField",
+                "targetField",
+                "operand",
+                "limit",
+                "scale",
+                "divideByZeroStrategy",
+                "divideByZeroDefault",
+                "fieldConflictStrategy");
+        return Arrays.stream(TransformType.values())
+                .flatMap(type -> properties.stream()
+                        .map(property -> Arguments.of(type, property)));
+    }
+
+    private static Stream<Arguments> derivedConditionalExplicitNullCases() {
+        return Stream.of(
+                Arguments.of(
+                        "derived-scale-null",
+                        "scale",
+                        "{\"type\":\"DERIVED_FIELD\",\"sourceField\":\"value\","
+                                + "\"targetField\":\"result\",\"operator\":\"ADD\","
+                                + "\"operand\":1,\"scale\":null}"),
+                Arguments.of(
+                        "derived-add-strategy-null",
+                        "divideByZeroStrategy",
+                        "{\"type\":\"DERIVED_FIELD\",\"sourceField\":\"value\","
+                                + "\"targetField\":\"result\",\"operator\":\"ADD\","
+                                + "\"operand\":1,\"divideByZeroStrategy\":null}"),
+                Arguments.of(
+                        "derived-non-default-default-null",
+                        "divideByZeroDefault",
+                        "{\"type\":\"DERIVED_FIELD\",\"sourceField\":\"value\","
+                                + "\"targetField\":\"result\",\"operator\":\"DIVIDE\","
+                                + "\"operand\":1,\"divideByZeroStrategy\":\"FAIL\","
+                                + "\"divideByZeroDefault\":null}"));
+    }
+
+    private static String validTransformJson(TransformType type) {
+        switch (type) {
+            case FILTER:
+                return "{\"type\":\"FILTER\",\"field\":\"value\","
+                        + "\"operator\":\"EQUAL\",\"value\":1}";
+            case SORT:
+                return "{\"type\":\"SORT\",\"sortFields\":[{\"field\":\"value\","
+                        + "\"direction\":\"ASC\",\"nullOrder\":\"LAST\"}]}";
+            case DISTINCT:
+                return "{\"type\":\"DISTINCT\",\"fields\":[\"value\"]}";
+            case LIMIT:
+                return "{\"type\":\"LIMIT\",\"limit\":1}";
+            case DERIVED_FIELD:
+                return "{\"type\":\"DERIVED_FIELD\",\"sourceField\":\"value\","
+                        + "\"targetField\":\"result\",\"operator\":\"ADD\","
+                        + "\"operand\":1}";
+            default:
+                throw new IllegalArgumentException("Unsupported transform type: " + type);
+        }
+    }
+
+    private void assertCompleteJsonTransformRejected(
+            Path temporaryDirectory,
+            String name,
+            TransformType expectedType,
+            String property,
+            String transformJson) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode report = (ObjectNode) mapper.readTree(Paths.get(
+                "src/test/resources/fixtures/configs/minimal-report.json").toFile());
+        ObjectNode transform = (ObjectNode) mapper.readTree(transformJson);
+        transform.putNull(property);
+        ((ObjectNode) report.path("datasets").get(0)).set(
+                "transforms", mapper.createArrayNode().add(transform));
+
+        JsonNode schemaDocument = mapper.readTree(Paths.get(
+                "src/main/resources/schema/report-definition.schema.json").toFile());
+        assertSchemaRejects(new JsonSchemaContract(schemaDocument), report);
+
+        Path path = temporaryDirectory.resolve(name + ".json");
+        Files.write(path, mapper.writeValueAsBytes(report));
+        ReportDefinition loaded = ReportDefinitionLoader.createDefault().load(path);
+        TransformDefinition definition =
+                loaded.getDatasets().get(0).getTransforms().get(0);
+        assertThat(definition.hasProperty(property)).isTrue();
+        if (!"type".equals(property)) {
+            assertThat(definition.getType()).isEqualTo(expectedType);
+        }
+        assertThat(validator.validate(loaded).isValid()).isFalse();
+        assertThatThrownBy(() -> new TransformFactory().create(definition))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static WordSectionDefinition section(String id, int level, String emptyStrategy) {

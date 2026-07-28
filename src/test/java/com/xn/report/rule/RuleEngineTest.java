@@ -1,0 +1,292 @@
+package com.xn.report.rule;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.xn.report.config.definition.ConditionDefinition;
+import com.xn.report.config.definition.RuleDefinition;
+import com.xn.report.config.definition.ValueReferenceDefinition;
+import com.xn.report.dataset.DatasetContext;
+import com.xn.report.dataset.DatasetResult;
+import com.xn.report.dataset.DatasetRow;
+import com.xn.report.error.ReportErrorCode;
+import com.xn.report.error.ReportException;
+import com.xn.report.support.TestFixtures;
+import com.xn.report.transform.Direction;
+import com.xn.report.transform.NullOrder;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Test;
+
+class RuleEngineTest {
+
+    private final RuleEngine engine = new RuleEngine();
+
+    @Test
+    void matchesNestedAndOrAgainstDatasetStandard() {
+        ConditionNode condition = TestFixtures.and(
+                TestFixtures.compare(
+                        TestFixtures.field("avgHours"),
+                        ComparisonOperator.GT,
+                        TestFixtures.datasetField("baseline", "standardHours")),
+                TestFixtures.or(
+                        TestFixtures.compare(
+                                TestFixtures.field("onJob"),
+                                ComparisonOperator.EQ,
+                                TestFixtures.literal(true)),
+                        TestFixtures.compare(
+                                TestFixtures.field("groupCategory"),
+                                ComparisonOperator.IN,
+                                TestFixtures.literal(Arrays.asList("A", "B")))));
+
+        RuleResult result = engine.evaluate(
+                "approvalTimeout",
+                TestFixtures.personAnnual(),
+                condition,
+                TestFixtures.contextWithBaseline("10.00"));
+
+        assertThat(result.getMatchedRows())
+                .extracting(row -> row.get("personName"))
+                .containsExactly("张三");
+        assertThat(result.getSummaryValues())
+                .containsEntry("matchedCount", 1L)
+                .containsEntry("totalCount", 2L)
+                .containsEntry("matchedRatio", new BigDecimal("0.5"));
+    }
+
+    @Test
+    void ordinaryComparisonWithNullDoesNotMatchButNullOperatorDoes() {
+        DatasetRow row = DatasetRow.of("hours", null);
+        RuleEvaluationContext context = emptyContext();
+
+        assertThat(new ComparisonCondition(
+                ValueReference.currentField("hours"),
+                ComparisonOperator.GT,
+                ValueReference.literal(BigDecimal.ZERO)).evaluate(context, row))
+                .isFalse();
+        assertThat(new ComparisonCondition(
+                ValueReference.currentField("hours"),
+                ComparisonOperator.IS_NULL,
+                null).evaluate(context, row)).isTrue();
+        assertThat(new ComparisonCondition(
+                ValueReference.currentField("hours"),
+                ComparisonOperator.NE,
+                ValueReference.literal(BigDecimal.ZERO)).evaluate(context, row))
+                .isFalse();
+    }
+
+    @Test
+    void logicalConditionsShortCircuitAndRejectEmptyChildren() {
+        AtomicInteger evaluations = new AtomicInteger();
+        ConditionNode falseNode = (context, row) -> false;
+        ConditionNode countingNode = (context, row) -> {
+            evaluations.incrementAndGet();
+            return true;
+        };
+
+        assertThat(LogicalCondition.and(Arrays.asList(falseNode, countingNode))
+                .evaluate(emptyContext(), DatasetRow.empty())).isFalse();
+        assertThat(evaluations).hasValue(0);
+        assertThat(LogicalCondition.or(Arrays.asList(countingNode, falseNode))
+                .evaluate(emptyContext(), DatasetRow.empty())).isTrue();
+        assertThat(evaluations).hasValue(1);
+        assertThatThrownBy(() -> LogicalCondition.and(Collections.<ConditionNode>emptyList()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("children");
+    }
+
+    @Test
+    void supportsAllComparisonOperatorsAndTypedValues() {
+        DatasetRow row = DatasetRow.of(
+                "number", 10,
+                "date", LocalDate.of(2026, 6, 1),
+                "text", "AbcDef",
+                "enabled", true);
+        RuleEvaluationContext context = new RuleEvaluationContext(
+                DatasetContext.builder().build(),
+                Collections.<String, Object>singletonMap("minimum", 9L));
+
+        assertMatches(row, context, "number", ComparisonOperator.EQ, new BigDecimal("10.0"));
+        assertMatches(row, context, "number", ComparisonOperator.NE, 11);
+        assertMatches(row, context, "number", ComparisonOperator.GT,
+                ValueReference.runtimeParameter("minimum"));
+        assertMatches(row, context, "number", ComparisonOperator.GE, 10);
+        assertMatches(row, context, "number", ComparisonOperator.LT, 11);
+        assertMatches(row, context, "number", ComparisonOperator.LE, 10);
+        assertMatches(row, context, "number", ComparisonOperator.IN, Arrays.asList(8L, 10L));
+        assertMatches(row, context, "number", ComparisonOperator.NOT_IN, Arrays.asList(8, 9));
+        assertMatches(row, context, "number", ComparisonOperator.BETWEEN, Arrays.asList(10, 12));
+        assertMatches(row, context, "text", ComparisonOperator.CONTAINS, "cD");
+        assertMatches(row, context, "text", ComparisonOperator.STARTS_WITH, "Ab");
+        assertMatches(row, context, "text", ComparisonOperator.ENDS_WITH, "Def");
+        assertMatches(row, context, "date", ComparisonOperator.GE, LocalDate.of(2026, 6, 1));
+        assertMatches(row, context, "enabled", ComparisonOperator.EQ, true);
+        assertThat(new ComparisonCondition(
+                ValueReference.currentField("text"),
+                ComparisonOperator.EQ,
+                ValueReference.literal("abcdef"),
+                true).evaluate(context, row)).isTrue();
+        assertThat(new ComparisonCondition(
+                ValueReference.currentField("number"),
+                ComparisonOperator.IS_NOT_NULL,
+                null).evaluate(context, row)).isTrue();
+    }
+
+    @Test
+    void rejectsInWithScalarAndCrossTypeOrdering() {
+        DatasetRow row = DatasetRow.of("number", 10, "text", "10");
+
+        assertThatThrownBy(() -> new ComparisonCondition(
+                ValueReference.currentField("number"),
+                ComparisonOperator.IN,
+                ValueReference.literal(10)).evaluate(emptyContext(), row))
+                .isInstanceOf(ReportException.class)
+                .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_002);
+        assertThatThrownBy(() -> new ComparisonCondition(
+                ValueReference.currentField("number"),
+                ComparisonOperator.GT,
+                ValueReference.currentField("text")).evaluate(emptyContext(), row))
+                .isInstanceOf(ReportException.class)
+                .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_002);
+    }
+
+    @Test
+    void datasetReferenceAllowsOnlyScalarOrSingleDatasets() {
+        DatasetContext datasets = DatasetContext.builder()
+                .put(DatasetResult.list("items",
+                        Collections.singletonList(DatasetRow.of("value", 1))))
+                .build();
+        RuleEvaluationContext context = new RuleEvaluationContext(
+                datasets, Collections.<String, Object>emptyMap());
+
+        assertThatThrownBy(() -> ValueReference.datasetField("items", "value")
+                .resolve(context, DatasetRow.empty()))
+                .isInstanceOf(ReportException.class)
+                .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_002);
+    }
+
+    @Test
+    void executesFixedResultPipelineAndReturnsDeeplyImmutableResults() {
+        RuleDefinition definition = TestFixtures.pipelineRule();
+
+        RuleResult result = engine.evaluate(
+                definition, TestFixtures.pipelineRows(), emptyContext());
+
+        assertThat(result.getMatchedRows())
+                .extracting(row -> row.get("name"))
+                .containsExactly("B", "A");
+        assertThat(result.getGroups()).containsOnlyKeys("X", "Y");
+        assertThat(result.getGroups().get("X").getMatchedRows()).hasSize(1);
+        assertThat(result.getSummaryValues())
+                .containsEntry("matchedCount", 2L)
+                .containsEntry("totalCount", 4L)
+                .containsEntry("maxHours", new BigDecimal("12"));
+
+        assertThatThrownBy(() -> result.getMatchedRows().add(DatasetRow.empty()))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> result.getGroups().clear())
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> result.getSummaryValues().put("x", 1))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void compilesStronglyTypedConfigurationBeforeEvaluating() {
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId("dynamic");
+        definition.setDataset("personAnnual");
+        ConditionDefinition condition = new ConditionDefinition();
+        condition.setOperator(ConditionDefinition.Operator.GT);
+        condition.setLeft(currentFieldDefinition("avgHours"));
+        condition.setRight(literalDefinition(new BigDecimal("10")));
+        definition.setCondition(condition);
+
+        RuleResult result = engine.evaluate(
+                definition, TestFixtures.personAnnual(), emptyContext());
+
+        assertThat(result.getMatchedRows()).hasSize(1);
+    }
+
+    @Test
+    void invalidConfigurationIsRule001AndEvaluationNeverStarts() {
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId("invalid");
+        definition.setDataset("personAnnual");
+        ConditionDefinition condition = new ConditionDefinition();
+        condition.setOperator(ConditionDefinition.Operator.AND);
+        condition.setChildren(Collections.<ConditionDefinition>emptyList());
+        definition.setCondition(condition);
+
+        assertThatThrownBy(() -> engine.evaluate(
+                definition, TestFixtures.personAnnual(), emptyContext()))
+                .isInstanceOf(ReportException.class)
+                .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_001);
+    }
+
+    @Test
+    void invalidConfiguredListDatasetReferenceIsRule001BeforeRowEvaluation() {
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId("invalidReference");
+        definition.setDataset("personAnnual");
+        ConditionDefinition condition = new ConditionDefinition();
+        condition.setOperator(ConditionDefinition.Operator.GT);
+        condition.setLeft(currentFieldDefinition("avgHours"));
+        ValueReferenceDefinition right = new ValueReferenceDefinition();
+        right.setSource(ValueReferenceDefinition.Source.DATASET_FIELD);
+        right.setDataset("standards");
+        right.setField("hours");
+        condition.setRight(right);
+        definition.setCondition(condition);
+        DatasetContext datasets = DatasetContext.builder()
+                .put(DatasetResult.list("standards",
+                        Collections.singletonList(DatasetRow.of("hours", 10))))
+                .build();
+
+        assertThatThrownBy(() -> engine.evaluate(
+                definition,
+                TestFixtures.personAnnual(),
+                new RuleEvaluationContext(
+                        datasets, Collections.<String, Object>emptyMap())))
+                .isInstanceOf(ReportException.class)
+                .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_001);
+    }
+
+    private void assertMatches(
+            DatasetRow row,
+            RuleEvaluationContext context,
+            String field,
+            ComparisonOperator operator,
+            Object right) {
+        ValueReference reference = right instanceof ValueReference
+                ? (ValueReference) right : ValueReference.literal(right);
+        assertThat(new ComparisonCondition(
+                ValueReference.currentField(field), operator, reference)
+                .evaluate(context, row)).isTrue();
+    }
+
+    private static RuleEvaluationContext emptyContext() {
+        return new RuleEvaluationContext(
+                DatasetContext.builder().build(),
+                Collections.<String, Object>emptyMap());
+    }
+
+    private static ValueReferenceDefinition currentFieldDefinition(String field) {
+        ValueReferenceDefinition value = new ValueReferenceDefinition();
+        value.setSource(ValueReferenceDefinition.Source.CURRENT_FIELD);
+        value.setField(field);
+        return value;
+    }
+
+    private static ValueReferenceDefinition literalDefinition(Object literal) {
+        ValueReferenceDefinition value = new ValueReferenceDefinition();
+        value.setSource(ValueReferenceDefinition.Source.LITERAL);
+        value.setValue(literal);
+        return value;
+    }
+}

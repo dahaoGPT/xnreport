@@ -4,6 +4,9 @@ import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.DistributionDefinition;
 import com.xn.report.config.definition.DistributionDefinition.BinDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
+import com.xn.report.config.definition.ConditionDefinition;
+import com.xn.report.config.definition.RuleDefinition;
+import com.xn.report.config.definition.ValueReferenceDefinition;
 import com.xn.report.config.definition.SortFieldDefinition;
 import com.xn.report.config.definition.TransformDefinition;
 import com.xn.report.config.definition.TransformOperator;
@@ -11,6 +14,8 @@ import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.excel.ExcelSheetNameRules;
+import com.xn.report.dataset.DatasetType;
+import com.xn.report.rule.RuleEngine;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -64,10 +69,182 @@ public final class ReportDefinitionValidator {
         Set<String> datasetIds = validateDatasets(datasets, result);
         validateDependencies(datasets, datasetIds, result);
         validateDependencyCycles(datasets, datasetIds, result);
+        if (definition.isRulesExplicitNull()) {
+            result.add("RULE-001", "$.rules", "rules must not be null");
+        }
+        validateRules(definition.getRules(), datasets, datasetIds, result);
         Set<String> narrativeIds =
                 validateNarratives(definition.getNarratives(), datasetIds, result);
         validateWord(definition.getWord(), narrativeIds, result);
         return result;
+    }
+
+    private void validateRules(
+            List<RuleDefinition> rules,
+            List<DatasetDefinition> datasets,
+            Set<String> datasetIds,
+            ValidationResult result) {
+        Map<String, DatasetType> datasetTypes =
+                new LinkedHashMap<String, DatasetType>();
+        for (DatasetDefinition dataset : datasets) {
+            if (dataset != null && hasText(dataset.getId())) {
+                datasetTypes.put(dataset.getId(), dataset.getResultType());
+            }
+        }
+        Set<String> ids = new LinkedHashSet<String>();
+        List<RuleDefinition> safeRules = safeList(rules);
+        for (int index = 0; index < safeRules.size(); index++) {
+            RuleDefinition rule = safeRules.get(index);
+            String path = "$.rules[" + index + "]";
+            if (rule == null) {
+                result.add("RULE-001", path, "Rule must not be null");
+                continue;
+            }
+            if (!hasText(rule.getId())) {
+                result.add("RULE-001", path + ".id", "Rule id is required");
+            } else if (!ids.add(rule.getId())) {
+                result.add("RULE-001", path + ".id",
+                        "Duplicate rule id: " + rule.getId());
+            }
+            if (!hasText(rule.getDataset())
+                    || !datasetIds.contains(rule.getDataset())) {
+                result.add("RULE-001", path + ".dataset",
+                        "Unknown rule dataset: " + rule.getDataset());
+            } else if (datasetTypes.get(rule.getDataset()) != DatasetType.LIST) {
+                result.add("RULE-001", path + ".dataset",
+                        "Rule input dataset must be LIST");
+            }
+            try {
+                new RuleEngine().compile(rule.getCondition());
+            } catch (RuntimeException exception) {
+                result.add("RULE-001", path + ".condition",
+                        exception.getMessage() == null
+                                ? "Invalid rule condition" : exception.getMessage());
+            }
+            validateConditionReferences(
+                    rule.getCondition(), datasetTypes, path + ".condition", result);
+            validateRuleResult(rule.getResult(), path + ".result", result);
+        }
+    }
+
+    private void validateConditionReferences(
+            ConditionDefinition condition,
+            Map<String, DatasetType> datasetTypes,
+            String path,
+            ValidationResult result) {
+        if (condition == null) {
+            return;
+        }
+        validateValueReference(
+                condition.getLeft(), datasetTypes, path + ".left", result);
+        validateValueReference(
+                condition.getRight(), datasetTypes, path + ".right", result);
+        List<ConditionDefinition> children = condition.getChildren();
+        if (children != null) {
+            for (int index = 0; index < children.size(); index++) {
+                validateConditionReferences(children.get(index), datasetTypes,
+                        path + ".children[" + index + "]", result);
+            }
+        }
+    }
+
+    private Object ruleResultProperty(
+            RuleDefinition.ResultDefinition definition, String property) {
+        switch (property) {
+            case "distinctFields":
+                return definition.getDistinctFields();
+            case "sort":
+                return definition.getSort();
+            case "groupByFields":
+                return definition.getGroupByFields();
+            case "maxItems":
+                return definition.getMaxItems();
+            case "summaries":
+                return definition.getSummaries();
+            default:
+                return null;
+        }
+    }
+
+    private void validateValueReference(
+            ValueReferenceDefinition reference,
+            Map<String, DatasetType> datasetTypes,
+            String path,
+            ValidationResult result) {
+        if (reference == null
+                || reference.getSource()
+                        != ValueReferenceDefinition.Source.DATASET_FIELD) {
+            return;
+        }
+        DatasetType type = datasetTypes.get(reference.getDataset());
+        if (type == null) {
+            result.add("RULE-001", path + ".dataset",
+                    "Unknown referenced dataset: " + reference.getDataset());
+        } else if (type != DatasetType.SCALAR && type != DatasetType.SINGLE) {
+            result.add("RULE-001", path + ".dataset",
+                    "DATASET_FIELD requires SCALAR or SINGLE dataset");
+        }
+    }
+
+    private void validateRuleResult(
+            RuleDefinition.ResultDefinition definition,
+            String path,
+            ValidationResult result) {
+        if (definition == null) {
+            result.add("RULE-001", path, "Rule result must not be null");
+            return;
+        }
+        for (String property : definition.getPresentProperties()) {
+            if (ruleResultProperty(definition, property) == null) {
+                result.add("RULE-001", path + "." + property,
+                        property + " must not be null");
+            }
+        }
+        if (definition.getMaxItems() != null
+                && definition.getMaxItems().intValue() < 0) {
+            result.add("RULE-001", path + ".maxItems",
+                    "maxItems must be non-negative");
+        }
+        validateTextList(
+                definition.getDistinctFields(), path + ".distinctFields", result);
+        validateTextList(
+                definition.getGroupByFields(), path + ".groupByFields", result);
+        List<SortFieldDefinition> sorts = safeList(definition.getSort());
+        for (int index = 0; index < sorts.size(); index++) {
+            SortFieldDefinition sort = sorts.get(index);
+            String sortPath = path + ".sort[" + index + "]";
+            if (sort == null || !hasText(sort.getField())
+                    || sort.getDirection() == null || sort.getNullOrder() == null) {
+                result.add("RULE-001", sortPath,
+                        "Rule sort requires field, direction and nullOrder");
+            }
+        }
+        List<RuleDefinition.SummaryDefinition> summaries =
+                safeList(definition.getSummaries());
+        for (int index = 0; index < summaries.size(); index++) {
+            RuleDefinition.SummaryDefinition summary = summaries.get(index);
+            String summaryPath = path + ".summaries[" + index + "]";
+            if (summary == null || !hasText(summary.getName())
+                    || !hasText(summary.getField())
+                    || summary.getOperation() == null) {
+                result.add("RULE-001", summaryPath,
+                        "Rule summary requires name, field and operation");
+            }
+        }
+    }
+
+    private void validateTextList(
+            List<String> values, String path, ValidationResult result) {
+        List<String> safeValues = safeList(values);
+        Set<String> seen = new LinkedHashSet<String>();
+        for (int index = 0; index < safeValues.size(); index++) {
+            String value = safeValues.get(index);
+            if (!hasText(value)
+                    || !seen.add(value.toLowerCase(Locale.ROOT))) {
+                result.add("RULE-001", path + "[" + index + "]",
+                        "Rule fields must be non-blank and unique");
+            }
+        }
     }
 
     private Set<String> validateDatasets(

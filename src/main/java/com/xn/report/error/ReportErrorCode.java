@@ -6,7 +6,9 @@ public enum ReportErrorCode {
     DATA_001("DATA-001"),
     DATA_002("DATA-002"),
     DATA_003("DATA-003"),
-    DATA_004("DATA-004");
+    DATA_004("DATA-004"),
+    RULE_001("RULE-001"),
+    RULE_002("RULE-002");
 
     private final String code;
 

@@ -37,6 +37,12 @@
         "$ref": "#/definitions/narrative"
       }
     },
+    "rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/rule"
+      }
+    },
     "word": {
       "$ref": "#/definitions/word"
     },
@@ -599,6 +605,296 @@
           "enum": [
             "FIRST",
             "LAST"
+          ]
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "dataset",
+        "condition"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "dataset": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "condition": {
+          "$ref": "#/definitions/condition"
+        },
+        "result": {
+          "$ref": "#/definitions/ruleResult"
+        }
+      }
+    },
+    "condition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operator",
+            "children"
+          ],
+          "properties": {
+            "operator": {
+              "type": "string",
+              "enum": [
+                "AND",
+                "OR"
+              ]
+            },
+            "children": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/definitions/condition"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operator",
+            "left"
+          ],
+          "properties": {
+            "operator": {
+              "type": "string",
+              "enum": [
+                "IS_NULL",
+                "IS_NOT_NULL"
+              ]
+            },
+            "left": {
+              "$ref": "#/definitions/valueReference"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operator",
+            "left",
+            "right"
+          ],
+          "properties": {
+            "operator": {
+              "type": "string",
+              "enum": [
+                "EQ",
+                "NE",
+                "GT",
+                "GE",
+                "LT",
+                "LE",
+                "IN",
+                "NOT_IN",
+                "BETWEEN",
+                "CONTAINS",
+                "STARTS_WITH",
+                "ENDS_WITH"
+              ]
+            },
+            "left": {
+              "$ref": "#/definitions/valueReference"
+            },
+            "right": {
+              "$ref": "#/definitions/valueReference"
+            },
+            "ignoreCase": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "valueReference": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "value"
+          ],
+          "properties": {
+            "source": {
+              "type": "string",
+              "enum": [
+                "LITERAL"
+              ]
+            },
+            "value": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "array"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "field"
+          ],
+          "properties": {
+            "source": {
+              "type": "string",
+              "enum": [
+                "CURRENT_FIELD"
+              ]
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "dataset",
+            "field"
+          ],
+          "properties": {
+            "source": {
+              "type": "string",
+              "enum": [
+                "DATASET_FIELD"
+              ]
+            },
+            "dataset": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "parameter"
+          ],
+          "properties": {
+            "source": {
+              "type": "string",
+              "enum": [
+                "RUNTIME_PARAMETER"
+              ]
+            },
+            "parameter": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            }
+          }
+        }
+      ]
+    },
+    "ruleResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "distinctFields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "x-java-nonBlank": true
+          }
+        },
+        "sort": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/sortField"
+          }
+        },
+        "groupByFields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "x-java-nonBlank": true
+          }
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "summaries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ruleSummary"
+          }
+        }
+      }
+    },
+    "ruleSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "field",
+        "operation"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "MAX",
+            "MIN",
+            "SUM",
+            "AVG"
           ]
         }
       }

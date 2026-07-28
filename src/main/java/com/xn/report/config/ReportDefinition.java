@@ -1,8 +1,10 @@
 package com.xn.report.config;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
 import com.xn.report.config.definition.PolicyDefinition;
+import com.xn.report.config.definition.RuleDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,6 +19,9 @@ public class ReportDefinition {
             new LinkedHashMap<String, ParameterDefinition>();
     private List<DatasetDefinition> datasets = new ArrayList<DatasetDefinition>();
     private List<NarrativeDefinition> narratives = new ArrayList<NarrativeDefinition>();
+    private List<RuleDefinition> rules = new ArrayList<RuleDefinition>();
+    @JsonIgnore
+    private boolean rulesExplicitNull;
     private WordDefinition word = new WordDefinition();
     private PolicyDefinition policies = new PolicyDefinition();
 
@@ -55,6 +60,20 @@ public class ReportDefinition {
 
     public List<NarrativeDefinition> getNarratives() {
         return narratives;
+    }
+
+    public List<RuleDefinition> getRules() {
+        return rules;
+    }
+
+    public void setRules(List<RuleDefinition> rules) {
+        this.rulesExplicitNull = rules == null;
+        this.rules = rules == null ? new ArrayList<RuleDefinition>() : rules;
+    }
+
+    @JsonIgnore
+    public boolean isRulesExplicitNull() {
+        return rulesExplicitNull;
     }
 
     public void setNarratives(List<NarrativeDefinition> narratives) {

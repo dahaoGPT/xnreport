@@ -66,6 +66,10 @@ public final class FormatterRegistry {
         }
     }
 
+    public boolean supports(String name) {
+        return name != null && formatters.containsKey(name);
+    }
+
     private void registerDefaults() {
         register("number", new ValueFormatter() {
             @Override

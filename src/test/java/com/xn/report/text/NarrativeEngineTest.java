@@ -192,7 +192,108 @@ class NarrativeEngineTest {
                 .hasMessageContaining("standardHours");
     }
 
+    @Test
+    void ordersMonthlyPeriodsBeforeChoosingCurrentAndContinuousPattern() {
+        NarrativeResult result = engine.generate(
+                trendNarrative(),
+                trendContext(
+                        DatasetRow.of("month", java.time.YearMonth.of(2026, 3),
+                                "hours", new BigDecimal("12")),
+                        DatasetRow.of("month", "2026-01",
+                                "hours", new BigDecimal("8")),
+                        DatasetRow.of("month", "2026-02",
+                                "hours", new BigDecimal("10"))));
+
+        assertThat(result.summaryValues())
+                .containsEntry("current", new BigDecimal("12"))
+                .containsEntry("pattern", "CONTINUOUS_UP");
+    }
+
+    @Test
+    void previousYearComparisonUsesLatestChronologicalPeriod() {
+        NarrativeDefinition definition =
+                trendNarrative(TrendDefinition.ComparisonSource.PREVIOUS_YEAR);
+        NarrativeResult result = engine.generate(
+                definition,
+                trendContext(
+                        DatasetRow.of("month", "2026-03",
+                                "hours", new BigDecimal("12")),
+                        DatasetRow.of("month", "2025-03",
+                                "hours", new BigDecimal("7")),
+                        DatasetRow.of("month", "2026-01",
+                                "hours", new BigDecimal("8"))));
+
+        assertThat(result.summaryValues())
+                .containsEntry("current", new BigDecimal("12"))
+                .containsEntry("comparison", new BigDecimal("7"));
+    }
+
+    @Test
+    void rejectsDuplicateNullAndUnparseableMonthlyPeriods() {
+        assertThatThrownBy(() -> engine.generate(
+                trendNarrative(),
+                trendContext(
+                        DatasetRow.of("month", "2026-01", "hours", 1),
+                        DatasetRow.of("month", "2026-01", "hours", 2))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Duplicate")
+                .hasMessageContaining("2026-01");
+
+        assertThatThrownBy(() -> engine.generate(
+                trendNarrative(),
+                trendContext(DatasetRow.of("month", null, "hours", 1))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("period")
+                .hasMessageContaining("null");
+
+        assertThatThrownBy(() -> engine.generate(
+                trendNarrative(),
+                trendContext(DatasetRow.of("month", "March", "hours", 1))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("yyyy-MM");
+
+        assertThatThrownBy(() -> engine.generate(
+                trendNarrative(),
+                trendContext(DatasetRow.of("month", Integer.valueOf(202603),
+                        "hours", 1))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("period")
+                .hasMessageContaining("Integer");
+    }
+
+    @Test
+    void emptyTrendAppliesPolicyBeforeResolvingRuntimeComparison() {
+        NarrativeDefinition definition =
+                trendNarrative(
+                        TrendDefinition.ComparisonSource.RUNTIME_PARAMETER);
+        TextRenderContext context = TextRenderContext.builder()
+                .datasets(DatasetContext.builder()
+                        .put(DatasetResult.list(
+                                "monthly",
+                                Collections.<DatasetRow>emptyList()))
+                        .build())
+                .build();
+
+        definition.setEmptyStrategy(NarrativeDefinition.EmptyStrategy.SKIP);
+        assertThat(engine.generate(definition, context).skipped()).isTrue();
+
+        definition.setEmptyStrategy(
+                NarrativeDefinition.EmptyStrategy.OUTPUT_MESSAGE);
+        assertThat(engine.generate(definition, context).text()).isNotEmpty();
+
+        definition.setEmptyStrategy(NarrativeDefinition.EmptyStrategy.FAIL);
+        assertThatThrownBy(() -> engine.generate(definition, context))
+                .isInstanceOf(TextRenderException.class)
+                .hasMessageContaining("empty");
+    }
+
     private static NarrativeDefinition trendNarrative() {
+        return trendNarrative(
+                TrendDefinition.ComparisonSource.DATASET_FIELD);
+    }
+
+    private static NarrativeDefinition trendNarrative(
+            TrendDefinition.ComparisonSource comparisonSource) {
         NarrativeDefinition definition = new NarrativeDefinition();
         definition.setId("trendText");
         definition.setSourceType(NarrativeDefinition.SourceType.RULE_GENERATED);
@@ -204,10 +305,15 @@ class NarrativeEngineTest {
         TrendDefinition trend = new TrendDefinition();
         trend.setPeriodField("month");
         trend.setValueField("hours");
-        trend.setComparisonSource(
-                TrendDefinition.ComparisonSource.DATASET_FIELD);
-        trend.setComparisonDataset("baseline");
-        trend.setComparisonField("standardHours");
+        trend.setComparisonSource(comparisonSource);
+        if (comparisonSource
+                == TrendDefinition.ComparisonSource.DATASET_FIELD) {
+            trend.setComparisonDataset("baseline");
+            trend.setComparisonField("standardHours");
+        } else if (comparisonSource
+                == TrendDefinition.ComparisonSource.RUNTIME_PARAMETER) {
+            trend.setComparisonParameter("missingComparison");
+        }
         trend.setFlatTolerance(BigDecimal.ZERO);
         trend.setAbnormalThreshold(new BigDecimal("11"));
         definition.setTrend(trend);
@@ -223,6 +329,16 @@ class NarrativeEngineTest {
                                 "hours", new BigDecimal("10")),
                         DatasetRow.of("month", "2026-03",
                                 "hours", new BigDecimal("12")))))
+                .put(DatasetResult.single("baseline",
+                        Collections.singletonList(DatasetRow.of(
+                                "standardHours", new BigDecimal("9")))))
+                .build();
+        return TextRenderContext.builder().datasets(datasets).build();
+    }
+
+    private static TextRenderContext trendContext(DatasetRow... rows) {
+        DatasetContext datasets = DatasetContext.builder()
+                .put(DatasetResult.list("monthly", Arrays.asList(rows)))
                 .put(DatasetResult.single("baseline",
                         Collections.singletonList(DatasetRow.of(
                                 "standardHours", new BigDecimal("9")))))

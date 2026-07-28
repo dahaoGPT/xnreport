@@ -10,11 +10,17 @@ import com.xn.report.dataset.DatasetResult;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -205,5 +211,77 @@ class TextRendererTest {
 
         assertThat(renderer.render("${period}", context))
                 .isEqualTo("current");
+    }
+
+    @Test
+    void contextSnapshotsDatesCalendarsArraysCollectionsAndMaps() {
+        Date date = new Date(0L);
+        Calendar calendar = Calendar.getInstance(
+                TimeZone.getTimeZone("UTC"));
+        calendar.clear();
+        calendar.set(2026, Calendar.JANUARY, 1);
+        int[] numbers = new int[]{1, 2};
+        List<String> items = new ArrayList<String>();
+        items.add("A");
+        Map<String, Object> nested = new LinkedHashMap<String, Object>();
+        nested.put("status", "before");
+        Map<String, Object> runtime = new LinkedHashMap<String, Object>();
+        runtime.put("date", date);
+        runtime.put("calendar", calendar);
+        runtime.put("numbers", numbers);
+        runtime.put("items", items);
+        runtime.put("nested", nested);
+        runtime.put("bigInteger", BigInteger.TEN);
+        runtime.put("month", YearMonth.of(2026, 3));
+
+        TextRenderContext context =
+                TextRenderContext.builder().runtime(runtime).build();
+        String calendarSnapshot =
+                renderer.render("${runtime.calendar}", context);
+
+        date.setTime(86400000L);
+        calendar.add(Calendar.MONTH, 1);
+        numbers[0] = 9;
+        items.add("B");
+        nested.put("status", "after");
+
+        assertThat(renderer.render(
+                "${runtime.date|datetime:yyyy-MM-dd HH:mm:ss}|"
+                        + "${runtime.numbers|join:,}|"
+                        + "${runtime.items|join:,}|"
+                        + "${runtime.nested}|"
+                        + "${runtime.bigInteger}|${runtime.month}",
+                context))
+                .isEqualTo(
+                        "1970-01-01 00:00:00|1,2|A|"
+                                + "{status=before}|10|2026-03");
+        assertThat(renderer.render("${runtime.calendar}", context))
+                .isEqualTo(calendarSnapshot);
+    }
+
+    @Test
+    void contextRejectsMutableNumbersBuildersAndUnknownObjects() {
+        assertThatThrownBy(() -> TextRenderContext.builder()
+                .runtime(TestFixtures.parameters(
+                        "value", new AtomicInteger(1)))
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("AtomicInteger");
+        assertThatThrownBy(() -> TextRenderContext.builder()
+                .runtime(TestFixtures.parameters(
+                        "value", new StringBuilder("mutable")))
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("StringBuilder");
+        assertThatThrownBy(() -> TextRenderContext.builder()
+                .runtime(TestFixtures.parameters(
+                        "value", new MutableValue()))
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("MutableValue");
+    }
+
+    private static final class MutableValue {
+        private int value;
     }
 }

@@ -10,11 +10,13 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.DistributionDefinition;
 import com.xn.report.config.definition.DistributionDefinition.BinDefinition;
+import com.xn.report.config.definition.FieldDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
 import com.xn.report.config.definition.SortFieldDefinition;
 import com.xn.report.config.definition.TransformDefinition;
 import com.xn.report.config.definition.TransformOperator;
 import com.xn.report.config.definition.TransformType;
+import com.xn.report.config.definition.TrendDefinition;
 import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.support.JsonSchemaContract;
@@ -31,7 +33,9 @@ import java.math.BigDecimal;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -267,6 +271,91 @@ class ReportDefinitionValidatorTest {
         ValidationResult result = validator.validate(definition);
 
         assertThat(result.codes()).doesNotContain("CFG-DISTRIBUTION-OVERLAP");
+    }
+
+    @Test
+    void validatesNarrativeFieldsAgainstKnownAndDerivedDatasetFields() {
+        DatasetDefinition dataset = TestFixtures.dataset("source");
+        dataset.setExpectedFields(fields("month", "hours"));
+        TransformDefinition derived = new TransformDefinition();
+        derived.setType(TransformType.DERIVED_FIELD);
+        derived.setSourceField("hours");
+        derived.setTargetField("adjustedHours");
+        derived.setOperator(TransformOperator.ADD);
+        derived.setOperand(BigDecimal.ONE);
+        dataset.setTransforms(Collections.singletonList(derived));
+
+        NarrativeDefinition badPeriod =
+                trendNarrative("badPeriod", "missingMonth", "adjustedHours");
+        NarrativeDefinition badValue =
+                trendNarrative("badValue", "month", "missingHours");
+        NarrativeDefinition badDistribution =
+                narrative("badDistribution", "RULE_GENERATED");
+        badDistribution.getDistribution().setField("missingHours");
+        ReportDefinition definition = TestFixtures.report(dataset);
+        definition.setNarratives(Arrays.asList(
+                badPeriod, badValue, badDistribution));
+
+        ValidationResult result = validator.validate(definition);
+
+        assertThat(pathsForCode(result, "TEXT-001")).contains(
+                "$.narratives[0].trend.periodField",
+                "$.narratives[1].trend.valueField",
+                "$.narratives[2].distribution.field");
+        assertThat(pathsForCode(result, "TEXT-001"))
+                .doesNotContain("$.narratives[0].trend.valueField");
+    }
+
+    @Test
+    void doesNotGuessNarrativeFieldsWhenExpectedFieldsAreUnknown() {
+        DatasetDefinition dataset = TestFixtures.dataset("source");
+        NarrativeDefinition trend =
+                trendNarrative("trend", "unknownPeriod", "unknownValue");
+        NarrativeDefinition distribution =
+                narrative("distribution", "RULE_GENERATED");
+        distribution.getDistribution().setField("unknownDistributionValue");
+        ReportDefinition definition = TestFixtures.report(dataset);
+        definition.setNarratives(Arrays.asList(trend, distribution));
+
+        ValidationResult result = validator.validate(definition);
+
+        assertThat(pathsForCode(result, "TEXT-001")).doesNotContain(
+                "$.narratives[0].trend.periodField",
+                "$.narratives[0].trend.valueField",
+                "$.narratives[1].distribution.field");
+    }
+
+    @Test
+    void preparsesNarrativePlaceholderGrammarAndFormatterWhitelist() {
+        DatasetDefinition dataset = TestFixtures.dataset("source");
+
+        NarrativeDefinition malformed = new NarrativeDefinition();
+        malformed.setId("malformed");
+        malformed.setSourceType(
+                NarrativeDefinition.SourceType.FIXED_TEMPLATE);
+        malformed.setTemplate("prefix ${runtime.period");
+
+        NarrativeDefinition unknownFormatter =
+                narrative("unknownFormatter", "RULE_GENERATED");
+        unknownFormatter.setSentence(
+                "${summary.total|script:execute}");
+
+        NarrativeDefinition valid =
+                narrative("valid", "RULE_GENERATED");
+        valid.setSentence(
+                "${summary.total|number:0} ${runtime.missing|default:none}");
+
+        ReportDefinition definition = TestFixtures.report(dataset);
+        definition.setNarratives(Arrays.asList(
+                malformed, unknownFormatter, valid));
+
+        ValidationResult result = validator.validate(definition);
+
+        assertThat(pathsForCode(result, "TEXT-001")).contains(
+                "$.narratives[0].template",
+                "$.narratives[1].sentence");
+        assertThat(pathsForCode(result, "TEXT-001"))
+                .doesNotContain("$.narratives[2].sentence");
     }
 
     @Test
@@ -825,6 +914,36 @@ class ReportDefinitionValidatorTest {
             narrative.setSourceType(null);
         }
         return narrative;
+    }
+
+    private static NarrativeDefinition trendNarrative(
+            String id, String periodField, String valueField) {
+        NarrativeDefinition narrative = new NarrativeDefinition();
+        narrative.setId(id);
+        narrative.setSourceType(
+                NarrativeDefinition.SourceType.RULE_GENERATED);
+        narrative.setAnalyzer("testTrend");
+        narrative.setAnalyzerType(NarrativeDefinition.AnalyzerType.TREND);
+        narrative.setDataset("source");
+        narrative.setSentence("${summary.current|number:0.00}");
+        TrendDefinition trend = new TrendDefinition();
+        trend.setPeriodField(periodField);
+        trend.setValueField(valueField);
+        trend.setComparisonSource(
+                TrendDefinition.ComparisonSource.LITERAL);
+        trend.setComparisonValue(BigDecimal.ONE);
+        trend.setFlatTolerance(BigDecimal.ZERO);
+        narrative.setTrend(trend);
+        return narrative;
+    }
+
+    private static Map<String, FieldDefinition> fields(String... names) {
+        Map<String, FieldDefinition> fields =
+                new LinkedHashMap<String, FieldDefinition>();
+        for (String name : names) {
+            fields.put(name, new FieldDefinition());
+        }
+        return fields;
     }
 
     private static BinDefinition bin(

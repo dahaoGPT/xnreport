@@ -8,9 +8,13 @@ import com.xn.report.dataset.DatasetType;
 import java.math.BigDecimal;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 final class TrendNarrativeAnalyzer implements ControlledNarrativeAnalyzer {
 
@@ -36,21 +40,42 @@ final class TrendNarrativeAnalyzer implements ControlledNarrativeAnalyzer {
                     "Trend analyzer requires LIST dataset: "
                             + dataset.id());
         }
-        List<TrendAnalyzer.TrendPoint> points =
-                new ArrayList<TrendAnalyzer.TrendPoint>();
+        List<MonthlyTrendPoint> monthlyPoints =
+                new ArrayList<MonthlyTrendPoint>();
+        Set<YearMonth> periods = new HashSet<YearMonth>();
         for (DatasetRow row : dataset.list()) {
             requireField(row, definition.getPeriodField());
             requireField(row, definition.getValueField());
             Object period = row.getOrNull(definition.getPeriodField());
             Object value = row.getOrNull(definition.getValueField());
-            if (period == null || value == null) {
+            YearMonth month = monthlyPeriod(period);
+            if (!periods.add(month)) {
+                throw new IllegalArgumentException(
+                        "Duplicate trend period: " + month);
+            }
+            if (value == null) {
                 continue;
             }
-            points.add(new TrendAnalyzer.TrendPoint(
-                    String.valueOf(period), numeric(value, "trend value")));
+            monthlyPoints.add(new MonthlyTrendPoint(
+                    month, numeric(value, "trend value")));
         }
-        BigDecimal comparison = resolveComparison(
-                narrative, definition, context, points);
+        Collections.sort(monthlyPoints, new Comparator<MonthlyTrendPoint>() {
+            @Override
+            public int compare(
+                    MonthlyTrendPoint left, MonthlyTrendPoint right) {
+                return left.period.compareTo(right.period);
+            }
+        });
+        List<TrendAnalyzer.TrendPoint> points =
+                new ArrayList<TrendAnalyzer.TrendPoint>(monthlyPoints.size());
+        for (MonthlyTrendPoint point : monthlyPoints) {
+            points.add(new TrendAnalyzer.TrendPoint(
+                    point.period.toString(), point.value));
+        }
+        BigDecimal comparison = points.isEmpty()
+                ? null
+                : resolveComparison(
+                        narrative, definition, context, points);
         TrendResult result = analyzer.analyze(
                 points,
                 comparison,
@@ -78,6 +103,29 @@ final class TrendNarrativeAnalyzer implements ControlledNarrativeAnalyzer {
         summary.put("minimumValue", result.minimum().value());
         summary.put("abnormalPeriods", result.abnormalPeriods());
         return new NarrativeAnalysis(summary, false, false, "", result);
+    }
+
+    private static YearMonth monthlyPeriod(Object value) {
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    "Trend period must not be null");
+        }
+        if (value instanceof YearMonth) {
+            return (YearMonth) value;
+        }
+        if (value instanceof CharSequence) {
+            try {
+                return YearMonth.parse(value.toString());
+            } catch (RuntimeException exception) {
+                throw new IllegalArgumentException(
+                        "Trend period must use yyyy-MM: " + value,
+                        exception);
+            }
+        }
+        throw new IllegalArgumentException(
+                "Unsupported trend period type "
+                        + value.getClass().getSimpleName()
+                        + "; expected yyyy-MM text or YearMonth");
     }
 
     private static BigDecimal resolveComparison(
@@ -195,5 +243,15 @@ final class TrendNarrativeAnalyzer implements ControlledNarrativeAnalyzer {
         return value instanceof BigDecimal
                 ? (BigDecimal) value
                 : new BigDecimal(String.valueOf(value));
+    }
+
+    private static final class MonthlyTrendPoint {
+        private final YearMonth period;
+        private final BigDecimal value;
+
+        private MonthlyTrendPoint(YearMonth period, BigDecimal value) {
+            this.period = period;
+            this.value = value;
+        }
     }
 }

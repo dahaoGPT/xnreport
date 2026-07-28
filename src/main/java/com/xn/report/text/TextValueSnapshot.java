@@ -1,6 +1,25 @@
 package com.xn.report.text;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.MonthDay;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.Period;
+import java.time.Year;
+import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
@@ -10,6 +29,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 final class TextValueSnapshot {
 
@@ -31,8 +51,23 @@ final class TextValueSnapshot {
         if (value == null || isKnownImmutable(value)) {
             return value;
         }
+        if (value instanceof Timestamp) {
+            Timestamp source = (Timestamp) value;
+            Timestamp copy = new Timestamp(source.getTime());
+            copy.setNanos(source.getNanos());
+            return copy;
+        }
+        if (value instanceof java.sql.Date) {
+            return new java.sql.Date(((java.sql.Date) value).getTime());
+        }
+        if (value instanceof Time) {
+            return new Time(((Time) value).getTime());
+        }
         if (value instanceof Date) {
             return new Date(((Date) value).getTime());
+        }
+        if (value instanceof Calendar) {
+            return ((Calendar) value).clone();
         }
         if (active.put(value, Boolean.TRUE) != null) {
             throw new IllegalArgumentException(
@@ -72,20 +107,43 @@ final class TextValueSnapshot {
                 }
                 return Collections.unmodifiableList(copy);
             }
-            return value;
+            throw new IllegalArgumentException(
+                    "Unsupported mutable text value type: "
+                            + value.getClass().getName());
         } finally {
             active.remove(value);
         }
     }
 
     private static boolean isKnownImmutable(Object value) {
+        Class<?> type = value.getClass();
         return value instanceof String
-                || value instanceof Number
                 || value instanceof Boolean
                 || value instanceof Character
+                || type == Byte.class
+                || type == Short.class
+                || type == Integer.class
+                || type == Long.class
+                || type == Float.class
+                || type == Double.class
+                || type == BigInteger.class
+                || type == BigDecimal.class
+                || value instanceof UUID
                 || value instanceof Enum<?>
-                || value instanceof java.time.temporal.TemporalAccessor
-                || value instanceof java.time.Duration
-                || value instanceof java.time.Period;
+                || value instanceof Class<?>
+                || value instanceof Instant
+                || value instanceof LocalDate
+                || value instanceof LocalTime
+                || value instanceof LocalDateTime
+                || value instanceof OffsetTime
+                || value instanceof OffsetDateTime
+                || value instanceof ZonedDateTime
+                || value instanceof Year
+                || value instanceof YearMonth
+                || value instanceof MonthDay
+                || value instanceof ZoneId
+                || value instanceof ZoneOffset
+                || value instanceof Duration
+                || value instanceof Period;
     }
 }

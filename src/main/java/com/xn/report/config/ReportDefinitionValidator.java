@@ -17,6 +17,9 @@ import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.excel.ExcelSheetNameRules;
 import com.xn.report.dataset.DatasetType;
 import com.xn.report.rule.RuleEngine;
+import com.xn.report.text.FormatterRegistry;
+import com.xn.report.text.PlaceholderParser;
+import com.xn.report.text.PlaceholderParser.Part;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -43,6 +46,10 @@ public final class ReportDefinitionValidator {
             unmodifiableSet("SCENARIO", "KEY_FACTORS", "FIXED_TEXT", "UNIT", "ATTACHMENT");
     private static final Set<String> EMPTY_STRATEGIES =
             unmodifiableSet("KEEP", "SHOW_EMPTY", "SKIP");
+    private static final PlaceholderParser PLACEHOLDER_PARSER =
+            new PlaceholderParser();
+    private static final FormatterRegistry FORMATTERS =
+            FormatterRegistry.defaults();
 
     public ValidationResult validate(ReportDefinition definition) {
         ValidationResult result = new ValidationResult();
@@ -932,7 +939,9 @@ public final class ReportDefinitionValidator {
             if (narrative.hasProperty("distribution")
                     || hasDistributionContent(narrative.getDistribution())) {
                 validateDistribution(narrative.getDistribution(),
-                        path + ".distribution", result);
+                        path + ".distribution",
+                        datasetsById.get(narrative.getDataset()),
+                        result);
             }
         }
         return narrativeIds;
@@ -962,6 +971,11 @@ public final class ReportDefinitionValidator {
             if (!hasText(narrative.getTemplate())) {
                 result.add("TEXT-001", path + ".template",
                         "FIXED_TEMPLATE requires template");
+            } else {
+                validateTextTemplate(
+                        narrative.getTemplate(),
+                        path + ".template",
+                        result);
             }
             rejectNarrativeProperties(
                     narrative, path, result,
@@ -980,6 +994,11 @@ public final class ReportDefinitionValidator {
             if (!hasText(narrative.getSentence())) {
                 result.add("TEXT-001", path + ".sentence",
                         "RULE_GENERATED requires sentence");
+            } else {
+                validateTextTemplate(
+                        narrative.getSentence(),
+                        path + ".sentence",
+                        result);
             }
             rejectNarrativeProperties(narrative, path, result, "template");
             if (narrative.getAnalyzerType() == null) {
@@ -1043,6 +1062,17 @@ public final class ReportDefinitionValidator {
             result.add("TEXT-001", path + ".valueField",
                     "Trend valueField is required");
         }
+        DatasetDefinition source = datasetsById.get(narrative.getDataset());
+        validateNarrativeDatasetField(
+                source,
+                trend.getPeriodField(),
+                path + ".periodField",
+                result);
+        validateNarrativeDatasetField(
+                source,
+                trend.getValueField(),
+                path + ".valueField",
+                result);
         if (trend.getComparisonSource() == null) {
             result.add("TEXT-001", path + ".comparisonSource",
                     "Trend comparisonSource is required");
@@ -1164,7 +1194,7 @@ public final class ReportDefinitionValidator {
             return;
         }
         boolean found = false;
-        for (String actual : dataset.getExpectedFields().keySet()) {
+        for (String actual : availableDatasetFields(dataset)) {
             if (actual.equalsIgnoreCase(field)) {
                 found = true;
                 break;
@@ -1175,7 +1205,45 @@ public final class ReportDefinitionValidator {
                     "Unknown comparison field " + field
                             + " for dataset " + datasetId
                             + "; expected "
-                            + dataset.getExpectedFields().keySet());
+                            + availableDatasetFields(dataset));
+        }
+    }
+
+    private void validateNarrativeDatasetField(
+            DatasetDefinition dataset,
+            String field,
+            String path,
+            ValidationResult result) {
+        if (dataset == null
+                || dataset.getExpectedFields() == null
+                || dataset.getExpectedFields().isEmpty()
+                || !hasText(field)
+                || containsField(availableDatasetFields(dataset), field)) {
+            return;
+        }
+        result.add("TEXT-001", path,
+                "Unknown narrative field " + field
+                        + " in dataset " + dataset.getId());
+    }
+
+    private void validateTextTemplate(
+            String template,
+            String path,
+            ValidationResult result) {
+        try {
+            for (Part part : PLACEHOLDER_PARSER.parse(template)) {
+                if (!part.isLiteral()
+                        && part.formatter() != null
+                        && !FORMATTERS.supports(part.formatter())) {
+                    result.add("TEXT-001", path,
+                            "Unknown formatter: " + part.formatter());
+                }
+            }
+        } catch (RuntimeException exception) {
+            result.add("TEXT-001", path,
+                    exception.getMessage() == null
+                            ? "Invalid text template"
+                            : exception.getMessage());
         }
     }
 
@@ -1255,6 +1323,7 @@ public final class ReportDefinitionValidator {
     private void validateDistribution(
             DistributionDefinition distribution,
             String path,
+            DatasetDefinition dataset,
             ValidationResult result) {
         if (distribution == null) {
             return;
@@ -1263,6 +1332,11 @@ public final class ReportDefinitionValidator {
             result.add("TEXT-001", path + ".field",
                     "Distribution field is required");
         }
+        validateNarrativeDatasetField(
+                dataset,
+                distribution.getField(),
+                path + ".field",
+                result);
         if (distribution.hasProperty("bins")
                 && distribution.getBins() == null) {
             result.add("TEXT-001", path + ".bins",

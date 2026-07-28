@@ -1,9 +1,13 @@
 package com.xn.report.config.definition;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.xn.report.transform.DivideByZeroStrategy;
 import com.xn.report.transform.FieldConflictStrategy;
 import java.math.BigDecimal;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public class TransformDefinition {
 
@@ -13,7 +17,6 @@ public class TransformDefinition {
     private List<SortFieldDefinition> sortFields;
     private TransformOperator operator;
     private Object value;
-    private boolean valueConfigured;
     private String sourceField;
     private String targetField;
     private BigDecimal operand;
@@ -22,12 +25,15 @@ public class TransformDefinition {
     private DivideByZeroStrategy divideByZeroStrategy;
     private BigDecimal divideByZeroDefault;
     private FieldConflictStrategy fieldConflictStrategy;
+    @JsonIgnore
+    private final Set<String> presentProperties = new LinkedHashSet<String>();
 
     public TransformType getType() {
         return type;
     }
 
     public void setType(TransformType type) {
+        markPresent("type");
         this.type = type;
     }
 
@@ -36,6 +42,7 @@ public class TransformDefinition {
     }
 
     public void setField(String field) {
+        markPresent("field");
         this.field = field;
     }
 
@@ -44,6 +51,7 @@ public class TransformDefinition {
     }
 
     public void setFields(List<String> fields) {
+        markPresent("fields");
         this.fields = fields;
     }
 
@@ -52,6 +60,7 @@ public class TransformDefinition {
     }
 
     public void setSortFields(List<SortFieldDefinition> sortFields) {
+        markPresent("sortFields");
         this.sortFields = sortFields;
     }
 
@@ -60,6 +69,7 @@ public class TransformDefinition {
     }
 
     public void setOperator(TransformOperator operator) {
+        markPresent("operator");
         this.operator = operator;
     }
 
@@ -68,12 +78,13 @@ public class TransformDefinition {
     }
 
     public void setValue(Object value) {
+        markPresent("value");
         this.value = value;
-        this.valueConfigured = true;
     }
 
+    @JsonIgnore
     public boolean hasValue() {
-        return valueConfigured;
+        return hasProperty("value");
     }
 
     public String getSourceField() {
@@ -81,6 +92,7 @@ public class TransformDefinition {
     }
 
     public void setSourceField(String sourceField) {
+        markPresent("sourceField");
         this.sourceField = sourceField;
     }
 
@@ -89,6 +101,7 @@ public class TransformDefinition {
     }
 
     public void setTargetField(String targetField) {
+        markPresent("targetField");
         this.targetField = targetField;
     }
 
@@ -97,6 +110,7 @@ public class TransformDefinition {
     }
 
     public void setOperand(BigDecimal operand) {
+        markPresent("operand");
         this.operand = operand;
     }
 
@@ -105,6 +119,7 @@ public class TransformDefinition {
     }
 
     public void setLimit(Integer limit) {
+        markPresent("limit");
         this.limit = limit;
     }
 
@@ -113,6 +128,7 @@ public class TransformDefinition {
     }
 
     public void setScale(Integer scale) {
+        markPresent("scale");
         this.scale = scale;
     }
 
@@ -122,6 +138,7 @@ public class TransformDefinition {
 
     public void setDivideByZeroStrategy(
             DivideByZeroStrategy divideByZeroStrategy) {
+        markPresent("divideByZeroStrategy");
         this.divideByZeroStrategy = divideByZeroStrategy;
     }
 
@@ -130,6 +147,7 @@ public class TransformDefinition {
     }
 
     public void setDivideByZeroDefault(BigDecimal divideByZeroDefault) {
+        markPresent("divideByZeroDefault");
         this.divideByZeroDefault = divideByZeroDefault;
     }
 
@@ -139,6 +157,22 @@ public class TransformDefinition {
 
     public void setFieldConflictStrategy(
             FieldConflictStrategy fieldConflictStrategy) {
+        markPresent("fieldConflictStrategy");
         this.fieldConflictStrategy = fieldConflictStrategy;
+    }
+
+    @JsonIgnore
+    public boolean hasProperty(String property) {
+        return presentProperties.contains(property);
+    }
+
+    @JsonIgnore
+    public Set<String> getPresentProperties() {
+        return Collections.unmodifiableSet(
+                new LinkedHashSet<String>(presentProperties));
+    }
+
+    private void markPresent(String property) {
+        presentProperties.add(property);
     }
 }

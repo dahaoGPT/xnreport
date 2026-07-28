@@ -186,31 +186,11 @@ public final class TransformFactory {
 
     private static void rejectUnexpected(
             TransformDefinition definition, Set<String> allowed) {
-        reject(definition.getField(), "field", allowed);
-        reject(definition.getFields(), "fields", allowed);
-        reject(definition.getSortFields(), "sortFields", allowed);
-        reject(definition.getOperator(), "operator", allowed);
-        if (definition.hasValue()) {
-            reject(Boolean.TRUE, "value", allowed);
-        }
-        reject(definition.getSourceField(), "sourceField", allowed);
-        reject(definition.getTargetField(), "targetField", allowed);
-        reject(definition.getOperand(), "operand", allowed);
-        reject(definition.getLimit(), "limit", allowed);
-        reject(definition.getScale(), "scale", allowed);
-        reject(definition.getDivideByZeroStrategy(),
-                "divideByZeroStrategy", allowed);
-        reject(definition.getDivideByZeroDefault(),
-                "divideByZeroDefault", allowed);
-        reject(definition.getFieldConflictStrategy(),
-                "fieldConflictStrategy", allowed);
-    }
-
-    private static void reject(
-            Object value, String name, Set<String> allowed) {
-        if (value != null && !allowed.contains(name)) {
-            throw new IllegalArgumentException(
-                    name + " is not allowed for this transform type");
+        for (String property : definition.getPresentProperties()) {
+            if (!"type".equals(property) && !allowed.contains(property)) {
+                throw new IllegalArgumentException(
+                        property + " is not allowed for this transform type");
+            }
         }
     }
 

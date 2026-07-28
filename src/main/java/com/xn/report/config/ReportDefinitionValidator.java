@@ -296,98 +296,41 @@ public final class ReportDefinitionValidator {
             TransformDefinition transform,
             String path,
             ValidationResult result) {
+        Set<String> allowed;
         switch (transform.getType()) {
             case FILTER:
-                rejectIfConfigured(result, path, "fields", transform.getFields());
-                rejectIfConfigured(result, path, "sortFields", transform.getSortFields());
-                rejectIfConfigured(result, path, "sourceField", transform.getSourceField());
-                rejectIfConfigured(result, path, "targetField", transform.getTargetField());
-                rejectIfConfigured(result, path, "operand", transform.getOperand());
-                rejectIfConfigured(result, path, "limit", transform.getLimit());
-                rejectIfConfigured(result, path, "scale", transform.getScale());
-                rejectIfConfigured(result, path, "divideByZeroStrategy",
-                        transform.getDivideByZeroStrategy());
-                rejectIfConfigured(result, path, "divideByZeroDefault",
-                        transform.getDivideByZeroDefault());
-                rejectIfConfigured(result, path, "fieldConflictStrategy",
-                        transform.getFieldConflictStrategy());
+                allowed = unmodifiableSet("type", "field", "operator", "value");
                 break;
             case SORT:
-                rejectIfConfigured(result, path, "field", transform.getField());
-                rejectIfConfigured(result, path, "fields", transform.getFields());
-                rejectIfConfigured(result, path, "operator", transform.getOperator());
-                rejectValueIfConfigured(result, path, transform);
-                rejectDerivedAndLimitAttributes(transform, path, result);
+                allowed = unmodifiableSet("type", "sortFields");
                 break;
             case DISTINCT:
-                rejectIfConfigured(result, path, "field", transform.getField());
-                rejectIfConfigured(result, path, "sortFields", transform.getSortFields());
-                rejectIfConfigured(result, path, "operator", transform.getOperator());
-                rejectValueIfConfigured(result, path, transform);
-                rejectDerivedAndLimitAttributes(transform, path, result);
+                allowed = unmodifiableSet("type", "fields");
                 break;
             case LIMIT:
-                rejectIfConfigured(result, path, "field", transform.getField());
-                rejectIfConfigured(result, path, "fields", transform.getFields());
-                rejectIfConfigured(result, path, "sortFields", transform.getSortFields());
-                rejectIfConfigured(result, path, "operator", transform.getOperator());
-                rejectValueIfConfigured(result, path, transform);
-                rejectDerivedAttributes(transform, path, result);
+                allowed = unmodifiableSet("type", "limit");
                 break;
             case DERIVED_FIELD:
-                rejectIfConfigured(result, path, "field", transform.getField());
-                rejectIfConfigured(result, path, "fields", transform.getFields());
-                rejectIfConfigured(result, path, "sortFields", transform.getSortFields());
-                rejectValueIfConfigured(result, path, transform);
-                rejectIfConfigured(result, path, "limit", transform.getLimit());
+                allowed = unmodifiableSet(
+                        "type",
+                        "sourceField",
+                        "targetField",
+                        "operator",
+                        "operand",
+                        "scale",
+                        "divideByZeroStrategy",
+                        "divideByZeroDefault",
+                        "fieldConflictStrategy");
                 break;
             default:
-                break;
+                allowed = Collections.emptySet();
         }
-    }
-
-    private void rejectDerivedAndLimitAttributes(
-            TransformDefinition transform,
-            String path,
-            ValidationResult result) {
-        rejectDerivedAttributes(transform, path, result);
-        rejectIfConfigured(result, path, "limit", transform.getLimit());
-    }
-
-    private void rejectDerivedAttributes(
-            TransformDefinition transform,
-            String path,
-            ValidationResult result) {
-        rejectIfConfigured(result, path, "sourceField", transform.getSourceField());
-        rejectIfConfigured(result, path, "targetField", transform.getTargetField());
-        rejectIfConfigured(result, path, "operand", transform.getOperand());
-        rejectIfConfigured(result, path, "scale", transform.getScale());
-        rejectIfConfigured(result, path, "divideByZeroStrategy",
-                transform.getDivideByZeroStrategy());
-        rejectIfConfigured(result, path, "divideByZeroDefault",
-                transform.getDivideByZeroDefault());
-        rejectIfConfigured(result, path, "fieldConflictStrategy",
-                transform.getFieldConflictStrategy());
-    }
-
-    private void rejectValueIfConfigured(
-            ValidationResult result,
-            String path,
-            TransformDefinition transform) {
-        if (transform.hasValue()) {
-            result.add("CFG-TRANSFORM-ATTRIBUTE", path + ".value",
-                    "value is not allowed for " + transform.getType());
-        }
-    }
-
-    private void rejectIfConfigured(
-            ValidationResult result,
-            String path,
-            String attribute,
-            Object value) {
-        if (value != null) {
-            result.add("CFG-TRANSFORM-ATTRIBUTE", path + "." + attribute,
-                    attribute + " is not allowed for this transform type");
+        for (String property : transform.getPresentProperties()) {
+            if (!allowed.contains(property)) {
+                result.add("CFG-TRANSFORM-ATTRIBUTE", path + "." + property,
+                        property + " is not allowed for "
+                                + transform.getType());
+            }
         }
     }
 

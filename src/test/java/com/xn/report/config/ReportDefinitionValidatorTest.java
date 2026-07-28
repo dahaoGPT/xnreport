@@ -23,6 +23,10 @@ import com.xn.report.dataset.DatasetType;
 import com.xn.report.transform.Direction;
 import com.xn.report.transform.DivideByZeroStrategy;
 import com.xn.report.transform.NullOrder;
+import com.xn.report.transform.TransformFactory;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.math.BigDecimal;
 import java.nio.file.Paths;
 import java.util.Arrays;
@@ -30,6 +34,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ReportDefinitionValidatorTest {
 
@@ -364,6 +369,45 @@ class ReportDefinitionValidatorTest {
     }
 
     @Test
+    void loaderTracksExplicitNullForValidatorAndFactoryAcrossYamlAndJson(
+            @TempDir Path temporaryDirectory) throws Exception {
+        assertExplicitNullRejected(
+                temporaryDirectory,
+                "comparison-value",
+                "      - type: FILTER\n"
+                        + "        field: value\n"
+                        + "        operator: EQUAL\n"
+                        + "        value: null\n",
+                "{\"type\":\"FILTER\",\"field\":\"value\","
+                        + "\"operator\":\"EQUAL\",\"value\":null}",
+                "value",
+                "CFG-TRANSFORM-VALUE");
+        assertExplicitNullRejected(
+                temporaryDirectory,
+                "filter-limit",
+                "      - type: FILTER\n"
+                        + "        field: value\n"
+                        + "        operator: EQUAL\n"
+                        + "        value: 1\n"
+                        + "        limit: null\n",
+                "{\"type\":\"FILTER\",\"field\":\"value\","
+                        + "\"operator\":\"EQUAL\",\"value\":1,\"limit\":null}",
+                "limit",
+                "CFG-TRANSFORM-ATTRIBUTE");
+        assertExplicitNullRejected(
+                temporaryDirectory,
+                "null-operator-value",
+                "      - type: FILTER\n"
+                        + "        field: value\n"
+                        + "        operator: IS_NULL\n"
+                        + "        value: null\n",
+                "{\"type\":\"FILTER\",\"field\":\"value\","
+                        + "\"operator\":\"IS_NULL\",\"value\":null}",
+                "value",
+                "CFG-TRANSFORM-ATTRIBUTE");
+    }
+
+    @Test
     void schemaValidatesCompleteValidAndInvalidInstances() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode schemaDocument = mapper.readTree(Paths.get(
@@ -416,6 +460,21 @@ class ReportDefinitionValidatorTest {
         assertThat(validator.validate(mapper.treeToValue(
                 comparisonWithoutValue, ReportDefinition.class)).codes())
                 .contains("CFG-TRANSFORM-VALUE");
+
+        ObjectNode comparisonWithNullValue = valid.deepCopy();
+        ((ObjectNode) comparisonWithNullValue.path("datasets").get(0)
+                .path("transforms").get(0)).putNull("value");
+        assertSchemaRejects(schema, comparisonWithNullValue);
+
+        ObjectNode filterWithNullLimit = valid.deepCopy();
+        ((ObjectNode) filterWithNullLimit.path("datasets").get(0)
+                .path("transforms").get(0)).putNull("limit");
+        assertSchemaRejects(schema, filterWithNullLimit);
+
+        ObjectNode nullFilterWithNullValue = nullFilter.deepCopy();
+        ((ObjectNode) nullFilterWithNullValue.path("datasets").get(0)
+                .path("transforms").get(0)).putNull("value");
+        assertSchemaRejects(schema, nullFilterWithNullValue);
 
         ObjectNode defaultWithoutValue = valid.deepCopy();
         ObjectNode defaultDerived = (ObjectNode) defaultWithoutValue.path("datasets")
@@ -551,6 +610,47 @@ class ReportDefinitionValidatorTest {
         section.setLevel(level);
         section.setEmptyStrategy(emptyStrategy);
         return section;
+    }
+
+    private void assertExplicitNullRejected(
+            Path temporaryDirectory,
+            String name,
+            String yamlTransform,
+            String jsonTransform,
+            String presentProperty,
+            String expectedCode) throws Exception {
+        String yaml = "schemaVersion: \"1.0\"\n"
+                + "report:\n"
+                + "  code: explicit-null\n"
+                + "  name: Explicit Null\n"
+                + "datasets:\n"
+                + "  - id: source\n"
+                + "    sheetName: Source\n"
+                + "    sqlFile: source.sql\n"
+                + "    resultType: LIST\n"
+                + "    transforms:\n"
+                + yamlTransform;
+        String json = "{\"schemaVersion\":\"1.0\","
+                + "\"report\":{\"code\":\"explicit-null\","
+                + "\"name\":\"Explicit Null\"},"
+                + "\"datasets\":[{\"id\":\"source\",\"sheetName\":\"Source\","
+                + "\"sqlFile\":\"source.sql\",\"resultType\":\"LIST\","
+                + "\"transforms\":[" + jsonTransform + "]}]}";
+        Path yamlPath = temporaryDirectory.resolve(name + ".yml");
+        Path jsonPath = temporaryDirectory.resolve(name + ".json");
+        Files.write(yamlPath, yaml.getBytes(StandardCharsets.UTF_8));
+        Files.write(jsonPath, json.getBytes(StandardCharsets.UTF_8));
+
+        ReportDefinitionLoader loader = ReportDefinitionLoader.createDefault();
+        for (Path path : Arrays.asList(yamlPath, jsonPath)) {
+            ReportDefinition loaded = loader.load(path);
+            TransformDefinition transform =
+                    loaded.getDatasets().get(0).getTransforms().get(0);
+            assertThat(transform.hasProperty(presentProperty)).isTrue();
+            assertThat(validator.validate(loaded).codes()).contains(expectedCode);
+            assertThatThrownBy(() -> new TransformFactory().create(transform))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
     }
 
     private static WordComponentDefinition component(

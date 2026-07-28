@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "1.0",
+  "report": {
+    "code": "sample-report",
+    "name": "示例报表",
+    "excelTemplate": "sample.xlsx",
+    "wordTemplate": "sample.docx"
+  },
+  "datasets": [
+    {
+      "id": "summary",
+      "sheetName": "汇总",
+      "sqlFile": "sql/summary.sql",
+      "resultType": "SINGLE"
+    }
+  ],
+  "narratives": [
+    {
+      "id": "summaryNarrative",
+      "sourceType": "RULE_GENERATED",
+      "analyzer": "DISTRIBUTION",
+      "dataset": "summary",
+      "baseline": "summaryBaseline",
+      "format": "percent:0.0",
+      "sentence": "1天内占比${within1Day.percent}",
+      "parameters": {
+        "includeEmpty": false
+      },
+      "distribution": {
+        "field": "approvalHours",
+        "bins": [
+          {
+            "id": "within1Day",
+            "label": "1天之内",
+            "max": 24,
+            "maxInclusive": true
+          }
+        ],
+        "labelMode": "COUNT_AND_PERCENT"
+      }
+    }
+  ],
+  "word": {
+    "cover": {
+      "title": "示例报表",
+      "organization": "示例组织",
+      "reportPeriod": "2026年7月",
+      "preparedBy": "效能小组",
+      "preparedDate": "2026年7月28日"
+    },
+    "toc": {
+      "enabled": true,
+      "maxLevel": 3,
+      "updateOnOpen": true
+    },
+    "sections": [
+      {
+        "id": "summarySection",
+        "title": "总体情况",
+        "level": 1,
+        "emptyStrategy": "KEEP",
+        "children": [
+          {
+            "id": "detailSection",
+            "title": "详细情况",
+            "level": 2,
+            "components": [
+              {
+                "type": "FIXED_TEXT",
+                "text": "示例正文"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

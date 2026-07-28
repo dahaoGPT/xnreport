@@ -374,6 +374,12 @@ public final class ReportDefinitionValidator {
             result.add("CHART-001", path + ".marker",
                     type + " does not support marker");
         }
+        if (type == ChartType.SCATTER
+                && series.hasProperty("marker")
+                && !series.isMarker()) {
+            result.add("CHART-001", path + ".marker",
+                    "SCATTER requires a visible marker");
+        }
         if (series.hasProperty("format")
                 && (!series.hasProperty("dataLabels")
                 || series.getDataLabels()

@@ -229,6 +229,21 @@ class ChartConfigurationTest {
         assertRejectedByValidatorAndBuilder(pie);
     }
 
+    @Test
+    void rejectsExplicitlyHiddenScatterMarkersInSchemaAndRuntime()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode json = mapper.readTree(validChartJson(
+                "generatedNative",
+                "{\"field\":\"a\",\"name\":\"A\",\"type\":\"scatter\","
+                        + "\"marker\":false}"));
+        assertThat(schema().validate(json)).isNotEmpty();
+
+        ChartDefinition scatter = chart(ChartType.SCATTER, "a", null);
+        scatter.getSeries().get(0).setMarker(false);
+        assertRejectedByValidatorAndBuilder(scatter);
+    }
+
     private static com.xn.report.config.definition.DatasetDefinition datasetWithFields() {
         return datasetWithFields("uncertain", "certain", "baseline");
     }

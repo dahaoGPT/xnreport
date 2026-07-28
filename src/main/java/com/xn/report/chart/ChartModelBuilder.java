@@ -74,8 +74,40 @@ public final class ChartModelBuilder {
                 return Collections.emptyList();
             }
         return Collections.singletonList(
-                buildGroup(definition, datasetId, null,
-                        Collections.<DatasetRow>emptyList()));
+                buildEmptyModel(definition, datasetId));
+    }
+
+    private ChartModel buildEmptyModel(
+            ChartDefinition definition, String datasetId) {
+        List<IndexedSeries> built = new ArrayList<IndexedSeries>();
+        for (int index = 0; index < definition.getSeries().size(); index++) {
+            ChartSeriesDefinition source = definition.getSeries().get(index);
+            built.add(new IndexedSeries(
+                    source.getLegendOrder() == null
+                            ? index : source.getLegendOrder().intValue(),
+                    index,
+                    seriesModel(
+                            source, index,
+                            Collections.<BigDecimal>emptyList(),
+                            Collections.<BigDecimal>emptyList())));
+        }
+        Collections.sort(built, new Comparator<IndexedSeries>() {
+            @Override
+            public int compare(IndexedSeries left, IndexedSeries right) {
+                int order = Integer.compare(left.legendOrder, right.legendOrder);
+                return order != 0 ? order : Integer.compare(left.index, right.index);
+            }
+        });
+        List<ChartSeriesModel> series = new ArrayList<ChartSeriesModel>();
+        for (IndexedSeries item : built) {
+            series.add(item.series);
+        }
+        return model(
+                definition, null,
+                Collections.<String>emptyList(),
+                series,
+                Collections.<String>emptyList(),
+                datasetId);
     }
 
     public ChartModel buildDistribution(
@@ -187,7 +219,7 @@ public final class ChartModelBuilder {
                 definition.getPrimaryAxisMax(),
                 definition.getSecondaryAxisMin(),
                 definition.getSecondaryAxisMax(),
-                definition.getDataLabelMode(),
+                effectiveModelLabelMode(definition, labels, series),
                 labels,
                 intValue(definition.getWidthPixels(), 1600),
                 intValue(definition.getHeightPixels(), 850),
@@ -211,7 +243,9 @@ public final class ChartModelBuilder {
                         ? ChartLineStyle.SOLID : source.getLineStyle(),
                 source.getLineWidth() == null
                         ? BigDecimal.valueOf(2) : source.getLineWidth(),
-                source.isMarker(),
+                (source.getType() == ChartType.SCATTER
+                        && !source.hasProperty("marker"))
+                        || source.isMarker(),
                 source.getDataLabels() == null
                         ? ChartDataLabelMode.NONE : source.getDataLabels(),
                 source.getFormat(),
@@ -493,6 +527,12 @@ public final class ChartModelBuilder {
             throw new ChartBuildException(
                     type + " does not support marker");
         }
+        if (type == ChartType.SCATTER
+                && series.hasProperty("marker")
+                && !series.isMarker()) {
+            throw new ChartBuildException(
+                    "SCATTER requires a visible marker");
+        }
         if (type == ChartType.RADAR
                 && (series.hasProperty("marker")
                 || series.hasProperty("dataLabels")
@@ -539,6 +579,26 @@ public final class ChartModelBuilder {
             ChartDefinition definition, ChartSeriesModel series) {
         return definition.getDataLabelMode() != ChartDataLabelMode.NONE
                 ? definition.getDataLabelMode() : series.getDataLabelMode();
+    }
+
+    private static ChartDataLabelMode effectiveModelLabelMode(
+            ChartDefinition definition,
+            List<String> labels,
+            List<ChartSeriesModel> series) {
+        if (definition.getDataLabelMode() != null
+                && definition.getDataLabelMode()
+                != ChartDataLabelMode.NONE) {
+            return definition.getDataLabelMode();
+        }
+        if (series.size() == 1
+                && series.get(0).getType().isPieLike()
+                && series.get(0).getDataLabelMode()
+                != ChartDataLabelMode.NONE) {
+            return series.get(0).getDataLabelMode();
+        }
+        return labels.isEmpty()
+                ? ChartDataLabelMode.NONE
+                : ChartDataLabelMode.COUNT_AND_PERCENT;
     }
 
     private static List<String> pieLabels(

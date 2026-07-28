@@ -153,6 +153,11 @@ public final class JsonSchemaContract {
                     && !"STOCK".equals(type)) {
                 errors.add(path + ".marker is unsupported for " + type);
             }
+            if ("SCATTER".equals(type)
+                    && instance.has("marker")
+                    && !instance.path("marker").asBoolean()) {
+                errors.add(path + ".marker must remain visible for SCATTER");
+            }
             if (instance.has("format")
                     && (!instance.has("dataLabels")
                     || "NONE".equals(enumName(

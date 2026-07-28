@@ -253,6 +253,48 @@ class ChartModelBuilderTest {
         ).getSeries().get(0).getType()).isEqualTo(ChartType.STOCK);
     }
 
+    @Test
+    void scatterDefaultsToVisibleMarkersAndRejectsExplicitFalse() {
+        ChartDefinition scatter = simpleDefinition(ChartType.SCATTER);
+        ChartModel model = builder.build(scatter,
+                DatasetResult.list("values",
+                        Collections.singletonList(
+                                DatasetRow.of(
+                                        "category", "1",
+                                        "value", 2,
+                                        "size", 1))));
+        assertThat(model.getSeries().get(0).isMarker()).isTrue();
+
+        scatter.getSeries().get(0).setMarker(false);
+        assertThatThrownBy(() -> builder.build(
+                scatter, DatasetResult.list("values",
+                        Collections.singletonList(
+                                DatasetRow.of(
+                                        "category", "1",
+                                        "value", 2,
+                                        "size", 1)))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("visible marker");
+    }
+
+    @Test
+    void outputMessageEmptyDataIgnoresConfiguredCategories() {
+        ChartDefinition definition = TestFixtures.comboChartDefinition();
+        definition.setCategories(Arrays.asList(
+                "2026年1月", "2026年2月"));
+        definition.setEmptyDataPolicy(ChartEmptyDataPolicy.OUTPUT_MESSAGE);
+
+        ChartModel model = builder.build(
+                definition,
+                DatasetResult.list(
+                        "centerEvents", Collections.<DatasetRow>emptyList()));
+
+        assertThat(model.isEmpty()).isTrue();
+        assertThat(model.getCategories()).isEmpty();
+        assertThat(model.getSeries())
+                .allSatisfy(series -> assertThat(series.getValues()).isEmpty());
+    }
+
     private static DatasetRow event(
             String center, String month, int uncertain, int certain, int baseline) {
         return DatasetRow.of(

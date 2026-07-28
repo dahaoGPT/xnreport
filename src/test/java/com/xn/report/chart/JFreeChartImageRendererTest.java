@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.LegendItemCollection;
 import org.jfree.chart.plot.CategoryPlot;
+import org.jfree.chart.plot.PiePlot;
 import org.jfree.chart.plot.SpiderWebPlot;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYBubbleRenderer;
@@ -120,7 +121,7 @@ class JFreeChartImageRendererTest {
 
         ChartDefinition scatterDefinition = definition(ChartType.SCATTER);
         ChartSeriesDefinition scatterSeries = scatterDefinition.getSeries().get(0);
-        scatterSeries.setMarker(false);
+        scatterSeries.setMarker(true);
         scatterSeries.setDataLabels(ChartDataLabelMode.VALUE);
         scatterSeries.setFormat("0.0");
         scatterSeries.setColor("#112233");
@@ -128,7 +129,7 @@ class JFreeChartImageRendererTest {
                 new ChartModelBuilder().build(scatterDefinition, xyRows()));
         XYLineAndShapeRenderer scatter = (XYLineAndShapeRenderer)
                 ((XYPlot) scatterChart.getPlot()).getRenderer(0);
-        assertThat(scatter.getSeriesShapesVisible(0)).isFalse();
+        assertThat(scatter.getSeriesShapesVisible(0)).isTrue();
         assertThat(scatter.getSeriesItemLabelGenerator(0)).isNotNull();
         assertThat(scatter.isSeriesItemLabelsVisible(0)).isTrue();
         assertThat(scatter.getSeriesPaint(0))
@@ -191,6 +192,49 @@ class JFreeChartImageRendererTest {
         assertThat(items.get(0).getLabel()).isEqualTo("Line first");
         assertThat(items.get(1).getLabel()).isEqualTo("Column second");
         assertThat(items.get(2).getLabel()).isEqualTo("Line third");
+    }
+
+    @Test
+    void seriesLevelPieLabelModesReachThePieLabelGenerator() {
+        JFreeChartImageRenderer renderer = new JFreeChartImageRenderer(
+                temporaryDirectory, Collections.singletonList("Dialog"));
+        for (ChartDataLabelMode mode : Arrays.asList(
+                ChartDataLabelMode.COUNT,
+                ChartDataLabelMode.PERCENT,
+                ChartDataLabelMode.COUNT_AND_PERCENT)) {
+            ChartDefinition definition = definition(ChartType.PIE);
+            definition.getSeries().get(0).setDataLabels(mode);
+            ChartModel model = new ChartModelBuilder().build(
+                    definition,
+                    DatasetResult.list("render", Arrays.asList(
+                            DatasetRow.of("x", "A", "y", 1, "size", 1),
+                            DatasetRow.of("x", "B", "y", 3, "size", 1))));
+
+            PiePlot<?> plot = (PiePlot<?>) renderer.createChart(model).getPlot();
+            assertThat(plot.getLabelGenerator()).as(mode.name()).isNotNull();
+            String first = plot.getLabelGenerator().generateSectionLabel(
+                    plot.getDataset(), "A");
+            if (mode == ChartDataLabelMode.COUNT) {
+                assertThat(first).isEqualTo("A 1");
+            } else if (mode == ChartDataLabelMode.PERCENT) {
+                assertThat(first).isEqualTo("A 25.00%");
+            } else {
+                assertThat(first).isEqualTo("A 1 (25.00%)");
+            }
+        }
+    }
+
+    @Test
+    void scatterWithoutMarkerPropertyStillRendersVisiblePoints() {
+        JFreeChartImageRenderer renderer = new JFreeChartImageRenderer(
+                temporaryDirectory, Collections.singletonList("Dialog"));
+        XYLineAndShapeRenderer scatter = (XYLineAndShapeRenderer)
+                ((XYPlot) renderer.createChart(
+                        new ChartModelBuilder().build(
+                                definition(ChartType.SCATTER),
+                                xyRows())).getPlot()).getRenderer(0);
+
+        assertThat(scatter.getSeriesShapesVisible(0)).isTrue();
     }
 
     private static ChartSeriesDefinition series(

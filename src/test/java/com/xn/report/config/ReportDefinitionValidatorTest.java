@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.xn.report.config.definition.DatasetDefinition;
+import com.xn.report.config.definition.ChartDefinition;
+import com.xn.report.config.definition.ChartSeriesDefinition;
 import com.xn.report.config.definition.DistributionDefinition;
 import com.xn.report.config.definition.DistributionDefinition.BinDefinition;
 import com.xn.report.config.definition.FieldDefinition;
@@ -136,6 +138,16 @@ class ReportDefinitionValidatorTest {
     @Test
     void acceptsValidWordTreeAndComponentReferences() {
         ReportDefinition definition = TestFixtures.report(TestFixtures.dataset("source"));
+        ChartDefinition trend = new ChartDefinition();
+        trend.setId("trend");
+        trend.setDataset("source");
+        trend.setCategoryField("month");
+        ChartSeriesDefinition trendSeries = new ChartSeriesDefinition();
+        trendSeries.setField("value");
+        trendSeries.setName("Trend");
+        trendSeries.setType(com.xn.report.chart.ChartType.LINE);
+        trend.setSeries(Collections.singletonList(trendSeries));
+        definition.setCharts(Collections.singletonList(trend));
         NarrativeDefinition narrative = narrative("summary", "RULE_GENERATED");
         definition.setNarratives(Arrays.asList(narrative));
 

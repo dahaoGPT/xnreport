@@ -1,6 +1,8 @@
 package com.xn.report.config;
 
 import com.xn.report.config.definition.DatasetDefinition;
+import com.xn.report.config.definition.ChartDefinition;
+import com.xn.report.config.definition.ChartSeriesDefinition;
 import com.xn.report.config.definition.DistributionDefinition;
 import com.xn.report.config.definition.DistributionDefinition.BinDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
@@ -20,6 +22,7 @@ import com.xn.report.rule.RuleEngine;
 import com.xn.report.text.FormatterRegistry;
 import com.xn.report.text.PlaceholderParser;
 import com.xn.report.text.PlaceholderParser.Part;
+import com.xn.report.chart.ChartType;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -84,6 +87,11 @@ public final class ReportDefinitionValidator {
                 datasetIds,
                 definition.getParameters(),
                 result);
+        if (definition.isChartsExplicitNull()) {
+            result.add("CHART-001", "$.charts", "charts must not be null");
+        }
+        Set<String> chartIds = validateCharts(
+                definition.getCharts(), datasets, datasetIds, result);
         if (definition.isNarrativesExplicitNull()) {
             result.add("TEXT-001", "$.narratives",
                     "narratives must not be null");
@@ -95,8 +103,247 @@ public final class ReportDefinitionValidator {
                         datasetIds,
                         definition.getParameters(),
                         result);
-        validateWord(definition.getWord(), narrativeIds, result);
+        validateWord(definition.getWord(), narrativeIds, chartIds, result);
         return result;
+    }
+
+    private Set<String> validateCharts(
+            List<ChartDefinition> charts,
+            List<DatasetDefinition> datasets,
+            Set<String> datasetIds,
+            ValidationResult result) {
+        Map<String, DatasetDefinition> datasetsById =
+                new LinkedHashMap<String, DatasetDefinition>();
+        for (DatasetDefinition dataset : datasets) {
+            if (dataset != null && hasText(dataset.getId())) {
+                datasetsById.put(dataset.getId(), dataset);
+            }
+        }
+        Set<String> ids = new LinkedHashSet<String>();
+        List<ChartDefinition> safeCharts = safeList(charts);
+        for (int index = 0; index < safeCharts.size(); index++) {
+            ChartDefinition chart = safeCharts.get(index);
+            String path = "$.charts[" + index + "]";
+            if (chart == null) {
+                result.add("CHART-001", path, "Chart must not be null");
+                continue;
+            }
+            if (!hasText(chart.getId())) {
+                result.add("CHART-001", path + ".id", "Chart id is required");
+            } else if (!ids.add(chart.getId())) {
+                result.add("CHART-001", path + ".id",
+                        "Duplicate chart id: " + chart.getId());
+            }
+            rejectExplicitNullChartProperties(chart, path, result);
+            if (!hasText(chart.getDataset())
+                    || !datasetIds.contains(chart.getDataset())) {
+                result.add("CHART-001", path + ".dataset",
+                        "Unknown chart dataset: " + chart.getDataset());
+            }
+            if (!hasText(chart.getCategoryField())) {
+                result.add("CHART-001", path + ".categoryField",
+                        "Chart categoryField is required");
+            }
+            if (chart.getWidthPixels() == null
+                    || chart.getWidthPixels().intValue() <= 0
+                    || chart.getWidthPixels().intValue() > 4000) {
+                result.add("CHART-001", path + ".widthPixels",
+                        "Chart widthPixels must be between 1 and 4000");
+            }
+            if (chart.getHeightPixels() == null
+                    || chart.getHeightPixels().intValue() <= 0
+                    || chart.getHeightPixels().intValue() > 2400) {
+                result.add("CHART-001", path + ".heightPixels",
+                        "Chart heightPixels must be between 1 and 2400");
+            }
+            if (chart.getDpi() == null || chart.getDpi().intValue() < 36
+                    || chart.getDpi().intValue() > 600) {
+                result.add("CHART-001", path + ".dpi",
+                        "Chart dpi must be between 36 and 600");
+            }
+            DatasetDefinition dataset = datasetsById.get(chart.getDataset());
+            boolean known = dataset != null
+                    && dataset.getExpectedFields() != null
+                    && !dataset.getExpectedFields().isEmpty();
+            Set<String> fields = dataset == null
+                    ? Collections.<String>emptySet()
+                    : availableDatasetFields(dataset);
+            validateChartField(chart.getCategoryField(), fields, known,
+                    path + ".categoryField", result);
+            if (hasText(chart.getGroupByField())) {
+                validateChartField(chart.getGroupByField(), fields, known,
+                        path + ".groupByField", result);
+            }
+            List<ChartSeriesDefinition> series = safeList(chart.getSeries());
+            if (series.isEmpty()) {
+                result.add("CHART-001", path + ".series",
+                        "Chart requires at least one series");
+            }
+            Set<Integer> legendOrders = new LinkedHashSet<Integer>();
+            for (int seriesIndex = 0;
+                    seriesIndex < series.size(); seriesIndex++) {
+                validateChartSeries(
+                        series.get(seriesIndex), fields, known,
+                        path + ".series[" + seriesIndex + "]",
+                        legendOrders, result);
+            }
+            validateAxisBounds(chart.getPrimaryAxisMin(),
+                    chart.getPrimaryAxisMax(), path + ".primaryAxis", result);
+            validateAxisBounds(chart.getSecondaryAxisMin(),
+                    chart.getSecondaryAxisMax(), path + ".secondaryAxis", result);
+        }
+        return ids;
+    }
+
+    private void rejectExplicitNullChartProperties(
+            ChartDefinition chart, String path, ValidationResult result) {
+        for (String property : chart.getPresentProperties()) {
+            Object value = chartProperty(chart, property);
+            if (value == null) {
+                result.add("CHART-001", path + "." + property,
+                        property + " must not be null");
+            }
+        }
+    }
+
+    private Object chartProperty(ChartDefinition chart, String property) {
+        if ("id".equals(property)) return chart.getId();
+        if ("title".equals(property)) return chart.getTitle();
+        if ("mode".equals(property)) return chart.getMode();
+        if ("dataset".equals(property)) return chart.getDataset();
+        if ("excelSheet".equals(property)) return chart.getExcelSheet();
+        if ("excelTable".equals(property)) return chart.getExcelTable();
+        if ("categoryField".equals(property)) return chart.getCategoryField();
+        if ("groupByField".equals(property)) return chart.getGroupByField();
+        if ("categories".equals(property)) return chart.getCategories();
+        if ("categorySort".equals(property)) return chart.getCategorySort();
+        if ("series".equals(property)) return chart.getSeries();
+        if ("legendPosition".equals(property)) return chart.getLegendPosition();
+        if ("primaryAxisMin".equals(property)) return chart.getPrimaryAxisMin();
+        if ("primaryAxisMax".equals(property)) return chart.getPrimaryAxisMax();
+        if ("secondaryAxisMin".equals(property)) return chart.getSecondaryAxisMin();
+        if ("secondaryAxisMax".equals(property)) return chart.getSecondaryAxisMax();
+        if ("dataLabelMode".equals(property)) return chart.getDataLabelMode();
+        if ("widthPixels".equals(property)) return chart.getWidthPixels();
+        if ("heightPixels".equals(property)) return chart.getHeightPixels();
+        if ("dpi".equals(property)) return chart.getDpi();
+        if ("emptyDataPolicy".equals(property)) return chart.getEmptyDataPolicy();
+        if ("emptyMessage".equals(property)) return chart.getEmptyMessage();
+        return null;
+    }
+
+    private void validateChartSeries(
+            ChartSeriesDefinition series,
+            Set<String> fields,
+            boolean known,
+            String path,
+            Set<Integer> legendOrders,
+            ValidationResult result) {
+        if (series == null) {
+            result.add("CHART-001", path, "Chart series must not be null");
+            return;
+        }
+        for (String property : series.getPresentProperties()) {
+            if (chartSeriesProperty(series, property) == null) {
+                result.add("CHART-001", path + "." + property,
+                        property + " must not be null");
+            }
+        }
+        if (!hasText(series.getField())) {
+            result.add("CHART-001", path + ".field",
+                    "Chart series field is required");
+        } else {
+            validateChartField(series.getField(), fields, known,
+                    path + ".field", result);
+        }
+        if (!hasText(series.getName())) {
+            result.add("CHART-001", path + ".name",
+                    "Chart series name is required");
+        }
+        ChartType type = series.getType();
+        if (type == null) {
+            result.add("CHART-001", path + ".type",
+                    "Chart series type is required");
+            return;
+        }
+        if (type.isStacked() && !hasText(series.getStackGroup())) {
+            result.add("CHART-001", path + ".stackGroup",
+                    "Stacked chart series requires stackGroup");
+        }
+        if (!type.isStacked() && series.hasProperty("stackGroup")) {
+            result.add("CHART-001", path + ".stackGroup",
+                    "stackGroup is only valid for stacked chart series");
+        }
+        if (type == ChartType.BUBBLE) {
+            if (!hasText(series.getSizeField())) {
+                result.add("CHART-001", path + ".sizeField",
+                        "BUBBLE series requires sizeField");
+            } else {
+                validateChartField(series.getSizeField(), fields, known,
+                        path + ".sizeField", result);
+            }
+        } else if (series.hasProperty("sizeField")) {
+            result.add("CHART-001", path + ".sizeField",
+                    "sizeField is only valid for BUBBLE series");
+        }
+        if (series.getLineWidth() == null
+                || series.getLineWidth().compareTo(BigDecimal.ZERO) <= 0) {
+            result.add("CHART-001", path + ".lineWidth",
+                    "lineWidth must be positive");
+        }
+        if (series.getLegendOrder() != null
+                && !legendOrders.add(series.getLegendOrder())) {
+            result.add("CHART-001", path + ".legendOrder",
+                    "legendOrder must be unique within a chart");
+        }
+        if (hasText(series.getColor())
+                && !series.getColor().matches("^#?[0-9A-Fa-f]{6}$")) {
+            result.add("CHART-001", path + ".color",
+                    "Chart color must be a six-digit RGB hex value");
+        }
+    }
+
+    private Object chartSeriesProperty(
+            ChartSeriesDefinition series, String property) {
+        if ("field".equals(property)) return series.getField();
+        if ("name".equals(property)) return series.getName();
+        if ("type".equals(property)) return series.getType();
+        if ("axis".equals(property)) return series.getAxis();
+        if ("stackGroup".equals(property)) return series.getStackGroup();
+        if ("color".equals(property)) return series.getColor();
+        if ("lineStyle".equals(property)) return series.getLineStyle();
+        if ("lineWidth".equals(property)) return series.getLineWidth();
+        if ("marker".equals(property)) return series.getMarker();
+        if ("dataLabels".equals(property)) return series.getDataLabels();
+        if ("format".equals(property)) return series.getFormat();
+        if ("nullHandling".equals(property)) return series.getNullHandling();
+        if ("legendOrder".equals(property)) return series.getLegendOrder();
+        if ("sizeField".equals(property)) return series.getSizeField();
+        return null;
+    }
+
+    private void validateChartField(
+            String field,
+            Set<String> fields,
+            boolean known,
+            String path,
+            ValidationResult result) {
+        if (known && hasText(field) && !containsField(fields, field)) {
+            result.add("CHART-001", path,
+                    "Unknown chart field " + field);
+        }
+    }
+
+    private void validateAxisBounds(
+            BigDecimal minimum,
+            BigDecimal maximum,
+            String path,
+            ValidationResult result) {
+        if (minimum != null && maximum != null
+                && minimum.compareTo(maximum) >= 0) {
+            result.add("CHART-001", path,
+                    "Chart axis minimum must be less than maximum");
+        }
     }
 
     private void validateRules(
@@ -1469,6 +1716,7 @@ public final class ReportDefinitionValidator {
     private void validateWord(
             WordDefinition word,
             Set<String> narrativeIds,
+            Set<String> chartIds,
             ValidationResult result) {
         if (word == null) {
             return;
@@ -1485,7 +1733,7 @@ public final class ReportDefinitionValidator {
         for (int index = 0; index < sections.size(); index++) {
             validateSection(sections.get(index), null, 1,
                     "$.word.sections[" + index + "]",
-                    sectionIds, narrativeIds, visited, result);
+                    sectionIds, narrativeIds, chartIds, visited, result);
         }
     }
 
@@ -1496,6 +1744,7 @@ public final class ReportDefinitionValidator {
             String path,
             Set<String> sectionIds,
             Set<String> narrativeIds,
+            Set<String> chartIds,
             Set<WordSectionDefinition> visited,
             ValidationResult result) {
         if (section == null) {
@@ -1544,13 +1793,14 @@ public final class ReportDefinitionValidator {
         List<WordComponentDefinition> components = safeList(section.getComponents());
         for (int index = 0; index < components.size(); index++) {
             validateComponent(components.get(index),
-                    path + ".components[" + index + "]", narrativeIds, result);
+                    path + ".components[" + index + "]",
+                    narrativeIds, chartIds, result);
         }
         List<WordSectionDefinition> children = safeList(section.getChildren());
         for (int index = 0; index < children.size(); index++) {
             validateSection(children.get(index), level, depth + 1,
                     path + ".children[" + index + "]",
-                    sectionIds, narrativeIds, visited, result);
+                    sectionIds, narrativeIds, chartIds, visited, result);
         }
     }
 
@@ -1558,6 +1808,7 @@ public final class ReportDefinitionValidator {
             WordComponentDefinition component,
             String path,
             Set<String> narrativeIds,
+            Set<String> chartIds,
             ValidationResult result) {
         if (component == null) {
             result.add("CFG-COMPONENT", path, "Word component must not be null");
@@ -1578,9 +1829,12 @@ public final class ReportDefinitionValidator {
             result.add("CFG-COMPONENT-REFERENCE", path + ".narrativeId",
                     "RULE_TEXT references an unknown narrative: "
                             + component.getNarrativeId());
-        } else if ("CHART".equals(type) && !hasText(component.getChartId())) {
+        } else if ("CHART".equals(type)
+                && (!hasText(component.getChartId())
+                || !chartIds.contains(component.getChartId()))) {
             result.add("CFG-COMPONENT-REFERENCE", path + ".chartId",
-                    "CHART requires a non-blank chartId");
+                    "CHART references an unknown chart: "
+                            + component.getChartId());
         } else if ("TABLE".equals(type) && !hasText(component.getTableId())) {
             result.add("CFG-COMPONENT-REFERENCE", path + ".tableId",
                     "TABLE requires a non-blank tableId");

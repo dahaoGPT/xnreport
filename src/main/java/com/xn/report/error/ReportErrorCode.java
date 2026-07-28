@@ -9,7 +9,10 @@ public enum ReportErrorCode {
     DATA_004("DATA-004"),
     RULE_001("RULE-001"),
     RULE_002("RULE-002"),
-    TEXT_001("TEXT-001");
+    TEXT_001("TEXT-001"),
+    CHART_001("CHART-001"),
+    CHART_002("CHART-002"),
+    CHART_003("CHART-003");
 
     private final String code;
 

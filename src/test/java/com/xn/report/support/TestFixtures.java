@@ -3,6 +3,9 @@ package com.xn.report.support;
 import com.xn.report.config.ReportDefinition;
 import com.xn.report.config.ReportMetadata;
 import com.xn.report.config.definition.DatasetDefinition;
+import com.xn.report.config.definition.ChartDefinition;
+import com.xn.report.config.definition.ChartSeriesDefinition;
+import com.xn.report.config.definition.DistributionDefinition;
 import com.xn.report.config.definition.ConditionDefinition;
 import com.xn.report.config.definition.RuleDefinition;
 import com.xn.report.config.definition.RuleDefinition.ResultDefinition;
@@ -13,6 +16,12 @@ import com.xn.report.dataset.DatasetContext;
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetType;
+import com.xn.report.chart.ChartAxis;
+import com.xn.report.chart.ChartDataLabelMode;
+import com.xn.report.chart.ChartModel;
+import com.xn.report.chart.ChartModelBuilder;
+import com.xn.report.chart.ChartNullHandling;
+import com.xn.report.chart.ChartType;
 import com.xn.report.rule.ComparisonCondition;
 import com.xn.report.rule.ComparisonOperator;
 import com.xn.report.rule.ConditionNode;
@@ -197,6 +206,93 @@ public final class TestFixtures {
                 .runtime(parameters("period", "2026H1"))
                 .datasets(datasets)
                 .build();
+    }
+
+    public static ChartDefinition comboChartDefinition() {
+        ChartDefinition chart = new ChartDefinition();
+        chart.setId("centerEventChart");
+        chart.setTitle("中心事件数");
+        chart.setDataset("centerEvents");
+        chart.setCategoryField("month");
+        chart.setSeries(Arrays.asList(
+                chartSeries("uncertain", "不定责事件",
+                        ChartType.STACKED_COLUMN, "event", ChartAxis.PRIMARY),
+                chartSeries("certain", "定责事件",
+                        ChartType.STACKED_COLUMN, "event", ChartAxis.PRIMARY),
+                chartSeries("baseline", "中心基准值",
+                        ChartType.LINE, null, ChartAxis.SECONDARY)));
+        return chart;
+    }
+
+    public static DatasetResult centerEvents() {
+        return DatasetResult.list("centerEvents", Arrays.asList(
+                DatasetRow.of("month", "2026年3月",
+                        "uncertain", 1, "certain", 2, "baseline", 10),
+                DatasetRow.of("month", "2026年1月",
+                        "uncertain", 2, "certain", 2, "baseline", 12),
+                DatasetRow.of("month", "2026年2月",
+                        "uncertain", 0, "certain", 1, "baseline", 11)));
+    }
+
+    public static ChartModel comboChartModel() {
+        return new ChartModelBuilder().build(
+                comboChartDefinition(), centerEvents());
+    }
+
+    public static DistributionDefinition durationDistribution() {
+        DistributionDefinition definition = new DistributionDefinition();
+        definition.setField("hours");
+        definition.setLabelMode(
+                DistributionDefinition.LabelMode.COUNT_AND_PERCENT);
+        definition.setBins(Arrays.asList(
+                bin("one-day", "1天之内", null, false,
+                        new BigDecimal("24"), true),
+                bin("seven-days", "7天之内", new BigDecimal("24"), false,
+                        new BigDecimal("168"), true),
+                bin("over-seven-days", "7天以上",
+                        new BigDecimal("168"), false, null, false)));
+        return definition;
+    }
+
+    private static ChartSeriesDefinition chartSeries(
+            String field,
+            String name,
+            ChartType type,
+            String stackGroup,
+            ChartAxis axis) {
+        ChartSeriesDefinition series = new ChartSeriesDefinition();
+        series.setField(field);
+        series.setName(name);
+        series.setType(type);
+        if (stackGroup != null) {
+            series.setStackGroup(stackGroup);
+        }
+        series.setAxis(axis);
+        series.setNullHandling(ChartNullHandling.GAP);
+        series.setDataLabels(ChartDataLabelMode.VALUE);
+        return series;
+    }
+
+    private static DistributionDefinition.BinDefinition bin(
+            String id,
+            String label,
+            BigDecimal min,
+            boolean minInclusive,
+            BigDecimal max,
+            boolean maxInclusive) {
+        DistributionDefinition.BinDefinition bin =
+                new DistributionDefinition.BinDefinition();
+        bin.setId(id);
+        bin.setLabel(label);
+        if (min != null) {
+            bin.setMin(min);
+            bin.setMinInclusive(minInclusive);
+        }
+        if (max != null) {
+            bin.setMax(max);
+            bin.setMaxInclusive(maxInclusive);
+        }
+        return bin;
     }
 
     private static ValueReferenceDefinition currentField(String field) {

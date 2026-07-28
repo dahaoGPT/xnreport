@@ -1,0 +1,202 @@
+package com.xn.report.chart;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.xn.report.config.definition.ChartDefinition;
+import com.xn.report.config.definition.ChartSeriesDefinition;
+import com.xn.report.dataset.DatasetResult;
+import com.xn.report.dataset.DatasetRow;
+import com.xn.report.support.TestFixtures;
+import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+class ChartModelBuilderTest {
+
+    private final ChartModelBuilder builder = new ChartModelBuilder();
+
+    @Test
+    void buildsStackedColumnAndLineCombo() {
+        ChartModel model = builder.build(
+                TestFixtures.comboChartDefinition(),
+                TestFixtures.centerEvents());
+
+        assertThat(model.getCategories())
+                .containsExactly("2026年1月", "2026年2月", "2026年3月");
+        assertThat(model.getSeries())
+                .extracting(ChartSeriesModel::getType)
+                .containsExactly(
+                        ChartType.STACKED_COLUMN,
+                        ChartType.STACKED_COLUMN,
+                        ChartType.LINE);
+        assertThat(model.getSeries().get(0).getStackGroup()).isEqualTo("event");
+        assertThat(model.getSeries().get(2).getAxis()).isEqualTo(ChartAxis.SECONDARY);
+        assertThat(model.getSeries().get(0).getValues())
+                .containsExactly(new BigDecimal("2"), new BigDecimal("0"),
+                        new BigDecimal("1"));
+    }
+
+    @Test
+    void splitsGroupsDeterministicallyAndCompletesConfiguredCategories() {
+        ChartDefinition definition = TestFixtures.comboChartDefinition();
+        definition.setGroupByField("center");
+        definition.setCategories(Arrays.<Object>asList(
+                "2026年1月", "2026年2月", "2026年3月", "2026年4月"));
+
+        DatasetResult rows = DatasetResult.list("centerEvents", Arrays.asList(
+                event("B中心", "2026年2月", 4, 2, 10),
+                event("A中心", "2026年2月", 1, 3, 11),
+                event("A中心", "2026年1月", 2, 2, 12)));
+
+        List<ChartModel> models = builder.buildAll(definition, rows);
+
+        assertThat(models).extracting(ChartModel::getGroupKey)
+                .containsExactly("A中心", "B中心");
+        assertThat(models.get(0).getCategories()).containsExactly(
+                "2026年1月", "2026年2月", "2026年3月", "2026年4月");
+        assertThat(models.get(0).getSeries().get(0).getValues())
+                .containsExactly(new BigDecimal("2"), new BigDecimal("1"), null, null);
+    }
+
+    @Test
+    void appliesZeroAndSkipCategoryNullHandlingWithoutMisaligningSeries() {
+        ChartDefinition zero = chartWithTwoSeries(
+                ChartNullHandling.ZERO, ChartNullHandling.GAP);
+        DatasetResult rows = DatasetResult.list("values", Arrays.asList(
+                DatasetRow.of("month", "01", "a", null, "b", 5),
+                DatasetRow.of("month", "02", "a", 2, "b", null)));
+
+        ChartModel zeroModel = builder.build(zero, rows);
+
+        assertThat(zeroModel.getCategories()).containsExactly("01", "02");
+        assertThat(zeroModel.getSeries().get(0).getValues())
+                .containsExactly(BigDecimal.ZERO, new BigDecimal("2"));
+        assertThat(zeroModel.getSeries().get(1).getValues())
+                .containsExactly(new BigDecimal("5"), null);
+
+        ChartDefinition skip = chartWithTwoSeries(
+                ChartNullHandling.SKIP_CATEGORY, ChartNullHandling.GAP);
+        ChartModel skipped = builder.build(skip, rows);
+
+        assertThat(skipped.getCategories()).containsExactly("02");
+        assertThat(skipped.getSeries().get(0).getValues())
+                .containsExactly(new BigDecimal("2"));
+        assertThat(skipped.getSeries().get(1).getValues()).containsExactly((BigDecimal) null);
+    }
+
+    @Test
+    void validatesActualRuntimeSchemaAndNumericSeriesValues() {
+        ChartDefinition definition = TestFixtures.comboChartDefinition();
+
+        assertThatThrownBy(() -> builder.build(
+                definition,
+                DatasetResult.list("centerEvents",
+                        Collections.singletonList(
+                                DatasetRow.of("month", "2026年1月",
+                                        "uncertain", 1, "certain", 2)))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("baseline");
+
+        assertThatThrownBy(() -> builder.build(
+                definition,
+                DatasetResult.list("centerEvents",
+                        Collections.singletonList(
+                                DatasetRow.of("month", "2026年1月",
+                                        "uncertain", "not-number",
+                                        "certain", 2, "baseline", 3)))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("uncertain")
+                .hasMessageContaining("numeric");
+    }
+
+    @Test
+    void modelAndNestedValuesAreDeeplyImmutable() {
+        ChartModel model = TestFixtures.comboChartModel();
+
+        assertThatThrownBy(() -> model.getCategories().add("later"))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> model.getSeries().add(model.getSeries().get(0)))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> model.getSeries().get(0).getValues().add(BigDecimal.TEN))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void keepsEveryDeclaredDynamicTypeInsteadOfDowngradingIt() {
+        for (ChartType type : Arrays.asList(
+                ChartType.COLUMN,
+                ChartType.STACKED_COLUMN,
+                ChartType.PERCENT_STACKED_COLUMN,
+                ChartType.LINE,
+                ChartType.BAR,
+                ChartType.STACKED_BAR,
+                ChartType.PIE,
+                ChartType.DOUGHNUT,
+                ChartType.AREA,
+                ChartType.STACKED_AREA,
+                ChartType.SCATTER,
+                ChartType.BUBBLE,
+                ChartType.RADAR)) {
+            ChartDefinition definition = simpleDefinition(type);
+            ChartModel model = builder.build(definition,
+                    DatasetResult.list("values", Arrays.asList(
+                            DatasetRow.of("category", "1", "value", 2, "size", 4),
+                            DatasetRow.of("category", "2", "value", 3, "size", 5))));
+            assertThat(model.getSeries().get(0).getType()).isEqualTo(type);
+        }
+    }
+
+    private static DatasetRow event(
+            String center, String month, int uncertain, int certain, int baseline) {
+        return DatasetRow.of(
+                "center", center,
+                "month", month,
+                "uncertain", uncertain,
+                "certain", certain,
+                "baseline", baseline);
+    }
+
+    private static ChartDefinition chartWithTwoSeries(
+            ChartNullHandling first, ChartNullHandling second) {
+        ChartDefinition definition = new ChartDefinition();
+        definition.setId("nulls");
+        definition.setTitle("Null values");
+        definition.setDataset("values");
+        definition.setCategoryField("month");
+        definition.setSeries(Arrays.asList(
+                series("a", "A", ChartType.LINE, first),
+                series("b", "B", ChartType.LINE, second)));
+        return definition;
+    }
+
+    private static ChartSeriesDefinition series(
+            String field, String name, ChartType type, ChartNullHandling nullHandling) {
+        ChartSeriesDefinition series = new ChartSeriesDefinition();
+        series.setField(field);
+        series.setName(name);
+        series.setType(type);
+        series.setNullHandling(nullHandling);
+        return series;
+    }
+
+    private static ChartDefinition simpleDefinition(ChartType type) {
+        ChartDefinition definition = new ChartDefinition();
+        definition.setId("chart-" + type.name());
+        definition.setTitle(type.name());
+        definition.setDataset("values");
+        definition.setCategoryField("category");
+        ChartSeriesDefinition series = series(
+                "value", "Value", type, ChartNullHandling.GAP);
+        if (type.isStacked()) {
+            series.setStackGroup("values");
+        }
+        if (type == ChartType.BUBBLE) {
+            series.setSizeField("size");
+        }
+        definition.setSeries(Collections.singletonList(series));
+        return definition;
+    }
+}

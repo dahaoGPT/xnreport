@@ -26,6 +26,7 @@ public final class JsonSchemaContract {
                     "additionalProperties", "required", "properties", "definitions",
                     "oneOf", "items", "minItems", "uniqueItems", "enum",
                     "minLength", "maxLength", "pattern", "minimum", "maximum",
+                    "exclusiveMinimum",
                     "x-java-maxUtf16Length", "x-java-nonBlank")));
 
     private final JsonNode rootSchema;
@@ -183,6 +184,11 @@ public final class JsonSchemaContract {
         if (schema.has("minimum")
                 && value.compareTo(schema.path("minimum").decimalValue()) < 0) {
             errors.add(path + " is less than minimum");
+        }
+        if (schema.has("exclusiveMinimum")
+                && value.compareTo(
+                        schema.path("exclusiveMinimum").decimalValue()) <= 0) {
+            errors.add(path + " is not greater than exclusiveMinimum");
         }
         if (schema.has("maximum")
                 && value.compareTo(schema.path("maximum").decimalValue()) > 0) {

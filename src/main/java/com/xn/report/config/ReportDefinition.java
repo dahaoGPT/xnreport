@@ -2,6 +2,7 @@ package com.xn.report.config;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.xn.report.config.definition.DatasetDefinition;
+import com.xn.report.config.definition.ChartDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
 import com.xn.report.config.definition.PolicyDefinition;
 import com.xn.report.config.definition.RuleDefinition;
@@ -18,6 +19,9 @@ public class ReportDefinition {
     private Map<String, ParameterDefinition> parameters =
             new LinkedHashMap<String, ParameterDefinition>();
     private List<DatasetDefinition> datasets = new ArrayList<DatasetDefinition>();
+    private List<ChartDefinition> charts = new ArrayList<ChartDefinition>();
+    @JsonIgnore
+    private boolean chartsExplicitNull;
     private List<NarrativeDefinition> narratives = new ArrayList<NarrativeDefinition>();
     @JsonIgnore
     private boolean narrativesExplicitNull;
@@ -62,6 +66,21 @@ public class ReportDefinition {
 
     public List<NarrativeDefinition> getNarratives() {
         return narratives;
+    }
+
+    public List<ChartDefinition> getCharts() {
+        return charts;
+    }
+
+    public void setCharts(List<ChartDefinition> charts) {
+        this.chartsExplicitNull = charts == null;
+        this.charts = charts == null
+                ? new ArrayList<ChartDefinition>() : charts;
+    }
+
+    @JsonIgnore
+    public boolean isChartsExplicitNull() {
+        return chartsExplicitNull;
     }
 
     @JsonIgnore

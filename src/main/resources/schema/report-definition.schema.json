@@ -43,6 +43,12 @@
         "$ref": "#/definitions/rule"
       }
     },
+    "charts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/chart"
+      }
+    },
     "word": {
       "$ref": "#/definitions/word"
     },
@@ -51,6 +57,405 @@
     }
   },
   "definitions": {
+    "chart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "dataset",
+        "categoryField",
+        "series"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "title": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "GENERATED_NATIVE",
+            "TEMPLATE_NATIVE",
+            "IMAGE",
+            "generatedNative",
+            "templateNative",
+            "image"
+          ]
+        },
+        "dataset": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "excelSheet": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "excelTable": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "categoryField": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "groupByField": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "categories": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {}
+        },
+        "categorySort": {
+          "type": "string",
+          "enum": [
+            "SOURCE",
+            "ASC",
+            "DESC",
+            "EXPLICIT",
+            "source",
+            "asc",
+            "desc",
+            "explicit"
+          ]
+        },
+        "series": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/chartSeries"
+          }
+        },
+        "legendPosition": {
+          "type": "string",
+          "enum": [
+            "TOP",
+            "BOTTOM",
+            "LEFT",
+            "RIGHT",
+            "NONE",
+            "top",
+            "bottom",
+            "left",
+            "right",
+            "none"
+          ]
+        },
+        "primaryAxisMin": {
+          "type": "number"
+        },
+        "primaryAxisMax": {
+          "type": "number"
+        },
+        "secondaryAxisMin": {
+          "type": "number"
+        },
+        "secondaryAxisMax": {
+          "type": "number"
+        },
+        "dataLabelMode": {
+          "$ref": "#/definitions/chartDataLabelMode"
+        },
+        "widthPixels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000
+        },
+        "heightPixels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2400
+        },
+        "dpi": {
+          "type": "integer",
+          "minimum": 36,
+          "maximum": 600
+        },
+        "emptyDataPolicy": {
+          "type": "string",
+          "enum": [
+            "FAIL",
+            "OUTPUT_MESSAGE",
+            "SKIP",
+            "fail",
+            "outputMessage",
+            "skip"
+          ]
+        },
+        "emptyMessage": {
+          "type": "string"
+        }
+      }
+    },
+    "chartSeries": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "name",
+            "type",
+            "stackGroup"
+          ],
+          "properties": {
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "STACKED_COLUMN",
+                "PERCENT_STACKED_COLUMN",
+                "STACKED_BAR",
+                "STACKED_AREA",
+                "stackedColumn",
+                "percentStackedColumn",
+                "stackedBar",
+                "stackedArea"
+              ]
+            },
+            "axis": {
+              "$ref": "#/definitions/chartAxis"
+            },
+            "stackGroup": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "color": {
+              "$ref": "#/definitions/chartColor"
+            },
+            "lineStyle": {
+              "$ref": "#/definitions/chartLineStyle"
+            },
+            "lineWidth": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "marker": {
+              "type": "boolean"
+            },
+            "dataLabels": {
+              "$ref": "#/definitions/chartDataLabelMode"
+            },
+            "format": {
+              "type": "string"
+            },
+            "nullHandling": {
+              "$ref": "#/definitions/chartNullHandling"
+            },
+            "legendOrder": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "name",
+            "type",
+            "sizeField"
+          ],
+          "properties": {
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "BUBBLE"
+                ,"bubble"
+              ]
+            },
+            "axis": {
+              "$ref": "#/definitions/chartAxis"
+            },
+            "sizeField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "color": {
+              "$ref": "#/definitions/chartColor"
+            },
+            "lineStyle": {
+              "$ref": "#/definitions/chartLineStyle"
+            },
+            "lineWidth": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "marker": {
+              "type": "boolean"
+            },
+            "dataLabels": {
+              "$ref": "#/definitions/chartDataLabelMode"
+            },
+            "format": {
+              "type": "string"
+            },
+            "nullHandling": {
+              "$ref": "#/definitions/chartNullHandling"
+            },
+            "legendOrder": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "name",
+            "type"
+          ],
+          "properties": {
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "COLUMN",
+                "LINE",
+                "BAR",
+                "PIE",
+                "DOUGHNUT",
+                "AREA",
+                "SCATTER",
+                "RADAR",
+                "STOCK",
+                "column",
+                "line",
+                "bar",
+                "pie",
+                "doughnut",
+                "area",
+                "scatter",
+                "radar",
+                "stock"
+              ]
+            },
+            "axis": {
+              "$ref": "#/definitions/chartAxis"
+            },
+            "color": {
+              "$ref": "#/definitions/chartColor"
+            },
+            "lineStyle": {
+              "$ref": "#/definitions/chartLineStyle"
+            },
+            "lineWidth": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "marker": {
+              "type": "boolean"
+            },
+            "dataLabels": {
+              "$ref": "#/definitions/chartDataLabelMode"
+            },
+            "format": {
+              "type": "string"
+            },
+            "nullHandling": {
+              "$ref": "#/definitions/chartNullHandling"
+            },
+            "legendOrder": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "chartAxis": {
+      "type": "string",
+      "enum": [
+        "PRIMARY",
+        "SECONDARY",
+        "primary",
+        "secondary"
+      ]
+    },
+    "chartColor": {
+      "type": "string",
+      "pattern": "^#?[0-9A-Fa-f]{6}$"
+    },
+    "chartLineStyle": {
+      "type": "string",
+      "enum": [
+        "SOLID",
+        "DASHED",
+        "DOTTED",
+        "solid",
+        "dashed",
+        "dotted"
+      ]
+    },
+    "chartDataLabelMode": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "VALUE",
+        "COUNT",
+        "PERCENT",
+        "COUNT_AND_PERCENT",
+        "none",
+        "value",
+        "count",
+        "percent",
+        "countAndPercent"
+      ]
+    },
+    "chartNullHandling": {
+      "type": "string",
+      "enum": [
+        "GAP",
+        "ZERO",
+        "SKIP_CATEGORY",
+        "gap",
+        "zero",
+        "skipCategory"
+      ]
+    },
     "report": {
       "type": "object",
       "additionalProperties": false,

@@ -1,0 +1,36 @@
+schemaVersion: "1.0"
+report:
+  code: chart-report
+  name: Chart Report
+datasets:
+  - id: centerEvents
+    sheetName: 中心-每月
+    sql: select 1
+    resultType: LIST
+    expectedFields:
+      month: { type: STRING }
+      uncertain: { type: DECIMAL }
+      certain: { type: DECIMAL }
+      baseline: { type: DECIMAL }
+charts:
+  - id: centerEventChart
+    title: 中心事件数
+    mode: templateNative
+    dataset: centerEvents
+    excelSheet: 中心-每月
+    excelTable: tbl_center_monthly
+    categoryField: month
+    series:
+      - field: uncertain
+        name: 不定责事件
+        type: stackedColumn
+        stackGroup: event
+      - field: certain
+        name: 定责事件
+        type: stackedColumn
+        stackGroup: event
+      - field: baseline
+        name: 中心基准值
+        type: line
+        axis: secondary
+        marker: true

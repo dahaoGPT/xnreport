@@ -6,16 +6,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.DistributionDefinition;
 import com.xn.report.config.definition.DistributionDefinition.BinDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
 import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
+import com.xn.report.support.JsonSchemaContract;
 import com.xn.report.support.TestFixtures;
 import java.math.BigDecimal;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 
 class ReportDefinitionValidatorTest {
@@ -65,6 +70,45 @@ class ReportDefinitionValidatorTest {
                 "CFG-DUPLICATE-SHEET-NAME",
                 "CFG-SHEET-NAME-ILLEGAL",
                 "CFG-SHEET-NAME-LENGTH");
+    }
+
+    @Test
+    void rejectsSheetNamesBeginningOrEndingWithSingleQuote() {
+        DatasetDefinition leadingQuote = TestFixtures.dataset("leadingQuote");
+        leadingQuote.setSheetName("'abc");
+        DatasetDefinition trailingQuote = TestFixtures.dataset("trailingQuote");
+        trailingQuote.setSheetName("abc'");
+
+        ValidationResult result =
+                validator.validate(TestFixtures.report(leadingQuote, trailingQuote));
+
+        assertThat(pathsForCode(result, "CFG-SHEET-NAME-ILLEGAL"))
+                .containsExactly(
+                        "$.datasets[0].sheetName",
+                        "$.datasets[1].sheetName");
+    }
+
+    @Test
+    void matchesXssfWorkbookUnicodeCaseInsensitiveDuplicateBehavior() throws Exception {
+        assertThat(xssfRejectsSecondSheet("Σ", "ς")).isTrue();
+        assertThat(xssfRejectsSecondSheet("İ", "i")).isTrue();
+
+        DatasetDefinition greekUpper = TestFixtures.dataset("greekUpper");
+        greekUpper.setSheetName("Σ");
+        DatasetDefinition greekFinal = TestFixtures.dataset("greekFinal");
+        greekFinal.setSheetName("ς");
+        DatasetDefinition turkishUpper = TestFixtures.dataset("turkishUpper");
+        turkishUpper.setSheetName("İ");
+        DatasetDefinition latinLower = TestFixtures.dataset("latinLower");
+        latinLower.setSheetName("i");
+
+        ValidationResult result = validator.validate(TestFixtures.report(
+                greekUpper, greekFinal, turkishUpper, latinLower));
+
+        assertThat(pathsForCode(result, "CFG-DUPLICATE-SHEET-NAME"))
+                .containsExactly(
+                        "$.datasets[1].sheetName",
+                        "$.datasets[3].sheetName");
     }
 
     @Test
@@ -128,6 +172,58 @@ class ReportDefinitionValidatorTest {
     }
 
     @Test
+    void validatesSectionTitleUsingJavaUtf16Length() {
+        ReportDefinition definition = TestFixtures.report(TestFixtures.dataset("source"));
+        WordSectionDefinition missing = section("missingTitle", 1, "KEEP");
+        missing.setTitle(" ");
+        WordSectionDefinition boundary = section("boundaryTitle", 1, "KEEP");
+        boundary.setTitle(repeat("\uD83D\uDE00", 127) + "x");
+        WordSectionDefinition overlong = section("overlongTitle", 1, "KEEP");
+        overlong.setTitle(repeat("\uD83D\uDE00", 128));
+        definition.getWord().setSections(Arrays.asList(missing, boundary, overlong));
+
+        ValidationResult result = validator.validate(definition);
+
+        assertThat(pathsForCode(result, "CFG-SECTION-TITLE"))
+                .containsExactly("$.word.sections[0].title");
+        assertThat(pathsForCode(result, "CFG-SECTION-TITLE-LENGTH"))
+                .containsExactly("$.word.sections[2].title");
+    }
+
+    @Test
+    void stopsWordSectionTraversalBeyondFourLevels() {
+        ReportDefinition definition = TestFixtures.report(TestFixtures.dataset("source"));
+        WordSectionDefinition first = section("first", 1, "KEEP");
+        WordSectionDefinition second = section("second", 2, "KEEP");
+        WordSectionDefinition third = section("third", 3, "KEEP");
+        WordSectionDefinition fourth = section("fourth", 4, "KEEP");
+        WordSectionDefinition fifth = section("fifth", 4, "KEEP");
+        first.setChildren(Arrays.asList(second));
+        second.setChildren(Arrays.asList(third));
+        third.setChildren(Arrays.asList(fourth));
+        fourth.setChildren(Arrays.asList(fifth));
+        definition.getWord().setSections(Arrays.asList(first));
+
+        ValidationResult result = validator.validate(definition);
+
+        assertThat(result.codes()).contains("CFG-SECTION-DEPTH");
+    }
+
+    @Test
+    void validationIssuesHaveValueSemantics() {
+        ValidationIssue issue =
+                new ValidationIssue("CFG-CODE", "$.path", "message");
+        ValidationIssue same =
+                new ValidationIssue("CFG-CODE", "$.path", "message");
+        ValidationIssue different =
+                new ValidationIssue("CFG-OTHER", "$.path", "message");
+
+        assertThat(issue).isEqualTo(same).hasSameHashCodeAs(same);
+        assertThat(issue).isNotEqualTo(different);
+        assertThat(issue.toString()).isEqualTo("CFG-CODE at $.path: message");
+    }
+
+    @Test
     void reportsOverlappingDistributionBinsIncludingSharedClosedBoundary() {
         ReportDefinition definition = TestFixtures.report(TestFixtures.dataset("source"));
         NarrativeDefinition narrative = narrative("distribution", "RULE_GENERATED");
@@ -156,42 +252,83 @@ class ReportDefinitionValidatorTest {
     }
 
     @Test
-    void schemaMatchesRequiredReportDefinitionConstraints() throws Exception {
-        JsonNode schema = new ObjectMapper().readTree(Paths.get(
+    void schemaValidatesCompleteValidAndInvalidInstances() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode schemaDocument = mapper.readTree(Paths.get(
                 "src/main/resources/schema/report-definition.schema.json").toFile());
+        JsonSchemaContract schema = new JsonSchemaContract(schemaDocument);
+        ObjectNode valid = (ObjectNode) mapper.readTree(Paths.get(
+                "src/test/resources/fixtures/configs/minimal-report.json").toFile());
 
-        assertThat(schema.path("$schema").asText()).contains("json-schema");
-        assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
-        assertThat(schema.path("required").toString())
-                .contains("\"schemaVersion\"", "\"report\"", "\"datasets\"");
+        assertThat(schema.validate(valid)).isEmpty();
 
-        JsonNode dataset = schema.path("definitions").path("dataset");
-        assertThat(dataset.path("additionalProperties").asBoolean()).isFalse();
-        assertThat(dataset.path("required").toString())
-                .contains("\"id\"", "\"sheetName\"");
-        assertThat(dataset.path("oneOf").size()).isEqualTo(2);
-        assertThat(dataset.path("properties").path("sheetName")
-                .path("maxLength").asInt()).isEqualTo(31);
-        assertThat(dataset.path("properties").path("sheetName")
-                .path("pattern").asText()).contains("\\\\", "/", "?");
+        ObjectNode unknownRootProperty = valid.deepCopy();
+        unknownRootProperty.put("unknown", true);
+        assertSchemaRejects(schema, unknownRootProperty);
 
-        JsonNode wordSection = schema.path("definitions").path("wordSection");
-        assertThat(wordSection.path("properties").path("children")
-                .path("items").path("$ref").asText())
-                .isEqualTo("#/definitions/wordSection");
-        assertThat(wordSection.path("properties").path("level")
-                .path("minimum").asInt()).isEqualTo(1);
-        assertThat(wordSection.path("properties").path("level")
-                .path("maximum").asInt()).isEqualTo(4);
+        ObjectNode missingRequiredProperty = valid.deepCopy();
+        missingRequiredProperty.remove("report");
+        assertSchemaRejects(schema, missingRequiredProperty);
 
-        assertThat(schema.path("definitions").path("wordComponent")
-                .path("properties").path("type").path("enum").toString())
-                .contains("\"SCENARIO\"", "\"KEY_FACTORS\"", "\"FIXED_TEXT\"",
-                        "\"RULE_TEXT\"", "\"CHART\"", "\"TABLE\"",
-                        "\"UNIT\"", "\"ATTACHMENT\"");
-        assertThat(schema.path("definitions").path("narrative")
-                .path("properties").path("sourceType").path("enum").toString())
-                .contains("\"FIXED_TEMPLATE\"", "\"RULE_GENERATED\"");
+        ObjectNode bothSqlSources = valid.deepCopy();
+        ((ObjectNode) bothSqlSources.path("datasets").get(0))
+                .put("sql", "select 1");
+        assertSchemaRejects(schema, bothSqlSources);
+
+        ObjectNode quotedSheetName = valid.deepCopy();
+        ((ObjectNode) quotedSheetName.path("datasets").get(0))
+                .put("sheetName", "'invalid");
+        assertSchemaRejects(schema, quotedSheetName);
+
+        ObjectNode invalidRecursiveSection = valid.deepCopy();
+        ((ObjectNode) invalidRecursiveSection.path("word").path("sections")
+                .get(0).path("children").get(0))
+                .put("level", 5);
+        assertSchemaRejects(schema, invalidRecursiveSection);
+
+        ObjectNode invalidComponentType = valid.deepCopy();
+        ((ObjectNode) invalidComponentType.path("word").path("sections")
+                .get(0).path("children").get(0).path("components").get(0))
+                .put("type", "UNKNOWN");
+        assertSchemaRejects(schema, invalidComponentType);
+
+        ObjectNode invalidNarrativeType = valid.deepCopy();
+        ((ObjectNode) invalidNarrativeType.path("narratives").get(0))
+                .put("sourceType", "UNKNOWN");
+        assertSchemaRejects(schema, invalidNarrativeType);
+
+        ObjectNode blankSectionTitle = valid.deepCopy();
+        ((ObjectNode) blankSectionTitle.path("word").path("sections").get(0))
+                .put("title", " ");
+        assertSchemaRejects(schema, blankSectionTitle);
+
+        ObjectNode boundarySectionTitle = valid.deepCopy();
+        ((ObjectNode) boundarySectionTitle.path("word").path("sections").get(0))
+                .put("title", repeat("\uD83D\uDE00", 127) + "x");
+        assertThat(schema.validate(boundarySectionTitle)).isEmpty();
+
+        ObjectNode overlongSectionTitle = valid.deepCopy();
+        ((ObjectNode) overlongSectionTitle.path("word").path("sections").get(0))
+                .put("title", repeat("\uD83D\uDE00", 128));
+        assertSchemaRejects(schema, overlongSectionTitle);
+
+        ObjectNode overlongSheetName = valid.deepCopy();
+        ((ObjectNode) overlongSheetName.path("datasets").get(0))
+                .put("sheetName", "12345678901234567890123456789012");
+        assertSchemaRejects(schema, overlongSheetName);
+
+        JsonNode datasetSheetName = schemaDocument.path("definitions")
+                .path("dataset").path("properties").path("sheetName");
+        assertThat(datasetSheetName.has("maxLength")).isFalse();
+        assertThat(datasetSheetName.path("x-java-maxUtf16Length").asInt())
+                .isEqualTo(31);
+        JsonNode sectionTitle = schemaDocument.path("definitions")
+                .path("wordSection").path("properties").path("title");
+        assertThat(sectionTitle.has("maxLength")).isFalse();
+        assertThat(sectionTitle.path("x-java-maxUtf16Length").asInt())
+                .isEqualTo(255);
+        assertThat(sectionTitle.path("description").asText()).contains("UTF-16");
+        assertThat(sectionTitle.path("pattern").asText()).contains("\\S");
     }
 
     private static WordSectionDefinition section(String id, int level, String emptyStrategy) {
@@ -234,5 +371,38 @@ class ReportDefinitionValidatorTest {
         bin.setMax(new BigDecimal(max));
         bin.setMaxInclusive(maxInclusive);
         return bin;
+    }
+
+    private static List<String> pathsForCode(ValidationResult result, String code) {
+        return result.issues().stream()
+                .filter(issue -> code.equals(issue.getCode()))
+                .map(ValidationIssue::getPath)
+                .collect(Collectors.toList());
+    }
+
+    private static boolean xssfRejectsSecondSheet(String first, String second)
+            throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet(first);
+            try {
+                workbook.createSheet(second);
+                return false;
+            } catch (IllegalArgumentException expected) {
+                return true;
+            }
+        }
+    }
+
+    private static String repeat(String value, int count) {
+        StringBuilder repeated = new StringBuilder(value.length() * count);
+        for (int index = 0; index < count; index++) {
+            repeated.append(value);
+        }
+        return repeated.toString();
+    }
+
+    private static void assertSchemaRejects(
+            JsonSchemaContract schema, JsonNode instance) {
+        assertThat(schema.validate(instance)).isNotEmpty();
     }
 }

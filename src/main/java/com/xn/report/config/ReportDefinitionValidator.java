@@ -7,6 +7,7 @@ import com.xn.report.config.definition.NarrativeDefinition;
 import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
+import com.xn.report.excel.ExcelSheetNameRules;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -15,17 +16,16 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
 public final class ReportDefinitionValidator {
 
+    static final int MAX_SECTION_TITLE_UTF16_LENGTH = 255;
+
     private static final Pattern DATASET_ID =
             Pattern.compile("^[A-Za-z][A-Za-z0-9_-]*$");
-    private static final Pattern ILLEGAL_SHEET_CHARACTER =
-            Pattern.compile("[\\\\/?*\\[\\]:]");
     private static final Set<String> COMPONENT_TYPES =
             unmodifiableSet("SCENARIO", "KEY_FACTORS", "FIXED_TEXT", "RULE_TEXT",
                     "CHART", "TABLE", "UNIT", "ATTACHMENT");
@@ -69,7 +69,7 @@ public final class ReportDefinitionValidator {
     private Set<String> validateDatasets(
             List<DatasetDefinition> datasets, ValidationResult result) {
         Set<String> ids = new LinkedHashSet<String>();
-        Set<String> sheetNames = new LinkedHashSet<String>();
+        List<String> sheetNames = new ArrayList<String>();
         for (int index = 0; index < datasets.size(); index++) {
             DatasetDefinition dataset = datasets.get(index);
             String path = "$.datasets[" + index + "]";
@@ -102,25 +102,24 @@ public final class ReportDefinitionValidator {
     private void validateSheetName(
             String sheetName,
             String path,
-            Set<String> seen,
+            List<String> seen,
             ValidationResult result) {
         if (!hasText(sheetName)) {
             result.add("CFG-SHEET-NAME-REQUIRED", path, "sheetName is required");
             return;
         }
-        if (sheetName.length() > 31) {
-            result.add("CFG-SHEET-NAME-LENGTH", path,
-                    "sheetName must not exceed 31 characters");
+        try {
+            ExcelSheetNameRules.validate(sheetName);
+        } catch (IllegalArgumentException exception) {
+            String code = sheetName.length() > 31
+                    ? "CFG-SHEET-NAME-LENGTH" : "CFG-SHEET-NAME-ILLEGAL";
+            result.add(code, path, exception.getMessage());
         }
-        if (ILLEGAL_SHEET_CHARACTER.matcher(sheetName).find()) {
-            result.add("CFG-SHEET-NAME-ILLEGAL", path,
-                    "sheetName contains an illegal Excel character");
-        }
-        String normalizedName = sheetName.toLowerCase(Locale.ROOT);
-        if (!seen.add(normalizedName)) {
+        if (ExcelSheetNameRules.containsIgnoreCase(seen, sheetName)) {
             result.add("CFG-DUPLICATE-SHEET-NAME", path,
                     "Duplicate sheetName: " + sheetName);
         }
+        seen.add(sheetName);
     }
 
     private void validateDependencies(
@@ -315,7 +314,7 @@ public final class ReportDefinitionValidator {
                 new IdentityHashMap<WordSectionDefinition, Boolean>());
         List<WordSectionDefinition> sections = safeList(word.getSections());
         for (int index = 0; index < sections.size(); index++) {
-            validateSection(sections.get(index), null,
+            validateSection(sections.get(index), null, 1,
                     "$.word.sections[" + index + "]",
                     sectionIds, narrativeIds, visited, result);
         }
@@ -324,6 +323,7 @@ public final class ReportDefinitionValidator {
     private void validateSection(
             WordSectionDefinition section,
             Integer parentLevel,
+            int depth,
             String path,
             Set<String> sectionIds,
             Set<String> narrativeIds,
@@ -331,6 +331,11 @@ public final class ReportDefinitionValidator {
             ValidationResult result) {
         if (section == null) {
             result.add("CFG-SECTION", path, "Word section must not be null");
+            return;
+        }
+        if (depth > 4) {
+            result.add("CFG-SECTION-DEPTH", path,
+                    "Word section nesting must not exceed four levels");
             return;
         }
         if (!visited.add(section)) {
@@ -342,6 +347,15 @@ public final class ReportDefinitionValidator {
         } else if (!sectionIds.add(section.getId())) {
             result.add("CFG-DUPLICATE-SECTION", path + ".id",
                     "Duplicate word section id: " + section.getId());
+        }
+        if (!hasText(section.getTitle())) {
+            result.add("CFG-SECTION-TITLE", path + ".title",
+                    "Word section title is required");
+        } else if (section.getTitle().length() > MAX_SECTION_TITLE_UTF16_LENGTH) {
+            result.add("CFG-SECTION-TITLE-LENGTH", path + ".title",
+                    "Word section title must not exceed "
+                            + MAX_SECTION_TITLE_UTF16_LENGTH
+                            + " Java UTF-16 code units");
         }
         int level = section.getLevel();
         if (level < 1 || level > 4) {
@@ -365,7 +379,7 @@ public final class ReportDefinitionValidator {
         }
         List<WordSectionDefinition> children = safeList(section.getChildren());
         for (int index = 0; index < children.size(); index++) {
-            validateSection(children.get(index), level,
+            validateSection(children.get(index), level, depth + 1,
                     path + ".children[" + index + "]",
                     sectionIds, narrativeIds, visited, result);
         }

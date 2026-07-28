@@ -12,7 +12,8 @@
   "properties": {
     "schemaVersion": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "x-java-nonBlank": true
     },
     "report": {
       "$ref": "#/definitions/report"
@@ -54,11 +55,13 @@
       "properties": {
         "code": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "x-java-nonBlank": true
         },
         "name": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "x-java-nonBlank": true
         },
         "excelTemplate": {
           "type": "string"
@@ -125,16 +128,20 @@
         "sheetName": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 31,
-          "pattern": "^[^\\\\/?*\\[\\]:]+$"
+          "pattern": "^(?!')(?!.*'$)[^\\\\/?*\\[\\]:]+$",
+          "description": "Runtime maximum is 31 Java UTF-16 code units, matching Apache POI; Draft-07 maxLength is intentionally omitted because it counts Unicode code points.",
+          "x-java-maxUtf16Length": 31,
+          "x-java-nonBlank": true
         },
         "sqlFile": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "x-java-nonBlank": true
         },
         "sql": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "x-java-nonBlank": true
         },
         "resultType": {
           "type": "string",
@@ -192,7 +199,8 @@
       "properties": {
         "id": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "x-java-nonBlank": true
         },
         "sourceType": {
           "type": "string",
@@ -339,11 +347,16 @@
       "properties": {
         "id": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "x-java-nonBlank": true
         },
         "title": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$",
+          "description": "Runtime maximum is 255 Java UTF-16 code units; Draft-07 maxLength is intentionally omitted because it counts Unicode code points.",
+          "x-java-maxUtf16Length": 255,
+          "x-java-nonBlank": true
         },
         "level": {
           "type": "integer",

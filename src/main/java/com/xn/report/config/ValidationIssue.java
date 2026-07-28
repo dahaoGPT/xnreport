@@ -27,6 +27,25 @@ public final class ValidationIssue {
     }
 
     @Override
+    public boolean equals(Object object) {
+        if (this == object) {
+            return true;
+        }
+        if (!(object instanceof ValidationIssue)) {
+            return false;
+        }
+        ValidationIssue other = (ValidationIssue) object;
+        return code.equals(other.code)
+                && path.equals(other.path)
+                && message.equals(other.message);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(code, path, message);
+    }
+
+    @Override
     public String toString() {
         return code + (path.isEmpty() ? "" : " at " + path) + ": " + message;
     }

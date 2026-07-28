@@ -1,0 +1,309 @@
+package com.xn.report.support;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+/**
+ * Executes the Draft-07 keyword subset used by report-definition.schema.json.
+ * It also rejects unsupported schema keywords so the contract cannot silently
+ * stop validating when the schema grows.
+ */
+public final class JsonSchemaContract {
+
+    private static final Set<String> SUPPORTED_KEYWORDS =
+            Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(
+                    "$schema", "$id", "$ref", "title", "description", "type",
+                    "additionalProperties", "required", "properties", "definitions",
+                    "oneOf", "items", "minItems", "uniqueItems", "enum",
+                    "minLength", "maxLength", "pattern", "minimum", "maximum",
+                    "x-java-maxUtf16Length", "x-java-nonBlank")));
+
+    private final JsonNode rootSchema;
+
+    public JsonSchemaContract(JsonNode rootSchema) {
+        if (rootSchema == null || !rootSchema.isObject()) {
+            throw new IllegalArgumentException("Root schema must be an object");
+        }
+        this.rootSchema = rootSchema;
+        assertSupportedSchema(rootSchema, "#");
+    }
+
+    public List<String> validate(JsonNode instance) {
+        List<String> errors = new ArrayList<String>();
+        validate(rootSchema, instance, "$", errors);
+        return Collections.unmodifiableList(errors);
+    }
+
+    private void validate(
+            JsonNode schema,
+            JsonNode instance,
+            String path,
+            List<String> errors) {
+        if (schema.has("$ref")) {
+            validate(resolve(schema.path("$ref").asText()), instance, path, errors);
+            return;
+        }
+        if (!matchesType(schema.path("type").asText(null), instance)) {
+            errors.add(path + " must be of type " + schema.path("type").asText());
+            return;
+        }
+
+        validateEnum(schema, instance, path, errors);
+        validateOneOf(schema, instance, path, errors);
+        if (instance.isObject()) {
+            validateObject(schema, instance, path, errors);
+        }
+        if (instance.isArray()) {
+            validateArray(schema, instance, path, errors);
+        }
+        if (instance.isTextual()) {
+            validateString(schema, instance.asText(), path, errors);
+        }
+        if (instance.isNumber()) {
+            validateNumber(schema, instance.decimalValue(), path, errors);
+        }
+    }
+
+    private void validateObject(
+            JsonNode schema,
+            JsonNode instance,
+            String path,
+            List<String> errors) {
+        JsonNode required = schema.path("required");
+        if (required.isArray()) {
+            for (JsonNode name : required) {
+                if (!instance.has(name.asText())) {
+                    errors.add(path + " is missing required property " + name.asText());
+                }
+            }
+        }
+
+        JsonNode properties = schema.path("properties");
+        if (properties.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> propertySchemas = properties.fields();
+            while (propertySchemas.hasNext()) {
+                Map.Entry<String, JsonNode> property = propertySchemas.next();
+                if (instance.has(property.getKey())) {
+                    validate(property.getValue(), instance.get(property.getKey()),
+                            path + "." + property.getKey(), errors);
+                }
+            }
+        }
+
+        JsonNode additionalProperties = schema.get("additionalProperties");
+        if (additionalProperties == null || additionalProperties.isBoolean()
+                && additionalProperties.asBoolean()) {
+            return;
+        }
+        Iterator<Map.Entry<String, JsonNode>> fields = instance.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> field = fields.next();
+            if (properties.has(field.getKey())) {
+                continue;
+            }
+            if (additionalProperties.isBoolean()) {
+                errors.add(path + " has unknown property " + field.getKey());
+            } else {
+                validate(additionalProperties, field.getValue(),
+                        path + "." + field.getKey(), errors);
+            }
+        }
+    }
+
+    private void validateArray(
+            JsonNode schema,
+            JsonNode instance,
+            String path,
+            List<String> errors) {
+        if (schema.has("minItems") && instance.size() < schema.path("minItems").asInt()) {
+            errors.add(path + " has fewer than " + schema.path("minItems").asInt()
+                    + " items");
+        }
+        if (schema.path("uniqueItems").asBoolean(false)) {
+            Set<JsonNode> unique = new LinkedHashSet<JsonNode>();
+            for (JsonNode item : instance) {
+                if (!unique.add(item)) {
+                    errors.add(path + " contains duplicate items");
+                }
+            }
+        }
+        JsonNode itemSchema = schema.get("items");
+        if (itemSchema != null && itemSchema.isObject()) {
+            for (int index = 0; index < instance.size(); index++) {
+                validate(itemSchema, instance.get(index),
+                        path + "[" + index + "]", errors);
+            }
+        }
+    }
+
+    private void validateString(
+            JsonNode schema,
+            String value,
+            String path,
+            List<String> errors) {
+        int codePointLength = value.codePointCount(0, value.length());
+        if (schema.path("x-java-nonBlank").asBoolean(false)
+                && value.trim().isEmpty()) {
+            errors.add(path + " must not be blank using Java trim semantics");
+        }
+        if (schema.has("x-java-maxUtf16Length")
+                && value.length() > schema.path("x-java-maxUtf16Length").asInt()) {
+            errors.add(path + " exceeds Java UTF-16 length limit");
+        }
+        if (schema.has("minLength")
+                && codePointLength < schema.path("minLength").asInt()) {
+            errors.add(path + " is shorter than minLength");
+        }
+        if (schema.has("maxLength")
+                && codePointLength > schema.path("maxLength").asInt()) {
+            errors.add(path + " is longer than maxLength");
+        }
+        if (schema.has("pattern")
+                && !Pattern.compile(schema.path("pattern").asText())
+                        .matcher(value).find()) {
+            errors.add(path + " does not match pattern");
+        }
+    }
+
+    private void validateNumber(
+            JsonNode schema,
+            BigDecimal value,
+            String path,
+            List<String> errors) {
+        if (schema.has("minimum")
+                && value.compareTo(schema.path("minimum").decimalValue()) < 0) {
+            errors.add(path + " is less than minimum");
+        }
+        if (schema.has("maximum")
+                && value.compareTo(schema.path("maximum").decimalValue()) > 0) {
+            errors.add(path + " is greater than maximum");
+        }
+    }
+
+    private void validateEnum(
+            JsonNode schema,
+            JsonNode instance,
+            String path,
+            List<String> errors) {
+        JsonNode values = schema.path("enum");
+        if (!values.isArray()) {
+            return;
+        }
+        for (JsonNode value : values) {
+            if (value.equals(instance)) {
+                return;
+            }
+        }
+        errors.add(path + " is not an allowed enum value");
+    }
+
+    private void validateOneOf(
+            JsonNode schema,
+            JsonNode instance,
+            String path,
+            List<String> errors) {
+        JsonNode alternatives = schema.path("oneOf");
+        if (!alternatives.isArray()) {
+            return;
+        }
+        int matches = 0;
+        for (JsonNode alternative : alternatives) {
+            List<String> alternativeErrors = new ArrayList<String>();
+            validate(alternative, instance, path, alternativeErrors);
+            if (alternativeErrors.isEmpty()) {
+                matches++;
+            }
+        }
+        if (matches != 1) {
+            errors.add(path + " must match exactly one oneOf alternative");
+        }
+    }
+
+    private boolean matchesType(String type, JsonNode instance) {
+        if (type == null || type.isEmpty()) {
+            return true;
+        }
+        if ("object".equals(type)) {
+            return instance.isObject();
+        }
+        if ("array".equals(type)) {
+            return instance.isArray();
+        }
+        if ("string".equals(type)) {
+            return instance.isTextual();
+        }
+        if ("integer".equals(type)) {
+            return instance.isIntegralNumber();
+        }
+        if ("number".equals(type)) {
+            return instance.isNumber();
+        }
+        if ("boolean".equals(type)) {
+            return instance.isBoolean();
+        }
+        throw new IllegalArgumentException("Unsupported schema type: " + type);
+    }
+
+    private JsonNode resolve(String reference) {
+        if (!reference.startsWith("#/")) {
+            throw new IllegalArgumentException("Only local schema references are supported");
+        }
+        JsonNode resolved = rootSchema.at(reference.substring(1));
+        if (resolved.isMissingNode()) {
+            throw new IllegalArgumentException("Unknown schema reference: " + reference);
+        }
+        return resolved;
+    }
+
+    private void assertSupportedSchema(JsonNode schema, String path) {
+        Iterator<String> names = schema.fieldNames();
+        while (names.hasNext()) {
+            String name = names.next();
+            if (!SUPPORTED_KEYWORDS.contains(name)) {
+                throw new IllegalArgumentException(
+                        "Unsupported schema keyword at " + path + ": " + name);
+            }
+        }
+        assertSchemaMap(schema.path("definitions"), path + "/definitions");
+        assertSchemaMap(schema.path("properties"), path + "/properties");
+        assertSchemaArray(schema.path("oneOf"), path + "/oneOf");
+        JsonNode items = schema.path("items");
+        if (items.isObject()) {
+            assertSupportedSchema(items, path + "/items");
+        }
+        JsonNode additional = schema.path("additionalProperties");
+        if (additional.isObject()) {
+            assertSupportedSchema(additional, path + "/additionalProperties");
+        }
+    }
+
+    private void assertSchemaMap(JsonNode schemas, String path) {
+        if (!schemas.isObject()) {
+            return;
+        }
+        Iterator<Map.Entry<String, JsonNode>> fields = schemas.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> field = fields.next();
+            assertSupportedSchema(field.getValue(), path + "/" + field.getKey());
+        }
+    }
+
+    private void assertSchemaArray(JsonNode schemas, String path) {
+        if (!schemas.isArray()) {
+            return;
+        }
+        for (int index = 0; index < schemas.size(); index++) {
+            assertSupportedSchema(schemas.get(index), path + "/" + index);
+        }
+    }
+}

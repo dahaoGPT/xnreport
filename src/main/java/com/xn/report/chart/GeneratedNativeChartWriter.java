@@ -51,6 +51,15 @@ public final class GeneratedNativeChartWriter {
             ChartDefinition definition,
             ChartModel model,
             ChartFormulaRange range) {
+        return write(workbook, definition, model, range, 0);
+    }
+
+    public XSSFChart write(
+            XSSFWorkbook workbook,
+            ChartDefinition definition,
+            ChartModel model,
+            ChartFormulaRange range,
+            int chartOrdinal) {
         require(workbook, "workbook");
         require(definition, "definition");
         require(model, "model");
@@ -71,11 +80,14 @@ public final class GeneratedNativeChartWriter {
         }
         XSSFSheet sheet = destinationSheet(
                 workbook, definition, range);
-        XSSFClientAnchor anchor = anchor(sheet, definition);
+        XSSFClientAnchor anchor = anchor(
+                sheet, definition, chartOrdinal);
         XSSFDrawing drawing = sheet.createDrawingPatriarch();
         XSSFChart chart = drawing.createChart(anchor);
         ChartLocator.setMarker(
-                chart, "REPORT_CHART:" + model.getChartId());
+                chart, "REPORT_CHART:" + model.getChartId()
+                        + (model.getGroupKey() == null
+                        ? "" : ":" + model.getGroupKey()));
         if (!model.getTitle().isEmpty()) {
             chart.setTitleText(model.getTitle());
             chart.setTitleOverlay(false);
@@ -154,12 +166,16 @@ public final class GeneratedNativeChartWriter {
     }
 
     private static XSSFClientAnchor anchor(
-            XSSFSheet sheet, ChartDefinition definition) {
-        int row1 = value(definition.getAnchorRow(),
-                nextFreeChartRow(sheet));
+            XSSFSheet sheet,
+            ChartDefinition definition,
+            int chartOrdinal) {
+        int height = value(definition.getAnchorHeightRows(), 20);
+        int row1 = definition.getAnchorRow() == null
+                ? nextFreeChartRow(sheet)
+                : definition.getAnchorRow().intValue()
+                        + chartOrdinal * (height + 2);
         int col1 = value(definition.getAnchorColumn(), 0);
         int width = value(definition.getAnchorWidthColumns(), 10);
-        int height = value(definition.getAnchorHeightRows(), 20);
         if (row1 < 0 || col1 < 0 || width <= 0 || height <= 0) {
             throw new IllegalArgumentException(
                     "Chart anchor coordinates must be non-negative "

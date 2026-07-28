@@ -34,6 +34,8 @@ public class ChartDefinition {
     private String excelTable;
     private String templateChartMarker;
     private Integer templateChartIndex;
+    private List<TemplateChartLocatorDefinition> templateChartLocators =
+            new ArrayList<TemplateChartLocatorDefinition>();
     private Integer anchorRow;
     private Integer anchorColumn;
     private Integer anchorWidthColumns;
@@ -129,6 +131,16 @@ public class ChartDefinition {
     public void setTemplateChartIndex(Integer templateChartIndex) {
         mark("templateChartIndex");
         this.templateChartIndex = templateChartIndex;
+    }
+
+    public List<TemplateChartLocatorDefinition> getTemplateChartLocators() {
+        return templateChartLocators;
+    }
+
+    public void setTemplateChartLocators(
+            List<TemplateChartLocatorDefinition> templateChartLocators) {
+        mark("templateChartLocators");
+        this.templateChartLocators = templateChartLocators;
     }
 
     public Integer getAnchorRow() {

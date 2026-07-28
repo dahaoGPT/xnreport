@@ -8,6 +8,8 @@ import com.xn.report.config.definition.ChartDefinition;
 import com.xn.report.support.JsonSchemaContract;
 import com.xn.report.support.TestFixtures;
 import java.io.InputStream;
+import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Collections;
 import org.junit.jupiter.api.Test;
 
@@ -80,5 +82,88 @@ class ExcelChartConfigurationTest {
                 + "\"type\":\"LINE\"}]}]}");
 
         assertThat(contract.validate(invalid)).isNotEmpty();
+    }
+
+    @Test
+    void loadsAndValidatesOneTemplateLocatorPerDeclaredGroup()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper().enable(
+                com.fasterxml.jackson.databind.DeserializationFeature
+                        .FAIL_ON_UNKNOWN_PROPERTIES);
+        ReportDefinition report = mapper.readValue(groupedReportJson(
+                "[{\"groupKey\":\"A\",\"marker\":\"REPORT_CHART:a\"},"
+                        + "{\"groupKey\":\"B\",\"index\":1}]"),
+                ReportDefinition.class);
+
+        Method getter = ChartDefinition.class.getMethod(
+                "getTemplateChartLocators");
+        List<?> locators = (List<?>) getter.invoke(report.getCharts().get(0));
+        assertThat(locators).hasSize(2);
+        assertThat(new ReportDefinitionValidator().validate(report).issues())
+                .isEmpty();
+    }
+
+    @Test
+    void rejectsGroupedTemplateLocatorDuplicatesAndLegacyMixing()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ReportDefinition duplicates = mapper.readValue(groupedReportJson(
+                "[{\"groupKey\":\"A\",\"marker\":\"REPORT_CHART:a\"},"
+                        + "{\"groupKey\":\"A\",\"index\":1}]"),
+                ReportDefinition.class);
+        assertThat(new ReportDefinitionValidator()
+                .validate(duplicates).issues())
+                .anySatisfy(issue -> {
+                    assertThat(issue.getPath())
+                            .contains("templateChartLocators");
+                    assertThat(issue.getMessage()).contains("groupKey");
+                });
+
+        ReportDefinition mixed = mapper.readValue(
+                groupedReportJson(
+                        "[{\"groupKey\":\"A\","
+                                + "\"marker\":\"REPORT_CHART:a\"}]")
+                        .replace("\"templateChartLocators\"",
+                                "\"templateChartMarker\":"
+                                        + "\"REPORT_CHART:legacy\","
+                                        + "\"templateChartLocators\""),
+                ReportDefinition.class);
+        assertThat(new ReportDefinitionValidator().validate(mixed).issues())
+                .anySatisfy(issue -> assertThat(issue.getMessage())
+                        .contains("must not be combined"));
+    }
+
+    @Test
+    void schemaRejectsGroupedLocatorWithoutExactlyOneMarkerOrIndex()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode schema;
+        try (InputStream input = getClass().getResourceAsStream(
+                "/schema/report-definition.schema.json")) {
+            schema = mapper.readTree(input);
+        }
+        JsonSchemaContract contract = new JsonSchemaContract(schema);
+        JsonNode invalid = mapper.readTree(groupedReportJson(
+                "[{\"groupKey\":\"A\","
+                        + "\"marker\":\"REPORT_CHART:a\",\"index\":0}]"));
+
+        assertThat(contract.validate(invalid)).isNotEmpty();
+    }
+
+    private static String groupedReportJson(String locators) {
+        return "{"
+                + "\"schemaVersion\":\"1.0\","
+                + "\"report\":{\"code\":\"r\",\"name\":\"R\"},"
+                + "\"datasets\":[{\"id\":\"d\",\"sheetName\":\"D\","
+                + "\"sql\":\"select 1\"}],"
+                + "\"charts\":[{"
+                + "\"id\":\"c\",\"dataset\":\"d\","
+                + "\"excelSheet\":\"D\","
+                + "\"categoryField\":\"month\","
+                + "\"groupByField\":\"groupName\","
+                + "\"mode\":\"TEMPLATE_NATIVE\","
+                + "\"templateChartLocators\":" + locators + ","
+                + "\"series\":[{\"field\":\"value\",\"name\":\"Value\","
+                + "\"type\":\"LINE\"}]}]}";
     }
 }

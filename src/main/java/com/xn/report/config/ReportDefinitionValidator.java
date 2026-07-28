@@ -3,6 +3,7 @@ package com.xn.report.config;
 import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.ChartDefinition;
 import com.xn.report.config.definition.ChartSeriesDefinition;
+import com.xn.report.config.definition.TemplateChartLocatorDefinition;
 import com.xn.report.config.definition.DistributionDefinition;
 import com.xn.report.config.definition.DistributionDefinition.BinDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
@@ -349,12 +350,34 @@ public final class ReportDefinitionValidator {
                 && hasText(chart.getTemplateChartMarker());
         boolean index = chart.hasProperty("templateChartIndex")
                 && chart.getTemplateChartIndex() != null;
+        boolean locatorListPresent =
+                chart.hasProperty("templateChartLocators");
+        List<TemplateChartLocatorDefinition> groupedLocators =
+                safeList(chart.getTemplateChartLocators());
+        boolean grouped = hasText(chart.getGroupByField());
         if (chart.getMode() == ChartDefinition.Mode.TEMPLATE_NATIVE) {
             if (!hasText(chart.getExcelSheet())) {
                 result.add("CHART-002", path + ".excelSheet",
                         "TEMPLATE_NATIVE requires excelSheet");
             }
-            if (marker == index) {
+            if (grouped) {
+                if (marker || index
+                        || chart.hasProperty("templateChartMarker")
+                        || chart.hasProperty("templateChartIndex")) {
+                    result.add("CHART-002",
+                            path + ".templateChartLocators",
+                            "Grouped templateChartLocators must not be "
+                                    + "combined with legacy template chart "
+                                    + "locator properties");
+                }
+                validateGroupedTemplateLocators(
+                        groupedLocators, path, result);
+            } else if (locatorListPresent) {
+                result.add("CHART-002",
+                        path + ".templateChartLocators",
+                        "templateChartLocators requires groupByField; "
+                                + "use one legacy template chart locator");
+            } else if (marker == index) {
                 result.add("CHART-002", path + ".templateChartLocator",
                         "TEMPLATE_NATIVE requires exactly one "
                                 + "templateChartMarker or templateChartIndex");
@@ -364,11 +387,13 @@ public final class ReportDefinitionValidator {
                         "Template chart layout comes from the template; "
                                 + "anchor properties are not allowed");
             }
-        } else if (marker || index
+        } else if (marker || index || locatorListPresent
                 || chart.hasProperty("templateChartMarker")
                 || chart.hasProperty("templateChartIndex")) {
             result.add("CHART-001",
-                    marker || chart.hasProperty("templateChartMarker")
+                    locatorListPresent
+                            ? path + ".templateChartLocators"
+                            : marker || chart.hasProperty("templateChartMarker")
                             ? path + ".templateChartMarker"
                             : path + ".templateChartIndex",
                     "Template chart locator is only valid for "
@@ -384,6 +409,63 @@ public final class ReportDefinitionValidator {
                 path + ".anchorWidthColumns", result, false);
         validateNonNegative(chart.getAnchorHeightRows(),
                 path + ".anchorHeightRows", result, false);
+    }
+
+    private void validateGroupedTemplateLocators(
+            List<TemplateChartLocatorDefinition> locators,
+            String chartPath,
+            ValidationResult result) {
+        if (locators.isEmpty()) {
+            result.add("CHART-002",
+                    chartPath + ".templateChartLocators",
+                    "Grouped TEMPLATE_NATIVE requires one locator "
+                            + "for every declared groupKey");
+            return;
+        }
+        Set<String> groups = new LinkedHashSet<String>();
+        for (int index = 0; index < locators.size(); index++) {
+            String path = chartPath + ".templateChartLocators["
+                    + index + "]";
+            TemplateChartLocatorDefinition locator = locators.get(index);
+            if (locator == null) {
+                result.add("CHART-002", path,
+                        "Template chart locator must not be null");
+                continue;
+            }
+            if (!hasText(locator.getGroupKey())) {
+                result.add("CHART-002", path + ".groupKey",
+                        "groupKey must not be blank");
+            } else if (!groups.add(locator.getGroupKey())) {
+                result.add("CHART-002", path + ".groupKey",
+                        "groupKey must be unique within "
+                                + "templateChartLocators");
+            }
+            boolean marker = locator.hasProperty("marker")
+                    && hasText(locator.getMarker());
+            boolean chartIndex = locator.hasProperty("index")
+                    && locator.getIndex() != null;
+            if (marker == chartIndex) {
+                result.add("CHART-002", path,
+                        "Template chart locator requires exactly one "
+                                + "marker or index");
+            }
+            if (locator.getIndex() != null
+                    && locator.getIndex().intValue() < 0) {
+                result.add("CHART-002", path + ".index",
+                        "Value must not be negative");
+            }
+            for (String property : locator.getPresentProperties()) {
+                Object value = "groupKey".equals(property)
+                        ? locator.getGroupKey()
+                        : "marker".equals(property)
+                        ? locator.getMarker() : locator.getIndex();
+                if (value == null) {
+                    result.add("CHART-002",
+                            path + "." + property,
+                            property + " must not be null");
+                }
+            }
+        }
     }
 
     private boolean hasAnchorProperty(ChartDefinition chart) {
@@ -416,6 +498,7 @@ public final class ReportDefinitionValidator {
         if ("excelTable".equals(property)) return chart.getExcelTable();
         if ("templateChartMarker".equals(property)) return chart.getTemplateChartMarker();
         if ("templateChartIndex".equals(property)) return chart.getTemplateChartIndex();
+        if ("templateChartLocators".equals(property)) return chart.getTemplateChartLocators();
         if ("anchorRow".equals(property)) return chart.getAnchorRow();
         if ("anchorColumn".equals(property)) return chart.getAnchorColumn();
         if ("anchorWidthColumns".equals(property)) return chart.getAnchorWidthColumns();

@@ -197,12 +197,25 @@ public final class JsonSchemaContract {
                     .asText("GENERATED_NATIVE"));
             boolean marker = instance.has("templateChartMarker");
             boolean index = instance.has("templateChartIndex");
+            boolean locators = instance.has("templateChartLocators");
+            boolean grouped = instance.has("groupByField");
             if ("TEMPLATE_NATIVE".equals(mode)) {
                 if (!instance.has("excelSheet")) {
                     errors.add(path
                             + ".excelSheet is required for TEMPLATE_NATIVE");
                 }
-                if (marker == index) {
+                if (grouped && !locators) {
+                    errors.add(path
+                            + ".templateChartLocators is required "
+                            + "with groupByField");
+                } else if (grouped && (marker || index)) {
+                    errors.add(path
+                            + " grouped locators cannot be combined "
+                            + "with a legacy locator");
+                } else if (!grouped && locators) {
+                    errors.add(path
+                            + ".templateChartLocators requires groupByField");
+                } else if (!grouped && marker == index) {
                     errors.add(path
                             + " requires exactly one template chart locator");
                 }
@@ -213,7 +226,7 @@ public final class JsonSchemaContract {
                     errors.add(path
                             + " template chart cannot configure an anchor");
                 }
-            } else if (marker || index) {
+            } else if (marker || index || locators) {
                 errors.add(path
                         + " template chart locator requires TEMPLATE_NATIVE");
             }

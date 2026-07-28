@@ -909,6 +909,13 @@ public final class ChartModelBuilder {
         if ("dataset".equals(property)) return chart.getDataset();
         if ("excelSheet".equals(property)) return chart.getExcelSheet();
         if ("excelTable".equals(property)) return chart.getExcelTable();
+        if ("templateChartMarker".equals(property)) return chart.getTemplateChartMarker();
+        if ("templateChartIndex".equals(property)) return chart.getTemplateChartIndex();
+        if ("templateChartLocators".equals(property)) return chart.getTemplateChartLocators();
+        if ("anchorRow".equals(property)) return chart.getAnchorRow();
+        if ("anchorColumn".equals(property)) return chart.getAnchorColumn();
+        if ("anchorWidthColumns".equals(property)) return chart.getAnchorWidthColumns();
+        if ("anchorHeightRows".equals(property)) return chart.getAnchorHeightRows();
         if ("categoryField".equals(property)) return chart.getCategoryField();
         if ("groupByField".equals(property)) return chart.getGroupByField();
         if ("categories".equals(property)) return chart.getCategories();

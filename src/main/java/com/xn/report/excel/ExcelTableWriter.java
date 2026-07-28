@@ -248,7 +248,12 @@ public final class ExcelTableWriter {
         CellStyle[] styles = new CellStyle[formats.size()];
         for (int column = 0; column < formats.size(); column++) {
             String format = formats.get(column);
-            if (format != null && !format.trim().isEmpty()) {
+            if (format != null && format.trim().isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Excel table column format must be non-blank: "
+                                + column);
+            }
+            if (format != null) {
                 CellStyle style = workbook.createCellStyle();
                 if (prototypes.get(column) != null) {
                     style.cloneStyleFrom(prototypes.get(column));

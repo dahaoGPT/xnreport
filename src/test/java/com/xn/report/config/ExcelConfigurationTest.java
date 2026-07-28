@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xn.report.config.definition.ExcelTableBinding;
+import com.xn.report.config.definition.ExcelValueBinding;
 import com.xn.report.support.JsonSchemaContract;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -132,7 +134,7 @@ class ExcelConfigurationTest {
     }
 
     @Test
-    void columnFormatPresenceDistinguishesOmittedFromNullAndEmpty() {
+    void columnFormatPresenceDistinguishesOmittedFromNullEmptyAndWhitespace() {
         String prefix = "schemaVersion: '1.0'\n"
                 + "report: { code: r, name: R }\n"
                 + "datasets:\n"
@@ -152,6 +154,8 @@ class ExcelConfigurationTest {
                 + "        - { field: value, header: 值, format: null }\n");
         ReportDefinition empty = loadYaml(prefix
                 + "        - { field: value, header: 值, format: '' }\n");
+        ReportDefinition whitespace = loadYaml(prefix
+                + "        - { field: value, header: 值, format: '   ' }\n");
 
         assertThat(omitted.getExcel().getTableBindings().get(0)
                 .getColumns().get(0).isFormatPresent()).isFalse();
@@ -167,6 +171,49 @@ class ExcelConfigurationTest {
                 .validate(empty).issues())
                 .extracting(ValidationIssue::getPath)
                 .contains("$.excel.tableBindings[0].columns[0].format");
+        assertThat(new ReportDefinitionValidator()
+                .validate(whitespace).issues())
+                .extracting(ValidationIssue::getPath)
+                .contains("$.excel.tableBindings[0].columns[0].format");
+    }
+
+    @Test
+    void valueFormatPresenceDistinguishesOmittedFromNullEmptyAndWhitespace() {
+        String prefix = "schemaVersion: '1.0'\n"
+                + "report: { code: r, name: R }\n"
+                + "datasets:\n"
+                + "  - { id: d, sheetName: Data, sql: SELECT 1 }\n"
+                + "excel:\n"
+                + "  valueBindings:\n";
+        ReportDefinition omitted = loadYaml(prefix
+                + "    - { sheet: Cover, cell: B3, value: text }\n");
+        ReportDefinition explicitNull = loadYaml(prefix
+                + "    - { sheet: Cover, cell: B3, value: text,"
+                + " format: null }\n");
+        ReportDefinition empty = loadYaml(prefix
+                + "    - { sheet: Cover, cell: B3, value: text,"
+                + " format: '' }\n");
+        ReportDefinition whitespace = loadYaml(prefix
+                + "    - { sheet: Cover, cell: B3, value: text,"
+                + " format: '   ' }\n");
+
+        ExcelValueBinding omittedBinding =
+                omitted.getExcel().getValueBindings().get(0);
+        assertThat(omittedBinding.isFormatPresent()).isFalse();
+        assertThat(new ReportDefinitionValidator()
+                .validate(omitted).issues())
+                .extracting(ValidationIssue::getPath)
+                .doesNotContain("$.excel.valueBindings[0].format");
+        for (ReportDefinition invalid : Arrays.asList(
+                explicitNull, empty, whitespace)) {
+            ExcelValueBinding binding =
+                    invalid.getExcel().getValueBindings().get(0);
+            assertThat(binding.isFormatPresent()).isTrue();
+            assertThat(new ReportDefinitionValidator()
+                    .validate(invalid).issues())
+                    .extracting(ValidationIssue::getPath)
+                    .containsExactly("$.excel.valueBindings[0].format");
+        }
     }
 
     @Test
@@ -195,6 +242,36 @@ class ExcelConfigurationTest {
         assertThat(schema.validate(mapper.readTree(String.format(
                 base, "\"tbl_valid\"", ",\"format\":\"\""))))
                 .isNotEmpty();
+        assertThat(schema.validate(mapper.readTree(String.format(
+                base, "\"tbl_valid\"", ",\"format\":\"   \""))))
+                .isNotEmpty();
+    }
+
+    @Test
+    void schemaAllowsOmittedValueFormatAndRejectsNullEmptyOrWhitespace()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonSchemaContract schema = schema();
+        String base = "{"
+                + "\"schemaVersion\":\"1.0\","
+                + "\"report\":{\"code\":\"r\",\"name\":\"R\"},"
+                + "\"datasets\":[{\"id\":\"d\",\"sheetName\":\"Data\","
+                + "\"sql\":\"SELECT 1\"}],"
+                + "\"excel\":{\"valueBindings\":[{"
+                + "\"sheet\":\"Cover\",\"cell\":\"B3\","
+                + "\"value\":\"text\"%s}]}}";
+
+        assertThat(schema.validate(mapper.readTree(
+                String.format(base, "")))).isEmpty();
+        for (String invalid : Arrays.asList(
+                ",\"format\":null",
+                ",\"format\":\"\"",
+                ",\"format\":\"   \"")) {
+            assertThat(schema.validate(mapper.readTree(
+                    String.format(base, invalid))))
+                    .anyMatch(message -> message.contains(
+                            "$.excel.valueBindings[0].format"));
+        }
     }
 
     private ReportDefinition loadYaml(String yaml) {

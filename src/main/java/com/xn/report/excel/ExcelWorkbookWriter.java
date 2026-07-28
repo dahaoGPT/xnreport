@@ -193,6 +193,15 @@ public final class ExcelWorkbookWriter {
                 throw new IllegalArgumentException(
                         "Excel value binding must not be null");
             }
+            if (binding.isFormatPresent()
+                    && (binding.getFormat() == null
+                    || binding.getFormat().trim().isEmpty())) {
+                throw new IllegalArgumentException(
+                        "Excel value binding format must be non-blank "
+                                + "when configured: "
+                                + binding.getSheet() + "!"
+                                + binding.getCell());
+            }
             XSSFSheet sheet = workbook.getSheet(binding.getSheet());
             if (sheet == null) {
                 throw new IllegalArgumentException(
@@ -212,8 +221,7 @@ public final class ExcelWorkbookWriter {
             binder.bind(
                     cell,
                     resolveValue(binding.getValue(), context, runtime));
-            if (binding.getFormat() != null
-                    && !binding.getFormat().trim().isEmpty()) {
+            if (binding.isFormatPresent()) {
                 CellStyle style = workbook.createCellStyle();
                 style.cloneStyleFrom(cell.getCellStyle());
                 style.setDataFormat(workbook.createDataFormat()

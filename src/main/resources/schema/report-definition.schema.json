@@ -101,7 +101,8 @@
           "minLength": 1
         },
         "format": {
-          "type": "string"
+          "type": "string",
+          "pattern": ".*\\S.*"
         }
       }
     },
@@ -165,7 +166,7 @@
         },
         "format": {
           "type": "string",
-          "minLength": 1
+          "pattern": ".*\\S.*"
         }
       }
     },

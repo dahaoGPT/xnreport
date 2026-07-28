@@ -989,6 +989,11 @@ public final class ReportDefinitionValidator {
                     path + ".value", "Value binding value is required");
             validateCellReference(binding.getCell(),
                     path + ".cell", result);
+            if (binding.isFormatPresent()
+                    && !hasText(binding.getFormat())) {
+                result.add("EXCEL-001", path + ".format",
+                        "Value format must be non-blank when configured");
+            }
         }
 
         if (excel.isTableBindingsExplicitNull()) {

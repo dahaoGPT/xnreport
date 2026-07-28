@@ -334,6 +334,61 @@ class ExcelDatasetSheetWriterTest {
     }
 
     @Test
+    void valueBindingWriterAllowsOmittedFormatAndRejectsExplicitBlanks()
+            throws Exception {
+        Path template = tempDir.resolve("value-format-template.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Cover");
+            try (java.io.OutputStream stream =
+                    Files.newOutputStream(template)) {
+                workbook.write(stream);
+            }
+        }
+        ReportDefinition report = new ReportDefinition();
+        report.setDatasets(Collections.<DatasetDefinition>emptyList());
+        ExcelDefinition excel = new ExcelDefinition();
+        report.setExcel(excel);
+        ExcelValueBinding omitted = new ExcelValueBinding();
+        omitted.setSheet("Cover");
+        omitted.setCell("B3");
+        omitted.setValue("text");
+        excel.setValueBindings(Collections.singletonList(omitted));
+        Path omittedOutput = tempDir.resolve("value-format-omitted.xlsx");
+
+        new ExcelWorkbookWriter().write(
+                template,
+                omittedOutput,
+                report,
+                DatasetContext.builder().build(),
+                Collections.<String, Object>emptyMap());
+
+        assertThat(omittedOutput).isRegularFile();
+        for (String invalidFormat : Arrays.asList(null, "", "   ")) {
+            ExcelValueBinding invalid = new ExcelValueBinding();
+            invalid.setSheet("Cover");
+            invalid.setCell("B3");
+            invalid.setValue("text");
+            invalid.setFormat(invalidFormat);
+            excel.setValueBindings(Collections.singletonList(invalid));
+            Path output = tempDir.resolve(
+                    "value-format-invalid-"
+                            + String.valueOf(invalidFormat).length()
+                            + "-" + System.nanoTime() + ".xlsx");
+
+            assertThatIllegalArgumentException().isThrownBy(() ->
+                    new ExcelWorkbookWriter().write(
+                            template,
+                            output,
+                            report,
+                            DatasetContext.builder().build(),
+                            Collections.<String, Object>emptyMap()))
+                    .withMessageContaining("format")
+                    .withMessageContaining("non-blank");
+            assertThat(output).doesNotExist();
+        }
+    }
+
+    @Test
     void honorsConfiguredTableLayoutAndTypedScalarBindings()
             throws Exception {
         Path template = tempDir.resolve("binding-template.xlsx");
@@ -516,14 +571,16 @@ class ExcelDatasetSheetWriterTest {
                 writeWithColumns(template, definition, result,
                         column("missing", "未知")))
                 .withMessageContaining("Unknown");
-        ExcelTableBinding.ColumnBinding nullFormat =
-                column("known", "Null format");
-        nullFormat.setFormat(null);
-        assertThatIllegalArgumentException().isThrownBy(() ->
-                writeWithColumns(
-                        template, definition, result, nullFormat))
-                .withMessageContaining("format")
-                .withMessageContaining("non-blank");
+        for (String invalidFormat : Arrays.asList(null, "", "   ")) {
+            ExcelTableBinding.ColumnBinding invalid =
+                    column("known", "Invalid format");
+            invalid.setFormat(invalidFormat);
+            assertThatIllegalArgumentException().isThrownBy(() ->
+                    writeWithColumns(
+                            template, definition, result, invalid))
+                    .withMessageContaining("format")
+                    .withMessageContaining("non-blank");
+        }
     }
 
     @Test

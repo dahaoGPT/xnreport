@@ -28,14 +28,26 @@ class ExcelValueBinderTest {
             binder.bind(
                     row.createCell(1),
                     new BigInteger("123456789012345"));
+            binder.bind(
+                    row.createCell(2),
+                    Long.valueOf(999999999999999L));
+            binder.bind(
+                    row.createCell(3),
+                    Double.valueOf(1234567890123456d));
             assertThat(row.getCell(0).getNumericCellValue())
                     .isEqualTo(123456789012345d);
             assertThat(row.getCell(1).getNumericCellValue())
                     .isEqualTo(123456789012345d);
+            assertThat(row.getCell(2).getNumericCellValue())
+                    .isEqualTo(999999999999999d);
+            assertThat(row.getCell(3).getNumericCellValue())
+                    .isEqualTo(1234567890123456d);
 
             for (Number unsafe : Arrays.<Number>asList(
                     new BigDecimal("1234567890123456"),
                     new BigInteger("1234567890123456"),
+                    Long.valueOf(1234567890123456L),
+                    Long.valueOf(Long.MAX_VALUE),
                     new BigDecimal("1E+400"),
                     new BigDecimal("1E-400"),
                     Double.NaN,

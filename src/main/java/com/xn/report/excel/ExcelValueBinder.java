@@ -50,6 +50,9 @@ public final class ExcelValueBinder {
         } else if (value instanceof BigInteger) {
             cell.setCellValue(safeDecimal(
                     new BigDecimal((BigInteger) value)));
+        } else if (isIntegralNumber(value)) {
+            cell.setCellValue(safeDecimal(
+                    BigDecimal.valueOf(((Number) value).longValue())));
         } else if (value instanceof Number) {
             cell.setCellValue(safeNumber((Number) value));
         } else if (value instanceof LocalDateTime) {
@@ -94,6 +97,13 @@ public final class ExcelValueBinder {
 
     private static double safeNumber(Number value) {
         return finite(value.doubleValue(), String.valueOf(value));
+    }
+
+    private static boolean isIntegralNumber(Object value) {
+        return value instanceof Byte
+                || value instanceof Short
+                || value instanceof Integer
+                || value instanceof Long;
     }
 
     private static double finite(double value, String source) {

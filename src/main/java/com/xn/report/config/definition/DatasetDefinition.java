@@ -14,7 +14,8 @@ public class DatasetDefinition {
     private String sql;
     private DatasetType resultType;
     private List<String> dependsOn = new ArrayList<String>();
-    private Map<String, Object> parameters = new LinkedHashMap<String, Object>();
+    private Map<String, ParameterBindingDefinition> parameters =
+            new LinkedHashMap<String, ParameterBindingDefinition>();
     private Map<String, FieldDefinition> expectedFields =
             new LinkedHashMap<String, FieldDefinition>();
     private Integer timeoutSeconds;
@@ -68,13 +69,13 @@ public class DatasetDefinition {
         this.dependsOn = dependsOn == null ? new ArrayList<String>() : dependsOn;
     }
 
-    public Map<String, Object> getParameters() {
+    public Map<String, ParameterBindingDefinition> getParameters() {
         return parameters;
     }
 
-    public void setParameters(Map<String, Object> parameters) {
+    public void setParameters(Map<String, ParameterBindingDefinition> parameters) {
         this.parameters = parameters == null
-                ? new LinkedHashMap<String, Object>() : parameters;
+                ? new LinkedHashMap<String, ParameterBindingDefinition>() : parameters;
     }
 
     public Map<String, FieldDefinition> getExpectedFields() {

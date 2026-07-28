@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: xnreport
+
+report-engine:
+  config-root: ./config
+  sql-root: ./config/sql
+  template-root: ./templates
+  output-root: ./output
+  temp-root: ./temp

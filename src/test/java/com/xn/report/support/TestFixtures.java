@@ -3,6 +3,7 @@ package com.xn.report.support;
 import com.xn.report.config.ReportDefinition;
 import com.xn.report.config.ReportMetadata;
 import com.xn.report.config.definition.DatasetDefinition;
+import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetType;
 import java.util.Arrays;
 
@@ -37,5 +38,9 @@ public final class TestFixtures {
         dataset.setResultType(DatasetType.LIST);
         dataset.setDependsOn(Arrays.asList(dependsOn));
         return dataset;
+    }
+
+    public static DatasetRow row(Object... pairs) {
+        return DatasetRow.of(pairs);
     }
 }

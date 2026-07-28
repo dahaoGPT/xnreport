@@ -180,12 +180,20 @@ public final class ReportDefinitionValidator {
                         "Chart requires at least one series");
             }
             Set<Integer> legendOrders = new LinkedHashSet<Integer>();
+            Map<String, ChartStackContract> stackContracts =
+                    new LinkedHashMap<String, ChartStackContract>();
             for (int seriesIndex = 0;
                     seriesIndex < series.size(); seriesIndex++) {
                 validateChartSeries(
                         series.get(seriesIndex), fields, known,
                         path + ".series[" + seriesIndex + "]",
-                        legendOrders, result);
+                        legendOrders, stackContracts, result);
+            }
+            if (containsChartType(series, ChartType.STOCK)
+                    && chart.getMode()
+                    != ChartDefinition.Mode.TEMPLATE_NATIVE) {
+                result.add("CHART-001", path + ".mode",
+                        "STOCK chart requires TEMPLATE_NATIVE mode");
             }
             validateAxisBounds(chart.getPrimaryAxisMin(),
                     chart.getPrimaryAxisMax(), path + ".primaryAxis", result);
@@ -238,6 +246,7 @@ public final class ReportDefinitionValidator {
             boolean known,
             String path,
             Set<Integer> legendOrders,
+            Map<String, ChartStackContract> stackContracts,
             ValidationResult result) {
         if (series == null) {
             result.add("CHART-001", path, "Chart series must not be null");
@@ -301,6 +310,105 @@ public final class ReportDefinitionValidator {
             result.add("CHART-001", path + ".color",
                     "Chart color must be a six-digit RGB hex value");
         }
+        validateChartSeriesPropertyMatrix(series, path, result);
+        if (hasText(series.getStackGroup())) {
+            ChartStackContract contract =
+                    stackContracts.get(series.getStackGroup());
+            if (contract == null) {
+                stackContracts.put(series.getStackGroup(),
+                        new ChartStackContract(type, series.getAxis()));
+            } else {
+                if (contract.type != type) {
+                    result.add("CHART-001", path + ".stackGroup",
+                            "All series in stackGroup "
+                                    + series.getStackGroup()
+                                    + " must use the same type");
+                }
+                if (contract.axis != series.getAxis()) {
+                    result.add("CHART-001", path + ".axis",
+                            "All series in stackGroup "
+                                    + series.getStackGroup()
+                                    + " must use the same axis");
+                }
+            }
+        }
+    }
+
+    private void validateChartSeriesPropertyMatrix(
+            ChartSeriesDefinition series,
+            String path,
+            ValidationResult result) {
+        ChartType type = series.getType();
+        if ((type == ChartType.SCATTER || type == ChartType.BUBBLE)
+                && (series.hasProperty("lineStyle")
+                || series.hasProperty("lineWidth"))) {
+            result.add("CHART-001", path,
+                    type + " does not support lineStyle or lineWidth");
+        }
+        if ((series.hasProperty("lineStyle")
+                || series.hasProperty("lineWidth"))
+                && type != ChartType.LINE
+                && type != ChartType.AREA
+                && type != ChartType.STACKED_AREA
+                && type != ChartType.RADAR
+                && type != ChartType.STOCK) {
+            result.add("CHART-001", path,
+                    type + " does not support lineStyle or lineWidth");
+        }
+        if (type == ChartType.BUBBLE && series.hasProperty("marker")) {
+            result.add("CHART-001", path + ".marker",
+                    "BUBBLE does not support marker");
+        }
+        if (type == ChartType.RADAR
+                && (series.hasProperty("marker")
+                || series.hasProperty("dataLabels")
+                || series.hasProperty("format")
+                || series.hasProperty("axis"))) {
+            result.add("CHART-001", path,
+                    "RADAR does not support marker, dataLabels, format, or axis");
+        }
+        if (series.hasProperty("marker")
+                && type != ChartType.LINE
+                && type != ChartType.SCATTER
+                && type != ChartType.STOCK) {
+            result.add("CHART-001", path + ".marker",
+                    type + " does not support marker");
+        }
+        if (series.hasProperty("format")
+                && (!series.hasProperty("dataLabels")
+                || series.getDataLabels()
+                        == com.xn.report.chart.ChartDataLabelMode.NONE)) {
+            result.add("CHART-001", path + ".format",
+                    "format requires visible dataLabels");
+        }
+        if (type.isPieLike() && series.hasProperty("format")) {
+            result.add("CHART-001", path + ".format",
+                    type + " does not support series format");
+        }
+        if (!type.isPieLike()
+                && series.hasProperty("dataLabels")
+                && series.getDataLabels()
+                        != com.xn.report.chart.ChartDataLabelMode.NONE
+                && series.getDataLabels()
+                        != com.xn.report.chart.ChartDataLabelMode.VALUE) {
+            result.add("CHART-001", path + ".dataLabels",
+                    type + " supports only VALUE dataLabels");
+        }
+        if ((type.isPieLike() || type == ChartType.RADAR)
+                && series.hasProperty("axis")) {
+            result.add("CHART-001", path + ".axis",
+                    type + " does not support an axis selection");
+        }
+    }
+
+    private boolean containsChartType(
+            List<ChartSeriesDefinition> series, ChartType type) {
+        for (ChartSeriesDefinition item : series) {
+            if (item != null && item.getType() == type) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Object chartSeriesProperty(
@@ -1863,5 +1971,17 @@ public final class ReportDefinitionValidator {
     private static Set<String> unmodifiableSet(String... values) {
         return Collections.unmodifiableSet(
                 new LinkedHashSet<String>(Arrays.asList(values)));
+    }
+
+    private static final class ChartStackContract {
+        private final ChartType type;
+        private final com.xn.report.chart.ChartAxis axis;
+
+        private ChartStackContract(
+                ChartType type, com.xn.report.chart.ChartAxis axis) {
+            this.type = type;
+            this.axis = axis == null
+                    ? com.xn.report.chart.ChartAxis.PRIMARY : axis;
+        }
     }
 }

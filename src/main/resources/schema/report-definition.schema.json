@@ -59,6 +59,8 @@
   "definitions": {
     "chart": {
       "type": "object",
+      "x-java-stackGroupConsistency": true,
+      "x-java-stockTemplateOnly": true,
       "additionalProperties": false,
       "required": [
         "id",
@@ -114,7 +116,11 @@
         "categories": {
           "type": "array",
           "uniqueItems": true,
-          "items": {}
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "x-java-nonBlank": true
+          }
         },
         "categorySort": {
           "type": "string",
@@ -198,6 +204,7 @@
       }
     },
     "chartSeries": {
+      "x-java-chartSeriesPropertyMatrix": true,
       "oneOf": [
         {
           "type": "object",

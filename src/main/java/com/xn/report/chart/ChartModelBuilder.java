@@ -8,15 +8,12 @@ import com.xn.report.dataset.DatasetType;
 import com.xn.report.text.DistributionResult;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -50,15 +47,12 @@ public final class ChartModelBuilder {
                     "Chart " + definition.getId() + " expects dataset "
                             + definition.getDataset() + ", not " + dataset.id());
         }
+        if (dataset.list().isEmpty() && !dataset.hasExplicitSchema()) {
+            return emptyModels(definition, dataset.id());
+        }
         validateRuntimeFields(definition, dataset);
         if (dataset.list().isEmpty()) {
-            if (definition.getEmptyDataPolicy() == ChartEmptyDataPolicy.FAIL) {
-                throw new ChartBuildException(
-                        "Chart dataset is empty: " + dataset.id());
-            }
-            if (definition.getEmptyDataPolicy() == ChartEmptyDataPolicy.SKIP) {
-                return Collections.emptyList();
-            }
+            return emptyModels(definition, dataset.id());
         }
 
         Map<String, List<DatasetRow>> groups = groups(definition, dataset.list());
@@ -68,6 +62,20 @@ public final class ChartModelBuilder {
                     group.getKey(), group.getValue()));
         }
         return Collections.unmodifiableList(models);
+    }
+
+    private List<ChartModel> emptyModels(
+            ChartDefinition definition, String datasetId) {
+            if (definition.getEmptyDataPolicy() == ChartEmptyDataPolicy.FAIL) {
+                throw new ChartBuildException(
+                        "Chart dataset is empty: " + datasetId);
+            }
+            if (definition.getEmptyDataPolicy() == ChartEmptyDataPolicy.SKIP) {
+                return Collections.emptyList();
+            }
+        return Collections.singletonList(
+                buildGroup(definition, datasetId, null,
+                        Collections.<DatasetRow>emptyList()));
     }
 
     public ChartModel buildDistribution(
@@ -87,8 +95,7 @@ public final class ChartModelBuilder {
         for (DistributionResult.BinResult bin : distribution.bins()) {
             categories.add(bin.label());
             values.add(BigDecimal.valueOf(bin.count()));
-            labels.add(distributionLabel(
-                    definition.getDataLabelMode(), bin, distribution.total()));
+            labels.add(bin.displayLabel());
         }
         ChartSeriesDefinition source = definition.getSeries().get(0);
         ChartSeriesModel series = seriesModel(
@@ -140,8 +147,15 @@ public final class ChartModelBuilder {
         for (IndexedSeries item : built) {
             series.add(item.series);
         }
+        List<String> labels = series.size() == 1
+                && series.get(0).getType().isPieLike()
+                ? pieLabels(
+                        categories,
+                        series.get(0).getValues(),
+                        effectivePieLabelMode(definition, series.get(0)))
+                : Collections.<String>emptyList();
         return model(definition, groupKey, categories, series,
-                Collections.<String>emptyList(), datasetId);
+                labels, datasetId);
     }
 
     private ChartModel model(
@@ -367,6 +381,11 @@ public final class ChartModelBuilder {
                         "Chart property must not be explicitly null: " + property);
             }
         }
+        if (containsType(definition, ChartType.STOCK)
+                && definition.getMode() != ChartDefinition.Mode.TEMPLATE_NATIVE) {
+            throw new ChartBuildException(
+                    "STOCK chart requires TEMPLATE_NATIVE mode");
+        }
         if (definition.getCategorySort() == ChartCategorySort.EXPLICIT
                 && (definition.getCategories() == null
                 || definition.getCategories().isEmpty())) {
@@ -374,6 +393,8 @@ public final class ChartModelBuilder {
                     "EXPLICIT category sort requires categories");
         }
         int pieSeries = 0;
+        Map<String, StackContract> stackContracts =
+                new LinkedHashMap<String, StackContract>();
         for (ChartSeriesDefinition series : definition.getSeries()) {
             if (series == null || !hasText(series.getField())
                     || !hasText(series.getName()) || series.getType() == null) {
@@ -412,11 +433,153 @@ public final class ChartModelBuilder {
             if (series.getType().isPieLike()) {
                 pieSeries++;
             }
+            validateSeriesPropertyMatrix(series);
+            if (hasText(series.getStackGroup())) {
+                StackContract contract = stackContracts.get(
+                        series.getStackGroup());
+                if (contract == null) {
+                    stackContracts.put(series.getStackGroup(),
+                            new StackContract(
+                                    series.getType(), series.getAxis()));
+                } else {
+                    if (contract.type != series.getType()) {
+                        throw new ChartBuildException(
+                                "All series in stackGroup "
+                                        + series.getStackGroup()
+                                        + " must use the same type");
+                    }
+                    if (contract.axis != series.getAxis()) {
+                        throw new ChartBuildException(
+                                "All series in stackGroup "
+                                        + series.getStackGroup()
+                                        + " must use the same axis");
+                    }
+                }
+            }
         }
         if (pieSeries > 0 && definition.getSeries().size() != 1) {
             throw new ChartBuildException(
                     "PIE and DOUGHNUT charts require exactly one series");
         }
+    }
+
+    private static void validateSeriesPropertyMatrix(
+            ChartSeriesDefinition series) {
+        ChartType type = series.getType();
+        if ((type == ChartType.SCATTER || type == ChartType.BUBBLE)
+                && (series.hasProperty("lineStyle")
+                || series.hasProperty("lineWidth"))) {
+            throw new ChartBuildException(
+                    type + " does not support lineStyle or lineWidth");
+        }
+        if ((series.hasProperty("lineStyle")
+                || series.hasProperty("lineWidth"))
+                && type != ChartType.LINE
+                && type != ChartType.AREA
+                && type != ChartType.STACKED_AREA
+                && type != ChartType.RADAR
+                && type != ChartType.STOCK) {
+            throw new ChartBuildException(
+                    type + " does not support lineStyle or lineWidth");
+        }
+        if (type == ChartType.BUBBLE && series.hasProperty("marker")) {
+            throw new ChartBuildException(
+                    "BUBBLE does not support marker");
+        }
+        if (series.hasProperty("marker")
+                && type != ChartType.LINE
+                && type != ChartType.SCATTER
+                && type != ChartType.STOCK) {
+            throw new ChartBuildException(
+                    type + " does not support marker");
+        }
+        if (type == ChartType.RADAR
+                && (series.hasProperty("marker")
+                || series.hasProperty("dataLabels")
+                || series.hasProperty("format")
+                || series.hasProperty("axis"))) {
+            throw new ChartBuildException(
+                    "RADAR does not support marker, dataLabels, format, or axis");
+        }
+        if (series.hasProperty("format")
+                && (!series.hasProperty("dataLabels")
+                || series.getDataLabels() == ChartDataLabelMode.NONE)) {
+            throw new ChartBuildException(
+                    "format requires visible dataLabels");
+        }
+        if (type.isPieLike() && series.hasProperty("format")) {
+            throw new ChartBuildException(
+                    type + " does not support series format");
+        }
+        if (!type.isPieLike()
+                && series.hasProperty("dataLabels")
+                && series.getDataLabels() != ChartDataLabelMode.NONE
+                && series.getDataLabels() != ChartDataLabelMode.VALUE) {
+            throw new ChartBuildException(
+                    type + " supports only VALUE dataLabels");
+        }
+        if ((type.isPieLike() || type == ChartType.RADAR)
+                && series.hasProperty("axis")) {
+            throw new ChartBuildException(
+                    type + " does not support an axis selection");
+        }
+    }
+
+    private static boolean containsType(
+            ChartDefinition definition, ChartType type) {
+        for (ChartSeriesDefinition series : definition.getSeries()) {
+            if (series != null && series.getType() == type) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static ChartDataLabelMode effectivePieLabelMode(
+            ChartDefinition definition, ChartSeriesModel series) {
+        return definition.getDataLabelMode() != ChartDataLabelMode.NONE
+                ? definition.getDataLabelMode() : series.getDataLabelMode();
+    }
+
+    private static List<String> pieLabels(
+            List<String> categories,
+            List<BigDecimal> values,
+            ChartDataLabelMode mode) {
+        if (mode == null || mode == ChartDataLabelMode.NONE) {
+            return Collections.emptyList();
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        for (BigDecimal value : values) {
+            if (value != null) {
+                if (value.compareTo(BigDecimal.ZERO) < 0) {
+                    throw new ChartBuildException(
+                            "PIE and DOUGHNUT values must not be negative");
+                }
+                total = total.add(value);
+            }
+        }
+        List<String> labels = new ArrayList<String>();
+        for (int index = 0; index < categories.size(); index++) {
+            BigDecimal value = values.get(index) == null
+                    ? BigDecimal.ZERO : values.get(index);
+            BigDecimal percent = total.compareTo(BigDecimal.ZERO) == 0
+                    ? BigDecimal.ZERO.setScale(2)
+                    : value.multiply(BigDecimal.valueOf(100))
+                            .divide(total, 2, RoundingMode.HALF_UP);
+            String count = value.stripTrailingZeros().toPlainString();
+            String percentText = percent.setScale(2, RoundingMode.HALF_UP)
+                    .toPlainString() + "%";
+            if (mode == ChartDataLabelMode.COUNT
+                    || mode == ChartDataLabelMode.VALUE) {
+                labels.add(categories.get(index) + " " + count);
+            } else if (mode == ChartDataLabelMode.PERCENT) {
+                labels.add(categories.get(index) + " " + percentText);
+            } else {
+                labels.add(categories.get(index) + " " + count
+                        + " (" + percentText + ")");
+            }
+        }
+        return Collections.unmodifiableList(labels);
     }
 
     private static Object chartProperty(
@@ -465,32 +628,6 @@ public final class ChartModelBuilder {
         return null;
     }
 
-    private static String distributionLabel(
-            ChartDataLabelMode mode,
-            DistributionResult.BinResult bin,
-            int total) {
-        ChartDataLabelMode actual = mode == null
-                ? ChartDataLabelMode.NONE : mode;
-        BigDecimal percent = total == 0
-                ? BigDecimal.ZERO
-                : BigDecimal.valueOf(bin.count())
-                        .multiply(BigDecimal.valueOf(100))
-                        .divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP);
-        DecimalFormat format = new DecimalFormat(
-                "0.00", DecimalFormatSymbols.getInstance(Locale.ROOT));
-        if (actual == ChartDataLabelMode.COUNT) {
-            return bin.label() + " " + bin.count();
-        }
-        if (actual == ChartDataLabelMode.PERCENT) {
-            return bin.label() + " " + format.format(percent) + "%";
-        }
-        if (actual == ChartDataLabelMode.COUNT_AND_PERCENT) {
-            return bin.label() + " " + bin.count()
-                    + " (" + format.format(percent) + "%)";
-        }
-        return bin.label();
-    }
-
     private static int intValue(Integer value, int defaultValue) {
         return value == null ? defaultValue : value.intValue();
     }
@@ -513,6 +650,16 @@ public final class ChartModelBuilder {
             this.legendOrder = legendOrder;
             this.index = index;
             this.series = series;
+        }
+    }
+
+    private static final class StackContract {
+        private final ChartType type;
+        private final ChartAxis axis;
+
+        private StackContract(ChartType type, ChartAxis axis) {
+            this.type = type;
+            this.axis = axis == null ? ChartAxis.PRIMARY : axis;
         }
     }
 }

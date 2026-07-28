@@ -7,6 +7,7 @@ import com.xn.report.config.definition.ChartDefinition;
 import com.xn.report.config.definition.ChartSeriesDefinition;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
+import com.xn.report.dataset.DatasetSchema;
 import com.xn.report.support.TestFixtures;
 import java.math.BigDecimal;
 import java.util.Arrays;
@@ -43,7 +44,7 @@ class ChartModelBuilderTest {
     void splitsGroupsDeterministicallyAndCompletesConfiguredCategories() {
         ChartDefinition definition = TestFixtures.comboChartDefinition();
         definition.setGroupByField("center");
-        definition.setCategories(Arrays.<Object>asList(
+        definition.setCategories(Arrays.asList(
                 "2026年1月", "2026年2月", "2026年3月", "2026年4月"));
 
         DatasetResult rows = DatasetResult.list("centerEvents", Arrays.asList(
@@ -147,6 +148,109 @@ class ChartModelBuilderTest {
                             DatasetRow.of("category", "2", "value", 3, "size", 5))));
             assertThat(model.getSeries().get(0).getType()).isEqualTo(type);
         }
+    }
+
+    @Test
+    void rejectsAStackGroupThatMixesTypesOrAxes() {
+        ChartDefinition mixedType = TestFixtures.comboChartDefinition();
+        mixedType.getSeries().get(1).setType(ChartType.STACKED_AREA);
+        assertThatThrownBy(() -> builder.build(
+                mixedType, TestFixtures.centerEvents()))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("stackGroup")
+                .hasMessageContaining("same type");
+
+        ChartDefinition mixedAxis = TestFixtures.comboChartDefinition();
+        mixedAxis.getSeries().get(1).setAxis(ChartAxis.SECONDARY);
+        assertThatThrownBy(() -> builder.build(
+                mixedAxis, TestFixtures.centerEvents()))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("stackGroup")
+                .hasMessageContaining("same axis");
+    }
+
+    @Test
+    void appliesEmptyPolicyBeforeRuntimeSchemaChecks() {
+        ChartDefinition output = TestFixtures.comboChartDefinition();
+        output.setEmptyDataPolicy(ChartEmptyDataPolicy.OUTPUT_MESSAGE);
+        ChartModel empty = builder.build(
+                output, DatasetResult.list(
+                        "centerEvents", Collections.<DatasetRow>emptyList()));
+        assertThat(empty.isEmpty()).isTrue();
+
+        ChartDefinition skip = TestFixtures.comboChartDefinition();
+        skip.setEmptyDataPolicy(ChartEmptyDataPolicy.SKIP);
+        assertThat(builder.buildAll(skip, DatasetResult.list(
+                "centerEvents", Collections.<DatasetRow>emptyList()))).isEmpty();
+
+        ChartDefinition contracted = TestFixtures.comboChartDefinition();
+        DatasetSchema incomplete = DatasetSchema.of(
+                "month", String.class,
+                "uncertain", BigDecimal.class);
+        assertThatThrownBy(() -> builder.build(
+                contracted,
+                DatasetResult.list("centerEvents", incomplete,
+                        Collections.<DatasetRow>emptyList())))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("certain");
+    }
+
+    @Test
+    void generatesOrdinaryPieLabelsFromSeriesValues() {
+        for (ChartDataLabelMode mode : Arrays.asList(
+                ChartDataLabelMode.COUNT,
+                ChartDataLabelMode.PERCENT,
+                ChartDataLabelMode.COUNT_AND_PERCENT)) {
+            ChartDefinition pie = simpleDefinition(ChartType.PIE);
+            pie.setDataLabelMode(mode);
+            ChartModel model = builder.build(pie,
+                    DatasetResult.list("values", Arrays.asList(
+                            DatasetRow.of("category", "A", "value", 1),
+                            DatasetRow.of("category", "B", "value", 1),
+                            DatasetRow.of("category", "C", "value", 1))));
+            if (mode == ChartDataLabelMode.COUNT) {
+                assertThat(model.getDataLabels())
+                        .containsExactly("A 1", "B 1", "C 1");
+            } else if (mode == ChartDataLabelMode.PERCENT) {
+                assertThat(model.getDataLabels())
+                        .containsExactly("A 33.33%", "B 33.33%", "C 33.33%");
+            } else {
+                assertThat(model.getDataLabels()).containsExactly(
+                        "A 1 (33.33%)", "B 1 (33.33%)", "C 1 (33.33%)");
+            }
+        }
+    }
+
+    @Test
+    void ordinaryPieUsesZeroPercentWhenTotalIsZero() {
+        ChartDefinition pie = simpleDefinition(ChartType.DOUGHNUT);
+        pie.setDataLabelMode(ChartDataLabelMode.COUNT_AND_PERCENT);
+        ChartModel model = builder.build(pie,
+                DatasetResult.list("values", Arrays.asList(
+                        DatasetRow.of("category", "A", "value", 0),
+                        DatasetRow.of("category", "B", "value", 0))));
+
+        assertThat(model.getDataLabels())
+                .containsExactly("A 0 (0.00%)", "B 0 (0.00%)");
+    }
+
+    @Test
+    void stockRequiresTemplateNativeMode() {
+        ChartDefinition stock = simpleDefinition(ChartType.STOCK);
+        stock.setMode(ChartDefinition.Mode.GENERATED_NATIVE);
+        assertThatThrownBy(() -> builder.build(
+                stock, DatasetResult.list("values",
+                        Collections.singletonList(
+                                DatasetRow.of("category", "1", "value", 2)))))
+                .isInstanceOf(ChartBuildException.class)
+                .hasMessageContaining("TEMPLATE_NATIVE");
+
+        stock.setMode(ChartDefinition.Mode.TEMPLATE_NATIVE);
+        assertThat(builder.build(
+                stock, DatasetResult.list("values",
+                        Collections.singletonList(
+                                DatasetRow.of("category", "1", "value", 2)))
+        ).getSeries().get(0).getType()).isEqualTo(ChartType.STOCK);
     }
 
     private static DatasetRow event(

@@ -34,7 +34,7 @@ public class ChartDefinition {
     private String excelTable;
     private String categoryField;
     private String groupByField;
-    private List<Object> categories = new ArrayList<Object>();
+    private List<String> categories = new ArrayList<String>();
     private ChartCategorySort categorySort = ChartCategorySort.ASC;
     private List<ChartSeriesDefinition> series =
             new ArrayList<ChartSeriesDefinition>();
@@ -125,11 +125,11 @@ public class ChartDefinition {
         this.groupByField = groupByField;
     }
 
-    public List<Object> getCategories() {
+    public List<String> getCategories() {
         return categories;
     }
 
-    public void setCategories(List<Object> categories) {
+    public void setCategories(List<String> categories) {
         mark("categories");
         this.categories = categories;
     }

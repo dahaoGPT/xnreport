@@ -27,7 +27,10 @@ public final class JsonSchemaContract {
                     "oneOf", "items", "minItems", "uniqueItems", "enum",
                     "minLength", "maxLength", "pattern", "minimum", "maximum",
                     "exclusiveMinimum",
-                    "x-java-maxUtf16Length", "x-java-nonBlank")));
+                    "x-java-maxUtf16Length", "x-java-nonBlank",
+                    "x-java-stackGroupConsistency",
+                    "x-java-stockTemplateOnly",
+                    "x-java-chartSeriesPropertyMatrix")));
 
     private final JsonNode rootSchema;
 
@@ -61,6 +64,7 @@ public final class JsonSchemaContract {
 
         validateEnum(schema, instance, path, errors);
         validateOneOf(schema, instance, path, errors);
+        validateChartExtensions(schema, instance, path, errors);
         if (instance.isObject()) {
             validateObject(schema, instance, path, errors);
         }
@@ -73,6 +77,112 @@ public final class JsonSchemaContract {
         if (instance.isNumber()) {
             validateNumber(schema, instance.decimalValue(), path, errors);
         }
+    }
+
+    private void validateChartExtensions(
+            JsonNode schema,
+            JsonNode instance,
+            String path,
+            List<String> errors) {
+        if (!instance.isObject()) {
+            return;
+        }
+        if (schema.path("x-java-stackGroupConsistency").asBoolean(false)) {
+            Map<String, String> types = new java.util.LinkedHashMap<String, String>();
+            Map<String, String> axes = new java.util.LinkedHashMap<String, String>();
+            for (JsonNode series : instance.path("series")) {
+                String group = series.path("stackGroup").asText("");
+                if (group.trim().isEmpty()) {
+                    continue;
+                }
+                String type = enumName(series.path("type").asText());
+                String axis = enumName(series.path("axis").asText("PRIMARY"));
+                if (types.containsKey(group)
+                        && !types.get(group).equals(type)) {
+                    errors.add(path + ".series has mixed types in stackGroup " + group);
+                }
+                if (axes.containsKey(group)
+                        && !axes.get(group).equals(axis)) {
+                    errors.add(path + ".series has mixed axes in stackGroup " + group);
+                }
+                types.put(group, type);
+                axes.put(group, axis);
+            }
+        }
+        if (schema.path("x-java-stockTemplateOnly").asBoolean(false)) {
+            boolean stock = false;
+            for (JsonNode series : instance.path("series")) {
+                stock |= "STOCK".equals(
+                        enumName(series.path("type").asText()));
+            }
+            if (stock && !"TEMPLATE_NATIVE".equals(
+                    enumName(instance.path("mode").asText(
+                            "GENERATED_NATIVE")))) {
+                errors.add(path + ".mode must be TEMPLATE_NATIVE for STOCK");
+            }
+        }
+        if (schema.path("x-java-chartSeriesPropertyMatrix")
+                .asBoolean(false)) {
+            String type = enumName(instance.path("type").asText());
+            if (("SCATTER".equals(type) || "BUBBLE".equals(type))
+                    && (instance.has("lineStyle")
+                    || instance.has("lineWidth"))) {
+                errors.add(path + " has unsupported line properties for " + type);
+            }
+            if ((instance.has("lineStyle") || instance.has("lineWidth"))
+                    && !"LINE".equals(type)
+                    && !"AREA".equals(type)
+                    && !"STACKED_AREA".equals(type)
+                    && !"RADAR".equals(type)
+                    && !"STOCK".equals(type)) {
+                errors.add(path + " has unsupported line properties for " + type);
+            }
+            if ("BUBBLE".equals(type) && instance.has("marker")) {
+                errors.add(path + ".marker is unsupported for BUBBLE");
+            }
+            if ("RADAR".equals(type)
+                    && (instance.has("marker")
+                    || instance.has("dataLabels")
+                    || instance.has("format")
+                    || instance.has("axis"))) {
+                errors.add(path + " has unsupported RADAR properties");
+            }
+            if (instance.has("marker")
+                    && !"LINE".equals(type)
+                    && !"SCATTER".equals(type)
+                    && !"STOCK".equals(type)) {
+                errors.add(path + ".marker is unsupported for " + type);
+            }
+            if (instance.has("format")
+                    && (!instance.has("dataLabels")
+                    || "NONE".equals(enumName(
+                            instance.path("dataLabels").asText())))) {
+                errors.add(path + ".format requires visible dataLabels");
+            }
+            if (("PIE".equals(type) || "DOUGHNUT".equals(type))
+                    && instance.has("format")) {
+                errors.add(path + ".format is unsupported for " + type);
+            }
+            String labels = enumName(
+                    instance.path("dataLabels").asText("NONE"));
+            if (!"PIE".equals(type) && !"DOUGHNUT".equals(type)
+                    && instance.has("dataLabels")
+                    && !"NONE".equals(labels) && !"VALUE".equals(labels)) {
+                errors.add(path + ".dataLabels supports only VALUE for " + type);
+            }
+            if (("PIE".equals(type) || "DOUGHNUT".equals(type)
+                    || "RADAR".equals(type)) && instance.has("axis")) {
+                errors.add(path + ".axis is unsupported for " + type);
+            }
+        }
+    }
+
+    private static String enumName(String value) {
+        return value.trim()
+                .replace('-', '_')
+                .replace(' ', '_')
+                .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+                .toUpperCase(java.util.Locale.ROOT);
     }
 
     private void validateObject(

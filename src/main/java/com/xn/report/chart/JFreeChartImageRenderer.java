@@ -27,10 +27,13 @@ import java.util.UUID;
 import javax.imageio.ImageIO;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.JFreeChart;
+import org.jfree.chart.LegendItem;
+import org.jfree.chart.LegendItemCollection;
 import org.jfree.chart.axis.CategoryAxis;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.labels.PieSectionLabelGenerator;
 import org.jfree.chart.labels.StandardCategoryItemLabelGenerator;
+import org.jfree.chart.labels.StandardXYItemLabelGenerator;
 import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.plot.DatasetRenderingOrder;
 import org.jfree.chart.plot.Plot;
@@ -158,7 +161,7 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
         }
     }
 
-    private JFreeChart createChart(ChartModel model) {
+    JFreeChart createChart(ChartModel model) {
         if (model.isEmpty()) {
             return emptyChart(model);
         }
@@ -209,7 +212,6 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
         Map<GroupKey, List<ChartSeriesModel>> groups =
                 categoryGroups(model.getSeries());
         int datasetIndex = 0;
-        int globalSeries = 0;
         for (Map.Entry<GroupKey, List<ChartSeriesModel>> entry
                 : groups.entrySet()) {
             DefaultCategoryDataset dataset = new DefaultCategoryDataset();
@@ -225,15 +227,15 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
             AbstractCategoryItemRenderer renderer =
                     categoryRenderer(entry.getKey().type);
             configureCategoryRenderer(
-                    renderer, entry.getValue(), globalSeries);
+                    renderer, entry.getValue(), model.getSeries());
             plot.setDataset(datasetIndex, dataset);
             plot.setRenderer(datasetIndex, renderer);
             if (entry.getKey().axis == ChartAxis.SECONDARY) {
                 plot.mapDatasetToRangeAxis(datasetIndex, 1);
             }
-            globalSeries += entry.getValue().size();
             datasetIndex++;
         }
+        plot.setFixedLegendItems(legendItems(model));
         return finish(model, plot);
     }
 
@@ -259,6 +261,7 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
                 XYBubbleRenderer renderer =
                         new XYBubbleRenderer(XYBubbleRenderer.SCALE_ON_RANGE_AXIS);
                 renderer.setSeriesPaint(0, color(series, seriesIndex));
+                configureXYLabels(renderer, series);
                 plot.setDataset(seriesIndex, data);
                 plot.setRenderer(seriesIndex, renderer);
             } else {
@@ -273,6 +276,8 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
                 XYLineAndShapeRenderer renderer =
                         new XYLineAndShapeRenderer(false, true);
                 renderer.setSeriesPaint(0, color(series, seriesIndex));
+                renderer.setSeriesShapesVisible(0, series.isMarker());
+                configureXYLabels(renderer, series);
                 plot.setDataset(seriesIndex, data);
                 plot.setRenderer(seriesIndex, renderer);
             }
@@ -285,6 +290,7 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
                 plot.mapDatasetToRangeAxis(seriesIndex, 1);
             }
         }
+        plot.setFixedLegendItems(legendItems(model));
         return finish(model, plot);
     }
 
@@ -348,6 +354,8 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
         for (int index = 0; index < model.getSeries().size(); index++) {
             plot.setSeriesPaint(
                     index, color(model.getSeries().get(index), index));
+            plot.setSeriesOutlineStroke(
+                    index, stroke(model.getSeries().get(index)));
         }
         return finish(model, plot);
     }
@@ -393,10 +401,11 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
     private static void configureCategoryRenderer(
             AbstractCategoryItemRenderer renderer,
             List<ChartSeriesModel> series,
-            int globalOffset) {
+            List<ChartSeriesModel> globalSeries) {
         for (int index = 0; index < series.size(); index++) {
             ChartSeriesModel item = series.get(index);
-            renderer.setSeriesPaint(index, color(item, globalOffset + index));
+            int globalIndex = globalSeries.indexOf(item);
+            renderer.setSeriesPaint(index, color(item, globalIndex));
             renderer.setSeriesStroke(index, stroke(item));
             if (item.getDataLabelMode() != ChartDataLabelMode.NONE) {
                 renderer.setSeriesItemLabelGenerator(
@@ -413,6 +422,30 @@ public final class JFreeChartImageRenderer implements ChartImageRenderer {
                         new Ellipse2D.Double(-4, -4, 8, 8));
             }
         }
+    }
+
+    private static void configureXYLabels(
+            org.jfree.chart.renderer.xy.AbstractXYItemRenderer renderer,
+            ChartSeriesModel series) {
+        if (series.getDataLabelMode() == ChartDataLabelMode.NONE) {
+            return;
+        }
+        java.text.NumberFormat numberFormat = hasText(series.getFormat())
+                ? new DecimalFormat(series.getFormat())
+                : new DecimalFormat("0.##########");
+        renderer.setSeriesItemLabelGenerator(
+                0, new StandardXYItemLabelGenerator(
+                        "{2}", numberFormat, numberFormat));
+        renderer.setSeriesItemLabelsVisible(0, true);
+    }
+
+    private static LegendItemCollection legendItems(ChartModel model) {
+        LegendItemCollection items = new LegendItemCollection();
+        for (int index = 0; index < model.getSeries().size(); index++) {
+            ChartSeriesModel series = model.getSeries().get(index);
+            items.add(new LegendItem(series.getName(), color(series, index)));
+        }
+        return items;
     }
 
     private static Map<GroupKey, List<ChartSeriesModel>> categoryGroups(

@@ -9,6 +9,7 @@ public final class DatasetResult {
     private final String id;
     private final DatasetType type;
     private final DatasetSchema schema;
+    private final boolean explicitSchema;
     private final List<DatasetRow> rows;
 
     private DatasetResult(
@@ -32,6 +33,7 @@ public final class DatasetResult {
         }
         validateShape(id, type, copiedRows);
         this.rows = Collections.unmodifiableList(copiedRows);
+        this.explicitSchema = explicitSchema != null;
         this.schema = explicitSchema == null
                 ? DatasetSchema.infer(copiedRows) : explicitSchema;
     }
@@ -73,6 +75,10 @@ public final class DatasetResult {
 
     public DatasetSchema schema() {
         return schema;
+    }
+
+    public boolean hasExplicitSchema() {
+        return explicitSchema;
     }
 
     public List<DatasetRow> list() {

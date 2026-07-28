@@ -71,6 +71,28 @@ class DatasetPlannerTest {
     }
 
     @Test
+    void excludesCycleDependentsFromReportedCycleIds() {
+        assertThatThrownBy(() -> planner.plan(Arrays.asList(
+                TestFixtures.dataset("A", "B"),
+                TestFixtures.dataset("B", "A"),
+                TestFixtures.dataset("C", "A"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("A")
+                .hasMessageContaining("B")
+                .hasMessageNotContaining(", C");
+    }
+
+    @Test
+    void reportsSelfDependencyAsACycle() {
+        assertThatThrownBy(() -> planner.plan(Arrays.asList(
+                TestFixtures.dataset("self", "self"),
+                TestFixtures.dataset("dependent", "self"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("[self]")
+                .hasMessageNotContaining("dependent");
+    }
+
+    @Test
     void doesNotModifyInputOrDependencyLists() {
         DatasetDefinition child = TestFixtures.dataset("child", "root");
         List<String> dependenciesBefore = new ArrayList<String>(child.getDependsOn());

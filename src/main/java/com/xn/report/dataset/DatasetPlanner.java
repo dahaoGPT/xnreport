@@ -87,16 +87,63 @@ public final class DatasetPlanner {
         }
 
         if (planned.size() != datasets.size()) {
-            List<String> cyclic = new ArrayList<String>();
-            for (Map.Entry<String, Integer> entry : indegree.entrySet()) {
-                if (entry.getValue() > 0) {
-                    cyclic.add(entry.getKey());
-                }
-            }
+            List<String> cyclic = findCycleMembers(byId, indegree);
             throw new IllegalArgumentException(
                     "Cyclic dataset dependencies involving: " + cyclic);
         }
         return Collections.unmodifiableList(planned);
+    }
+
+    private static List<String> findCycleMembers(
+            Map<String, DatasetDefinition> byId,
+            Map<String, Integer> indegree) {
+        Set<String> residual = new LinkedHashSet<String>();
+        for (Map.Entry<String, Integer> entry : indegree.entrySet()) {
+            if (entry.getValue() > 0) {
+                residual.add(entry.getKey());
+            }
+        }
+
+        List<String> cycleMembers = new ArrayList<String>();
+        for (String id : byId.keySet()) {
+            if (residual.contains(id)
+                    && reaches(id, id, byId, residual, new LinkedHashSet<String>(), true)) {
+                cycleMembers.add(id);
+            }
+        }
+        return cycleMembers;
+    }
+
+    private static boolean reaches(
+            String current,
+            String target,
+            Map<String, DatasetDefinition> byId,
+            Set<String> residual,
+            Set<String> visited,
+            boolean firstStep) {
+        if (!firstStep && current.equals(target)) {
+            return true;
+        }
+        if (!visited.add(current)) {
+            return false;
+        }
+        List<String> dependencies = byId.get(current).getDependsOn();
+        if (dependencies == null) {
+            return false;
+        }
+        for (String dependency : dependencies) {
+            if (residual.contains(dependency)
+                    && reaches(
+                            dependency,
+                            target,
+                            byId,
+                            residual,
+                            visited,
+                            false)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void sortByConfigurationOrder(

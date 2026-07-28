@@ -147,6 +147,7 @@ public final class ReportDefinitionValidator {
                         "Duplicate chart id: " + chart.getId());
             }
             rejectExplicitNullChartProperties(chart, path, result);
+            validateExcelChartBinding(chart, path, result);
             if (!hasText(chart.getDataset())
                     || !datasetIds.contains(chart.getDataset())) {
                 result.add("CHART-001", path + ".dataset",
@@ -340,6 +341,72 @@ public final class ReportDefinitionValidator {
         }
     }
 
+    private void validateExcelChartBinding(
+            ChartDefinition chart,
+            String path,
+            ValidationResult result) {
+        boolean marker = chart.hasProperty("templateChartMarker")
+                && hasText(chart.getTemplateChartMarker());
+        boolean index = chart.hasProperty("templateChartIndex")
+                && chart.getTemplateChartIndex() != null;
+        if (chart.getMode() == ChartDefinition.Mode.TEMPLATE_NATIVE) {
+            if (!hasText(chart.getExcelSheet())) {
+                result.add("CHART-002", path + ".excelSheet",
+                        "TEMPLATE_NATIVE requires excelSheet");
+            }
+            if (marker == index) {
+                result.add("CHART-002", path + ".templateChartLocator",
+                        "TEMPLATE_NATIVE requires exactly one "
+                                + "templateChartMarker or templateChartIndex");
+            }
+            if (hasAnchorProperty(chart)) {
+                result.add("CHART-002", path,
+                        "Template chart layout comes from the template; "
+                                + "anchor properties are not allowed");
+            }
+        } else if (marker || index
+                || chart.hasProperty("templateChartMarker")
+                || chart.hasProperty("templateChartIndex")) {
+            result.add("CHART-001",
+                    marker || chart.hasProperty("templateChartMarker")
+                            ? path + ".templateChartMarker"
+                            : path + ".templateChartIndex",
+                    "Template chart locator is only valid for "
+                            + "TEMPLATE_NATIVE mode");
+        }
+        validateNonNegative(chart.getTemplateChartIndex(),
+                path + ".templateChartIndex", result, true);
+        validateNonNegative(chart.getAnchorRow(),
+                path + ".anchorRow", result, true);
+        validateNonNegative(chart.getAnchorColumn(),
+                path + ".anchorColumn", result, true);
+        validateNonNegative(chart.getAnchorWidthColumns(),
+                path + ".anchorWidthColumns", result, false);
+        validateNonNegative(chart.getAnchorHeightRows(),
+                path + ".anchorHeightRows", result, false);
+    }
+
+    private boolean hasAnchorProperty(ChartDefinition chart) {
+        return chart.hasProperty("anchorRow")
+                || chart.hasProperty("anchorColumn")
+                || chart.hasProperty("anchorWidthColumns")
+                || chart.hasProperty("anchorHeightRows");
+    }
+
+    private void validateNonNegative(
+            Integer value,
+            String path,
+            ValidationResult result,
+            boolean zeroAllowed) {
+        if (value != null && (zeroAllowed
+                ? value.intValue() < 0 : value.intValue() <= 0)) {
+            result.add("CHART-001", path,
+                    zeroAllowed
+                            ? "Value must not be negative"
+                            : "Value must be positive");
+        }
+    }
+
     private Object chartProperty(ChartDefinition chart, String property) {
         if ("id".equals(property)) return chart.getId();
         if ("title".equals(property)) return chart.getTitle();
@@ -347,6 +414,12 @@ public final class ReportDefinitionValidator {
         if ("dataset".equals(property)) return chart.getDataset();
         if ("excelSheet".equals(property)) return chart.getExcelSheet();
         if ("excelTable".equals(property)) return chart.getExcelTable();
+        if ("templateChartMarker".equals(property)) return chart.getTemplateChartMarker();
+        if ("templateChartIndex".equals(property)) return chart.getTemplateChartIndex();
+        if ("anchorRow".equals(property)) return chart.getAnchorRow();
+        if ("anchorColumn".equals(property)) return chart.getAnchorColumn();
+        if ("anchorWidthColumns".equals(property)) return chart.getAnchorWidthColumns();
+        if ("anchorHeightRows".equals(property)) return chart.getAnchorHeightRows();
         if ("categoryField".equals(property)) return chart.getCategoryField();
         if ("groupByField".equals(property)) return chart.getGroupByField();
         if ("categories".equals(property)) return chart.getCategories();

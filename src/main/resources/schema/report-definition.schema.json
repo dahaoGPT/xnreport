@@ -176,6 +176,7 @@
       "x-java-stockTemplateOnly": true,
       "x-java-chartDataLabelDefaults": true,
       "x-java-chartPointLimits": true,
+      "x-java-chartExcelMode": true,
       "additionalProperties": false,
       "required": [
         "id",
@@ -217,6 +218,31 @@
           "type": "string",
           "minLength": 1,
           "x-java-nonBlank": true
+        },
+        "templateChartMarker": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "templateChartIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "anchorRow": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "anchorColumn": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "anchorWidthColumns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "anchorHeightRows": {
+          "type": "integer",
+          "minimum": 1
         },
         "categoryField": {
           "type": "string",

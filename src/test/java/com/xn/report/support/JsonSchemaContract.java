@@ -33,6 +33,7 @@ public final class JsonSchemaContract {
                     "x-java-stockTemplateOnly",
                     "x-java-chartDataLabelDefaults",
                     "x-java-chartPointLimits",
+                    "x-java-chartExcelMode",
                     "x-java-chartSeriesPropertyMatrix")));
 
     private final JsonNode rootSchema;
@@ -189,6 +190,32 @@ public final class JsonSchemaContract {
             if (categories * series > 200000L) {
                 errors.add(path
                         + " configured categories and series exceed MAX_POINTS=200000");
+            }
+        }
+        if (schema.path("x-java-chartExcelMode").asBoolean(false)) {
+            String mode = enumName(instance.path("mode")
+                    .asText("GENERATED_NATIVE"));
+            boolean marker = instance.has("templateChartMarker");
+            boolean index = instance.has("templateChartIndex");
+            if ("TEMPLATE_NATIVE".equals(mode)) {
+                if (!instance.has("excelSheet")) {
+                    errors.add(path
+                            + ".excelSheet is required for TEMPLATE_NATIVE");
+                }
+                if (marker == index) {
+                    errors.add(path
+                            + " requires exactly one template chart locator");
+                }
+                if (instance.has("anchorRow")
+                        || instance.has("anchorColumn")
+                        || instance.has("anchorWidthColumns")
+                        || instance.has("anchorHeightRows")) {
+                    errors.add(path
+                            + " template chart cannot configure an anchor");
+                }
+            } else if (marker || index) {
+                errors.add(path
+                        + " template chart locator requires TEMPLATE_NATIVE");
             }
         }
         if (schema.path("x-java-chartSeriesPropertyMatrix")

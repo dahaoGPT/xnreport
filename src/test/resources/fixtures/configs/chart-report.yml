@@ -19,6 +19,7 @@ charts:
     dataset: centerEvents
     excelSheet: 中心-每月
     excelTable: tbl_center_monthly
+    templateChartMarker: REPORT_CHART:centerEventChart
     categoryField: month
     series:
       - field: uncertain

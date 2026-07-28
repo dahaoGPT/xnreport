@@ -5,6 +5,8 @@ import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.ExcelDefinition;
 import com.xn.report.config.definition.ExcelTableBinding;
 import com.xn.report.config.definition.ExcelValueBinding;
+import com.xn.report.config.definition.ChartDefinition;
+import com.xn.report.chart.ExcelChartWriter;
 import com.xn.report.dataset.DatasetContext;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
@@ -34,10 +36,12 @@ public final class ExcelWorkbookWriter {
     private final ExcelDatasetSheetWriter datasetWriter;
     private final ExcelOutputValidator outputValidator;
     private final ExcelSheetNameValidator sheetNameValidator;
+    private final ExcelChartWriter chartWriter;
 
     public ExcelWorkbookWriter() {
         this(new ExcelTemplateLoader(), new ExcelDatasetSheetWriter(),
-                new ExcelOutputValidator(), new ExcelSheetNameValidator());
+                new ExcelOutputValidator(), new ExcelSheetNameValidator(),
+                new ExcelChartWriter());
     }
 
     public ExcelWorkbookWriter(
@@ -45,6 +49,16 @@ public final class ExcelWorkbookWriter {
             ExcelDatasetSheetWriter datasetWriter,
             ExcelOutputValidator outputValidator,
             ExcelSheetNameValidator sheetNameValidator) {
+        this(templateLoader, datasetWriter, outputValidator,
+                sheetNameValidator, new ExcelChartWriter());
+    }
+
+    public ExcelWorkbookWriter(
+            ExcelTemplateLoader templateLoader,
+            ExcelDatasetSheetWriter datasetWriter,
+            ExcelOutputValidator outputValidator,
+            ExcelSheetNameValidator sheetNameValidator,
+            ExcelChartWriter chartWriter) {
         this.templateLoader = require(
                 templateLoader, "templateLoader");
         this.datasetWriter = require(datasetWriter, "datasetWriter");
@@ -52,6 +66,7 @@ public final class ExcelWorkbookWriter {
                 outputValidator, "outputValidator");
         this.sheetNameValidator = require(
                 sheetNameValidator, "sheetNameValidator");
+        this.chartWriter = require(chartWriter, "chartWriter");
     }
 
     public void write(
@@ -62,6 +77,7 @@ public final class ExcelWorkbookWriter {
         writeInternal(
                 template, output, definitions, context,
                 new ExcelDefinition(),
+                Collections.<ChartDefinition>emptyList(),
                 Collections.<String, Object>emptyMap());
     }
 
@@ -78,6 +94,7 @@ public final class ExcelWorkbookWriter {
         writeInternal(
                 template, output, definition.getDatasets(),
                 context, definition.getExcel(),
+                definition.getCharts(),
                 runtime == null
                         ? Collections.<String, Object>emptyMap()
                         : runtime);
@@ -89,6 +106,7 @@ public final class ExcelWorkbookWriter {
             List<DatasetDefinition> definitions,
             DatasetContext context,
             ExcelDefinition excel,
+            List<ChartDefinition> charts,
             Map<String, Object> runtime) throws IOException {
         if (template == null || output == null
                 || definitions == null || context == null) {
@@ -150,12 +168,21 @@ public final class ExcelWorkbookWriter {
                             context.get(definition.getId()),
                             tableBindings.get(definition.getId()));
                 }
+                chartWriter.write(
+                        workbook,
+                        charts == null
+                                ? Collections.<ChartDefinition>emptyList()
+                                : charts,
+                        definitions, context, tableBindings);
                 workbook.setForceFormulaRecalculation(true);
                 workbook.write(stream);
             }
             outputValidator.validate(
                     temporary, definitions, context,
-                    tableBindings);
+                    tableBindings,
+                    charts == null
+                            ? Collections.<ChartDefinition>emptyList()
+                            : charts);
             move(temporary, output);
             published = true;
         } finally {

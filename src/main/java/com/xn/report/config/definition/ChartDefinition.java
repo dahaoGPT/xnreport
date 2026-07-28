@@ -32,6 +32,12 @@ public class ChartDefinition {
     private String dataset;
     private String excelSheet;
     private String excelTable;
+    private String templateChartMarker;
+    private Integer templateChartIndex;
+    private Integer anchorRow;
+    private Integer anchorColumn;
+    private Integer anchorWidthColumns;
+    private Integer anchorHeightRows;
     private String categoryField;
     private String groupByField;
     private List<String> categories = new ArrayList<String>();
@@ -105,6 +111,60 @@ public class ChartDefinition {
     public void setExcelTable(String excelTable) {
         mark("excelTable");
         this.excelTable = excelTable;
+    }
+
+    public String getTemplateChartMarker() {
+        return templateChartMarker;
+    }
+
+    public void setTemplateChartMarker(String templateChartMarker) {
+        mark("templateChartMarker");
+        this.templateChartMarker = templateChartMarker;
+    }
+
+    public Integer getTemplateChartIndex() {
+        return templateChartIndex;
+    }
+
+    public void setTemplateChartIndex(Integer templateChartIndex) {
+        mark("templateChartIndex");
+        this.templateChartIndex = templateChartIndex;
+    }
+
+    public Integer getAnchorRow() {
+        return anchorRow;
+    }
+
+    public void setAnchorRow(Integer anchorRow) {
+        mark("anchorRow");
+        this.anchorRow = anchorRow;
+    }
+
+    public Integer getAnchorColumn() {
+        return anchorColumn;
+    }
+
+    public void setAnchorColumn(Integer anchorColumn) {
+        mark("anchorColumn");
+        this.anchorColumn = anchorColumn;
+    }
+
+    public Integer getAnchorWidthColumns() {
+        return anchorWidthColumns;
+    }
+
+    public void setAnchorWidthColumns(Integer anchorWidthColumns) {
+        mark("anchorWidthColumns");
+        this.anchorWidthColumns = anchorWidthColumns;
+    }
+
+    public Integer getAnchorHeightRows() {
+        return anchorHeightRows;
+    }
+
+    public void setAnchorHeightRows(Integer anchorHeightRows) {
+        mark("anchorHeightRows");
+        this.anchorHeightRows = anchorHeightRows;
     }
 
     public String getCategoryField() {

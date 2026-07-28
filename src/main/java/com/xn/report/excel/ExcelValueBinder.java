@@ -6,7 +6,6 @@ import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.Base64;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -47,20 +46,17 @@ public final class ExcelValueBinder {
         } else if (value instanceof Boolean) {
             cell.setCellValue(((Boolean) value).booleanValue());
         } else if (value instanceof BigDecimal) {
-            cell.setCellValue(((BigDecimal) value).doubleValue());
+            cell.setCellValue(safeDecimal((BigDecimal) value));
         } else if (value instanceof BigInteger) {
-            cell.setCellValue(((BigInteger) value).doubleValue());
+            cell.setCellValue(safeDecimal(
+                    new BigDecimal((BigInteger) value)));
         } else if (value instanceof Number) {
-            cell.setCellValue(((Number) value).doubleValue());
+            cell.setCellValue(safeNumber((Number) value));
         } else if (value instanceof LocalDateTime) {
-            LocalDateTime dateTime = (LocalDateTime) value;
-            cell.setCellValue(Date.from(dateTime.atZone(
-                    ZoneId.systemDefault()).toInstant()));
+            cell.setCellValue((LocalDateTime) value);
             applyNumberFormat(cell, "yyyy-mm-dd hh:mm:ss");
         } else if (value instanceof LocalDate) {
-            LocalDate date = (LocalDate) value;
-            cell.setCellValue(Date.from(date.atStartOfDay(
-                    ZoneId.systemDefault()).toInstant()));
+            cell.setCellValue((LocalDate) value);
             applyNumberFormat(cell, "yyyy-mm-dd");
         } else if (value instanceof LocalTime) {
             LocalTime time = (LocalTime) value;
@@ -76,6 +72,36 @@ public final class ExcelValueBinder {
         } else {
             cell.setCellValue(formulaGuard.asPlainText(String.valueOf(value)));
         }
+    }
+
+    private static double safeDecimal(BigDecimal value) {
+        BigDecimal normalized = value.signum() == 0
+                ? BigDecimal.ZERO : value.stripTrailingZeros();
+        if (normalized.precision() > 15) {
+            throw new IllegalArgumentException(
+                    "Excel numeric value exceeds 15 significant digits: "
+                            + value.toString());
+        }
+        double numeric = finite(
+                value.doubleValue(), value.toString());
+        if (value.signum() != 0 && numeric == 0.0d) {
+            throw new IllegalArgumentException(
+                    "Excel numeric value underflows double range: "
+                            + value.toString());
+        }
+        return numeric;
+    }
+
+    private static double safeNumber(Number value) {
+        return finite(value.doubleValue(), String.valueOf(value));
+    }
+
+    private static double finite(double value, String source) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            throw new IllegalArgumentException(
+                    "Excel numeric value must be finite: " + source);
+        }
+        return value;
     }
 
     private void applyNumberFormat(Cell cell, String format) {

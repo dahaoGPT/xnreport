@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.apache.poi.ss.SpreadsheetVersion;
 import org.apache.poi.ss.usermodel.SheetVisibility;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFTable;
@@ -176,14 +177,27 @@ public final class ExcelDatasetSheetWriter {
                 knownFields(definition, result, rows);
         List<String> ordered = new ArrayList<String>();
         if (binding != null) {
+            Set<String> configured =
+                    new LinkedHashSet<String>();
             for (ExcelTableBinding.ColumnBinding column
                     : binding.getColumns()) {
-                String canonical = known.get(
-                        normalize(column.getField()));
-                if (canonical != null
-                        && !containsIgnoreCase(ordered, canonical)) {
-                    ordered.add(canonical);
+                if (column == null) {
+                    throw new IllegalArgumentException(
+                            "Excel table column must not be null");
                 }
+                String normalized = normalize(column.getField());
+                if (!configured.add(normalized)) {
+                    throw new IllegalArgumentException(
+                            "Duplicate Excel table column field: "
+                                    + column.getField());
+                }
+                String canonical = known.get(normalized);
+                if (canonical == null) {
+                    throw new IllegalArgumentException(
+                            "Unknown Excel table column field: "
+                                    + column.getField());
+                }
+                ordered.add(canonical);
             }
         }
         for (String field : known.values()) {
@@ -258,8 +272,16 @@ public final class ExcelDatasetSheetWriter {
         LinkedHashMap<String, String> fields =
                 new LinkedHashMap<String, String>();
         if (definition.getExpectedFields() != null) {
+            Set<String> expected =
+                    new LinkedHashSet<String>();
             for (String field
                     : definition.getExpectedFields().keySet()) {
+                String normalized = normalize(field);
+                if (!expected.add(normalized)) {
+                    throw new IllegalArgumentException(
+                            "Duplicate expected field ignoring case: "
+                                    + field);
+                }
                 addField(fields, field);
             }
         }
@@ -275,6 +297,16 @@ public final class ExcelDatasetSheetWriter {
             throw new IllegalArgumentException(
                     "Excel dataset table requires at least one field: "
                             + definition.getId());
+        }
+        if (fields.size()
+                > SpreadsheetVersion.EXCEL2007.getMaxColumns()) {
+            throw new IllegalArgumentException(
+                    "Excel dataset table exceeds XLSX column limit "
+                            + SpreadsheetVersion.EXCEL2007
+                                    .getMaxColumns()
+                            + " for dataset "
+                            + definition.getId()
+                            + ": " + fields.size());
         }
         return fields;
     }

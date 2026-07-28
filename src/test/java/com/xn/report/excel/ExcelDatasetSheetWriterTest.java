@@ -687,6 +687,179 @@ class ExcelDatasetSheetWriterTest {
     }
 
     @Test
+    void rejectsMergedRegionsIntersectingNewOrExistingTargetArea()
+            throws Exception {
+        DatasetDefinition definition = dataset(
+                "merged", "Data", DatasetType.LIST,
+                fields("value", "STRING"));
+        ReportDefinition report = reportWithTableBinding(
+                definition, "tbl_merged", 0,
+                column("value", "Value"));
+        DatasetResult oneRow = DatasetResult.list(
+                "merged",
+                DatasetSchema.of("value", String.class),
+                Collections.singletonList(
+                        DatasetRow.of("value", "new")));
+
+        Path newAreaTemplate =
+                tempDir.resolve("new-merged-area-template.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Home");
+            XSSFSheet sheet = workbook.createSheet("Data");
+            sheet.addMergedRegion(
+                    new org.apache.poi.ss.util.CellRangeAddress(
+                            0, 0, 0, 1));
+            try (java.io.OutputStream stream =
+                    Files.newOutputStream(newAreaTemplate)) {
+                workbook.write(stream);
+            }
+        }
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                new ExcelWorkbookWriter().write(
+                        newAreaTemplate,
+                        tempDir.resolve("new-merged-area.xlsx"),
+                        report,
+                        DatasetContext.builder().put(oneRow).build(),
+                        Collections.<String, Object>emptyMap()))
+                .withMessageContaining("merged region")
+                .withMessageContaining("A1:B1");
+
+        Path oldAreaTemplate =
+                tempDir.resolve("old-merged-area-template.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Home");
+            XSSFSheet sheet = workbook.createSheet("Data");
+            sheet.createRow(0).createCell(0).setCellValue("Value");
+            sheet.createRow(1).createCell(0).setCellValue("old");
+            XSSFTable table = sheet.createTable(
+                    new org.apache.poi.ss.util.AreaReference(
+                            "A1:A2",
+                            org.apache.poi.ss.SpreadsheetVersion.EXCEL2007));
+            table.setName("tbl_merged");
+            table.setDisplayName("tbl_merged");
+            sheet.addMergedRegion(
+                    new org.apache.poi.ss.util.CellRangeAddress(
+                            1, 1, 0, 1));
+            try (java.io.OutputStream stream =
+                    Files.newOutputStream(oldAreaTemplate)) {
+                workbook.write(stream);
+            }
+        }
+        DatasetResult noRows = DatasetResult.list(
+                "merged",
+                DatasetSchema.of("value", String.class),
+                Collections.<DatasetRow>emptyList());
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                new ExcelWorkbookWriter().write(
+                        oldAreaTemplate,
+                        tempDir.resolve("old-merged-area.xlsx"),
+                        report,
+                        DatasetContext.builder().put(noRows).build(),
+                        Collections.<String, Object>emptyMap()))
+                .withMessageContaining("merged region")
+                .withMessageContaining("A2:B2");
+    }
+
+    @Test
+    void rejectsValueBindingInsideFinalDatasetTableBeforeWriting()
+            throws Exception {
+        Path template = tempDir.resolve(
+                "value-table-conflict-template.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Data");
+            try (java.io.OutputStream stream =
+                    Files.newOutputStream(template)) {
+                workbook.write(stream);
+            }
+        }
+        DatasetDefinition definition = dataset(
+                "conflict", "Data", DatasetType.LIST,
+                fields("value", "STRING"));
+        ReportDefinition report = reportWithTableBinding(
+                definition, "tbl_conflict", 0,
+                column("value", "Value"));
+        ExcelValueBinding binding = new ExcelValueBinding();
+        binding.setSheet("Data");
+        binding.setCell("A2");
+        binding.setValue("reserved");
+        report.getExcel().setValueBindings(
+                Collections.singletonList(binding));
+        DatasetResult result = DatasetResult.list(
+                "conflict",
+                DatasetSchema.of("value", String.class),
+                Collections.singletonList(
+                        DatasetRow.of("value", "new")));
+        Path output = tempDir.resolve("value-table-conflict.xlsx");
+
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                new ExcelWorkbookWriter().write(
+                        template,
+                        output,
+                        report,
+                        DatasetContext.builder().put(result).build(),
+                        Collections.<String, Object>emptyMap()))
+                .withMessageContaining("Value binding Data!A2")
+                .withMessageContaining("dataset table conflict")
+                .withMessageContaining("A1:A2");
+        assertThat(output).doesNotExist();
+    }
+
+    @Test
+    void rejectsFinalTableWiderThanXlsxColumnLimit()
+            throws Exception {
+        int columnCount = org.apache.poi.ss.SpreadsheetVersion
+                .EXCEL2007.getMaxColumns() + 1;
+        List<String> fields = new java.util.ArrayList<String>(
+                columnCount);
+        for (int index = 0; index < columnCount; index++) {
+            fields.add("field" + index);
+        }
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            assertThatIllegalArgumentException().isThrownBy(() ->
+                    new ExcelTableWriter().write(
+                            workbook,
+                            workbook.createSheet("Data"),
+                            "tbl_too_wide",
+                            0,
+                            fields,
+                            fields,
+                            Collections.nCopies(columnCount, null),
+                            Collections.<DatasetRow>emptyList()))
+                    .withMessageContaining("XLSX column limit")
+                    .withMessageContaining("16384");
+        }
+    }
+
+    @Test
+    void rejectsDuplicateExpectedFieldsIgnoringCaseAtWriteTime()
+            throws Exception {
+        Map<String, FieldDefinition> duplicateExpected =
+                new LinkedHashMap<String, FieldDefinition>();
+        duplicateExpected.put("foo", field("STRING"));
+        duplicateExpected.put("FOO", field("STRING"));
+        DatasetDefinition definition = dataset(
+                "caseFields", "Case Fields", DatasetType.LIST,
+                duplicateExpected);
+        DatasetResult result = DatasetResult.list(
+                "caseFields",
+                DatasetSchema.of("foo", String.class),
+                Collections.singletonList(
+                        DatasetRow.of("foo", "value")));
+        Path template = tempDir.resolve("case-fields-template.xlsx");
+        createTemplate(template);
+
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                new ExcelWorkbookWriter().write(
+                        template,
+                        tempDir.resolve("case-fields.xlsx"),
+                        Collections.singletonList(definition),
+                        DatasetContext.builder().put(result).build()))
+                .withMessageContaining(
+                        "Duplicate expected field ignoring case")
+                .withMessageContaining("FOO");
+    }
+
+    @Test
     void preservesCellsOutsideTargetColumnsOnTheSameRows()
             throws Exception {
         Path template = tempDir.resolve("same-row-content-template.xlsx");
@@ -939,11 +1112,15 @@ class ExcelDatasetSheetWriterTest {
         Map<String, FieldDefinition> result =
                 new LinkedHashMap<String, FieldDefinition>();
         for (int index = 0; index < pairs.length; index += 2) {
-            FieldDefinition field = new FieldDefinition();
-            field.setType(pairs[index + 1]);
-            result.put(pairs[index], field);
+            result.put(pairs[index], field(pairs[index + 1]));
         }
         return result;
+    }
+
+    private static FieldDefinition field(String type) {
+        FieldDefinition field = new FieldDefinition();
+        field.setType(type);
+        return field;
     }
 
     private static void createTemplate(Path path) throws Exception {

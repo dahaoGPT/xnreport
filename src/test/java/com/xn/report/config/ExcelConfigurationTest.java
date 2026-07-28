@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xn.report.config.definition.FieldDefinition;
 import com.xn.report.config.definition.ExcelTableBinding;
 import com.xn.report.config.definition.ExcelValueBinding;
 import com.xn.report.support.JsonSchemaContract;
@@ -11,8 +12,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -87,6 +91,60 @@ class ExcelConfigurationTest {
                         "$.excel.tableBindings[0].sheet",
                         "$.excel.tableBindings[0].table",
                         "$.excel.tableBindings[0].columns[0].field");
+    }
+
+    @Test
+    void validatorRejectsCaseInsensitiveExpectedDuplicatesAndWideLayouts() {
+        ReportDefinition definition = loadYaml(
+                "schemaVersion: '1.0'\n"
+                        + "report: { code: r, name: R }\n"
+                        + "datasets:\n"
+                        + "  - id: d\n"
+                        + "    sheetName: Data\n"
+                        + "    sql: SELECT 1\n"
+                        + "    expectedFields:\n"
+                        + "      foo: { type: STRING }\n"
+                        + "      FOO: { type: STRING }\n"
+                        + "excel:\n"
+                        + "  tableBindings:\n"
+                        + "    - dataset: d\n"
+                        + "      sheet: Data\n"
+                        + "      table: tbl_data\n"
+                        + "      columns:\n"
+                        + "        - { field: foo, header: Value }\n");
+
+        assertThat(new ReportDefinitionValidator()
+                .validate(definition).issues())
+                .extracting(ValidationIssue::getPath)
+                .contains("$.datasets[0].expectedFields.FOO");
+
+        int tooMany = org.apache.poi.ss.SpreadsheetVersion
+                .EXCEL2007.getMaxColumns() + 1;
+        Map<String, FieldDefinition> expected =
+                new LinkedHashMap<String, FieldDefinition>();
+        List<ExcelTableBinding.ColumnBinding> columns =
+                new ArrayList<ExcelTableBinding.ColumnBinding>(tooMany);
+        for (int index = 0; index < tooMany; index++) {
+            FieldDefinition field = new FieldDefinition();
+            field.setType("STRING");
+            String name = "field" + index;
+            expected.put(name, field);
+            ExcelTableBinding.ColumnBinding column =
+                    new ExcelTableBinding.ColumnBinding();
+            column.setField(name);
+            column.setHeader("Column " + index);
+            columns.add(column);
+        }
+        definition.getDatasets().get(0).setExpectedFields(expected);
+        definition.getExcel().getTableBindings().get(0)
+                .setColumns(columns);
+
+        assertThat(new ReportDefinitionValidator()
+                .validate(definition).issues())
+                .extracting(ValidationIssue::getPath)
+                .contains(
+                        "$.datasets[0].expectedFields",
+                        "$.excel.tableBindings[0].columns");
     }
 
     @Test

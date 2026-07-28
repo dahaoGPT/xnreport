@@ -23,6 +23,7 @@ import java.util.Map;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -115,6 +116,13 @@ public final class ExcelWorkbookWriter {
         sheetNameValidator.validateAll(sheetNames);
         Map<String, ExcelTableBinding> tableBindings =
                 tableBindings(excel);
+        validateValueBindingTableRanges(
+                definitions,
+                context,
+                tableBindings,
+                excel == null
+                        ? Collections.<ExcelValueBinding>emptyList()
+                        : excel.getValueBindings());
 
         Path parent = output.toAbsolutePath().normalize().getParent();
         if (parent == null) {
@@ -176,6 +184,78 @@ public final class ExcelWorkbookWriter {
             }
         }
         return byDataset;
+    }
+
+    private static void validateValueBindingTableRanges(
+            List<DatasetDefinition> definitions,
+            DatasetContext context,
+            Map<String, ExcelTableBinding> tableBindings,
+            List<ExcelValueBinding> valueBindings) {
+        List<DatasetTableRange> ranges =
+                new ArrayList<DatasetTableRange>();
+        for (DatasetDefinition definition : definitions) {
+            DatasetResult result = context.get(definition.getId());
+            ExcelTableBinding tableBinding =
+                    tableBindings.get(definition.getId());
+            int startRow = tableBinding == null
+                    || tableBinding.getStartRow() == null
+                    ? 0 : tableBinding.getStartRow().intValue();
+            int columnCount = ExcelDatasetSheetWriter.fields(
+                    definition, result, tableBinding).size();
+            int lastRow = startRow
+                    + ExcelDatasetSheetWriter.rows(result).size();
+            ranges.add(new DatasetTableRange(
+                    definition.getId(),
+                    definition.getSheetName(),
+                    new CellRangeAddress(
+                            startRow,
+                            lastRow,
+                            0,
+                            columnCount - 1)));
+        }
+        if (valueBindings == null) {
+            return;
+        }
+        for (ExcelValueBinding binding : valueBindings) {
+            if (binding == null
+                    || binding.getSheet() == null
+                    || binding.getCell() == null) {
+                continue;
+            }
+            CellReference cell = new CellReference(
+                    binding.getCell());
+            for (DatasetTableRange table : ranges) {
+                if (binding.getSheet().equalsIgnoreCase(
+                        table.sheet)
+                        && table.range.isInRange(
+                                cell.getRow(), cell.getCol())) {
+                    throw new IllegalArgumentException(
+                            "Value binding "
+                                    + binding.getSheet() + "!"
+                                    + cell.formatAsString()
+                                    + " conflicts with dataset table "
+                                    + table.datasetId
+                                    + " range "
+                                    + table.range.formatAsString());
+                }
+            }
+        }
+    }
+
+    private static final class DatasetTableRange {
+
+        private final String datasetId;
+        private final String sheet;
+        private final CellRangeAddress range;
+
+        private DatasetTableRange(
+                String datasetId,
+                String sheet,
+                CellRangeAddress range) {
+            this.datasetId = datasetId;
+            this.sheet = sheet;
+            this.range = range;
+        }
     }
 
     private static void bindValues(

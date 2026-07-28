@@ -12,6 +12,7 @@ import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.util.AreaReference;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.ss.SpreadsheetVersion;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -54,6 +55,14 @@ public final class ExcelTableWriter {
         if (fields == null || fields.isEmpty()) {
             throw new IllegalArgumentException(
                     "Excel dataset table requires at least one field");
+        }
+        if (fields.size()
+                > SpreadsheetVersion.EXCEL2007.getMaxColumns()) {
+            throw new IllegalArgumentException(
+                    "Excel dataset table exceeds XLSX column limit "
+                            + SpreadsheetVersion.EXCEL2007
+                                    .getMaxColumns()
+                            + ": " + fields.size());
         }
         if (rows == null) {
             throw new IllegalArgumentException("rows must not be null");
@@ -334,6 +343,18 @@ public final class ExcelTableWriter {
             XSSFTable target,
             AreaReference oldArea,
             AreaReference newArea) {
+        for (CellRangeAddress merged : sheet.getMergedRegions()) {
+            if (intersects(newArea, merged)
+                    || (oldArea != null
+                    && intersects(oldArea, merged))) {
+                throw new IllegalArgumentException(
+                        "Excel dataset table range conflicts with "
+                                + "merged region "
+                                + merged.formatAsString()
+                                + " on sheet "
+                                + sheet.getSheetName());
+            }
+        }
         for (XSSFTable table : sheet.getTables()) {
             if (table != target
                     && intersects(table.getArea(), newArea)) {
@@ -388,6 +409,17 @@ public final class ExcelTableWriter {
                         <= right.getLastCell().getCol()
                 && right.getFirstCell().getCol()
                         <= left.getLastCell().getCol();
+    }
+
+    private static boolean intersects(
+            AreaReference area, CellRangeAddress range) {
+        return area.getFirstCell().getRow() <= range.getLastRow()
+                && range.getFirstRow()
+                        <= area.getLastCell().getRow()
+                && area.getFirstCell().getCol()
+                        <= range.getLastColumn()
+                && range.getFirstColumn()
+                        <= area.getLastCell().getCol();
     }
 
     private static boolean contains(

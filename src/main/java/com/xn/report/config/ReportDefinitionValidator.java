@@ -19,6 +19,7 @@ import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.config.definition.ExcelDefinition;
 import com.xn.report.config.definition.ExcelTableBinding;
 import com.xn.report.config.definition.ExcelValueBinding;
+import com.xn.report.config.definition.FieldDefinition;
 import com.xn.report.excel.ExcelSheetNameRules;
 import com.xn.report.excel.ExcelTableNameRules;
 import com.xn.report.dataset.DatasetType;
@@ -946,9 +947,45 @@ public final class ReportDefinitionValidator {
             }
             validateSheetName(dataset.getSheetName(), path + ".sheetName",
                     sheetNames, result);
+            validateExpectedFields(dataset, path, result);
             validateTransforms(dataset, path, result);
         }
         return ids;
+    }
+
+    private void validateExpectedFields(
+            DatasetDefinition dataset,
+            String datasetPath,
+            ValidationResult result) {
+        Map<String, FieldDefinition> expected =
+                dataset.getExpectedFields();
+        if (expected == null) {
+            return;
+        }
+        int maxColumns = org.apache.poi.ss.SpreadsheetVersion
+                .EXCEL2007.getMaxColumns();
+        if (expected.size() > maxColumns) {
+            result.add(
+                    "EXCEL-001",
+                    datasetPath + ".expectedFields",
+                    "Expected fields exceed XLSX column limit "
+                            + maxColumns);
+        }
+        Set<String> normalized =
+                new LinkedHashSet<String>();
+        for (String field : expected.keySet()) {
+            if (!hasText(field)) {
+                continue;
+            }
+            if (!normalized.add(
+                    field.toLowerCase(Locale.ROOT))) {
+                result.add(
+                        "EXCEL-001",
+                        datasetPath + ".expectedFields." + field,
+                        "Duplicate expected field ignoring case: "
+                                + field);
+            }
+        }
     }
 
     private void validateExcel(
@@ -1043,6 +1080,48 @@ public final class ReportDefinitionValidator {
                 result.add("EXCEL-001", path + ".startRow",
                         "startRow must be between 0 and 1048575");
             }
+            int maxColumns = org.apache.poi.ss.SpreadsheetVersion
+                    .EXCEL2007.getMaxColumns();
+            if (safeList(binding.getColumns()).size()
+                    > maxColumns) {
+                result.add(
+                        "EXCEL-001",
+                        path + ".columns",
+                        "Table columns exceed XLSX column limit "
+                                + maxColumns);
+            }
+            Set<String> expectedFieldNames =
+                    new LinkedHashSet<String>();
+            if (dataset != null
+                    && dataset.getExpectedFields() != null) {
+                for (String field
+                        : dataset.getExpectedFields().keySet()) {
+                    if (hasText(field)) {
+                        expectedFieldNames.add(
+                                field.toLowerCase(Locale.ROOT));
+                    }
+                }
+            }
+            Set<String> finalFields =
+                    new LinkedHashSet<String>(
+                            expectedFieldNames);
+            for (ExcelTableBinding.ColumnBinding column
+                    : safeList(binding.getColumns())) {
+                if (column != null
+                        && hasText(column.getField())) {
+                    finalFields.add(column.getField()
+                            .toLowerCase(Locale.ROOT));
+                }
+            }
+            if (finalFields.size() > maxColumns
+                    && safeList(binding.getColumns()).size()
+                    <= maxColumns) {
+                result.add(
+                        "EXCEL-001",
+                        path + ".columns",
+                        "Final table fields exceed XLSX column limit "
+                                + maxColumns);
+            }
             if (binding.isColumnsExplicitNull()
                     || safeList(binding.getColumns()).isEmpty()) {
                 result.add("EXCEL-001", path + ".columns",
@@ -1078,9 +1157,8 @@ public final class ReportDefinitionValidator {
                     if (dataset != null
                             && dataset.getExpectedFields() != null
                             && !dataset.getExpectedFields().isEmpty()
-                            && !containsIgnoreCase(
-                                    dataset.getExpectedFields().keySet(),
-                                    column.getField())) {
+                            && !expectedFieldNames.contains(
+                                    normalized)) {
                         result.add("EXCEL-001",
                                 columnPath + ".field",
                                 "Unknown dataset field: "
@@ -1155,16 +1233,6 @@ public final class ReportDefinitionValidator {
             result.add("EXCEL-001", path,
                     "Duplicate Excel table name: " + tableName);
         }
-    }
-
-    private static boolean containsIgnoreCase(
-            Iterable<String> values, String expected) {
-        for (String value : values) {
-            if (value.equalsIgnoreCase(expected)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private void validateTransforms(

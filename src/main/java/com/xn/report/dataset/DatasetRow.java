@@ -28,7 +28,7 @@ public final class DatasetRow {
                 throw new IllegalArgumentException(
                         "Duplicate field ignoring case: " + field);
             }
-            copiedValues.put(field, entry.getValue());
+            copiedValues.put(field, DatasetValues.freeze(entry.getValue()));
             copiedIndex.put(normalized, field);
         }
         this.values = Collections.unmodifiableMap(copiedValues);
@@ -69,12 +69,13 @@ public final class DatasetRow {
         if (original == null) {
             throw new IllegalArgumentException("Missing field: " + field);
         }
-        return values.get(original);
+        return DatasetValues.copyForRead(values.get(original));
     }
 
     public Object getOrNull(String field) {
         String original = lowerCaseToOriginal.get(normalize(requireField(field)));
-        return original == null ? null : values.get(original);
+        return original == null
+                ? null : DatasetValues.copyForRead(values.get(original));
     }
 
     public boolean containsField(String field) {
@@ -86,7 +87,11 @@ public final class DatasetRow {
     }
 
     public Map<String, Object> asMap() {
-        return values;
+        LinkedHashMap<String, Object> copy = new LinkedHashMap<String, Object>();
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            copy.put(entry.getKey(), DatasetValues.copyForRead(entry.getValue()));
+        }
+        return Collections.unmodifiableMap(copy);
     }
 
     private static String requireField(String field) {

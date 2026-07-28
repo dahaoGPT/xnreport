@@ -65,9 +65,8 @@ class DatasetPlannerTest {
                 TestFixtures.dataset("third", "first"),
                 TestFixtures.dataset("independent"))))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("first")
-                .hasMessageContaining("second")
-                .hasMessageContaining("third");
+                .hasMessage(
+                        "Cyclic dataset dependencies involving: [first, second, third]");
     }
 
     @Test
@@ -77,9 +76,7 @@ class DatasetPlannerTest {
                 TestFixtures.dataset("B", "A"),
                 TestFixtures.dataset("C", "A"))))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("A")
-                .hasMessageContaining("B")
-                .hasMessageNotContaining(", C");
+                .hasMessage("Cyclic dataset dependencies involving: [A, B]");
     }
 
     @Test
@@ -88,8 +85,7 @@ class DatasetPlannerTest {
                 TestFixtures.dataset("self", "self"),
                 TestFixtures.dataset("dependent", "self"))))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("[self]")
-                .hasMessageNotContaining("dependent");
+                .hasMessage("Cyclic dataset dependencies involving: [self]");
     }
 
     @Test

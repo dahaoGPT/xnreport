@@ -9,6 +9,12 @@ import java.util.Map;
 
 public final class DatasetSchema {
 
+    private enum InferenceState {
+        UNKNOWN,
+        RESOLVED,
+        CONFLICT
+    }
+
     private static final DatasetSchema EMPTY =
             new DatasetSchema(Collections.<String, Class<?>>emptyMap());
 
@@ -77,17 +83,40 @@ public final class DatasetSchema {
                 new LinkedHashMap<String, Class<?>>();
         LinkedHashMap<String, String> normalizedFields =
                 new LinkedHashMap<String, String>();
+        LinkedHashMap<String, InferenceState> states =
+                new LinkedHashMap<String, InferenceState>();
         for (DatasetRow row : rows) {
             for (Map.Entry<String, Object> entry : row.asMap().entrySet()) {
                 String normalized = normalize(entry.getKey());
                 String original = normalizedFields.get(normalized);
-                Class<?> valueType =
-                        entry.getValue() == null ? Object.class : entry.getValue().getClass();
                 if (original == null) {
                     normalizedFields.put(normalized, entry.getKey());
-                    types.put(entry.getKey(), valueType);
-                } else {
-                    types.put(original, merge(types.get(original), valueType));
+                    if (entry.getValue() == null) {
+                        types.put(entry.getKey(), Object.class);
+                        states.put(normalized, InferenceState.UNKNOWN);
+                    } else {
+                        types.put(
+                                entry.getKey(),
+                                DatasetValues.schemaType(entry.getValue()));
+                        states.put(normalized, InferenceState.RESOLVED);
+                    }
+                    continue;
+                }
+
+                InferenceState state = states.get(normalized);
+                if (state == InferenceState.CONFLICT || entry.getValue() == null) {
+                    continue;
+                }
+                Class<?> valueType = DatasetValues.schemaType(entry.getValue());
+                if (state == InferenceState.UNKNOWN) {
+                    types.put(original, valueType);
+                    states.put(normalized, InferenceState.RESOLVED);
+                    continue;
+                }
+                Class<?> merged = merge(types.get(original), valueType);
+                types.put(original, merged);
+                if (merged == Object.class) {
+                    states.put(normalized, InferenceState.CONFLICT);
                 }
             }
         }
@@ -115,10 +144,7 @@ public final class DatasetSchema {
     }
 
     private static Class<?> merge(Class<?> current, Class<?> candidate) {
-        if (current == Object.class) {
-            return candidate;
-        }
-        if (candidate == Object.class || current.equals(candidate)) {
+        if (current.equals(candidate)) {
             return current;
         }
         if (current.isAssignableFrom(candidate)) {

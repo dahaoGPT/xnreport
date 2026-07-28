@@ -5,11 +5,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xn.report.support.TestFixtures;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collections;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TimeZone;
 import org.junit.jupiter.api.Test;
 
 class DatasetResultTest {
@@ -81,6 +88,105 @@ class DatasetResultTest {
         assertThat(result.schema().typeOf("hours")).isEqualTo(BigDecimal.class);
         assertThatThrownBy(() -> result.list().add(DatasetRow.empty()))
                 .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void schemaTypeConflictNeverRecoversToAConcreteType() {
+        DatasetResult result = DatasetResult.list("mixed", Arrays.asList(
+                TestFixtures.row("value", "first"),
+                TestFixtures.row("value", 2),
+                TestFixtures.row("value", "third")));
+
+        assertThat(result.schema().typeOf("value")).isEqualTo(Object.class);
+    }
+
+    @Test
+    void deeplyCopiesJdbcMutableValuesAndArraysAcrossContextBoundaries() {
+        byte[] bytes = new byte[]{1, 2};
+        Date date = new Date(1_000L);
+        Timestamp timestamp = new Timestamp(2_000L);
+        timestamp.setNanos(123_456_789);
+        Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        calendar.setTimeInMillis(3_000L);
+        Object[] array = new Object[]{"fixed", new byte[]{4, 5}};
+        DatasetRow row = TestFixtures.row(
+                "bytes", bytes,
+                "date", date,
+                "timestamp", timestamp,
+                "calendar", calendar,
+                "array", array);
+        DatasetContext context = DatasetContext.builder()
+                .put(DatasetResult.list("mutable", Collections.singletonList(row)))
+                .build();
+
+        bytes[0] = 9;
+        date.setTime(9_000L);
+        timestamp.setTime(9_000L);
+        calendar.setTimeInMillis(9_000L);
+        ((byte[]) array[1])[0] = 9;
+        array[0] = "changed";
+
+        DatasetRow stored = context.get("mutable").list().get(0);
+        assertThat((byte[]) stored.get("bytes")).containsExactly(1, 2);
+        assertThat(((Date) stored.get("date")).getTime()).isEqualTo(1_000L);
+        assertThat(((Timestamp) stored.get("timestamp")).getNanos())
+                .isEqualTo(123_456_789);
+        assertThat(((Calendar) stored.get("calendar")).getTimeInMillis())
+                .isEqualTo(3_000L);
+        assertThat((Object[]) stored.get("array"))
+                .containsExactly("fixed", new byte[]{4, 5});
+
+        byte[] returnedBytes = (byte[]) stored.get("bytes");
+        returnedBytes[0] = 8;
+        Date returnedDate = (Date) stored.asMap().get("date");
+        returnedDate.setTime(8_000L);
+        Object[] returnedArray = (Object[]) stored.asMap().get("array");
+        ((byte[]) returnedArray[1])[0] = 8;
+
+        assertThat((byte[]) stored.get("bytes")).containsExactly(1, 2);
+        assertThat(((Date) stored.get("date")).getTime()).isEqualTo(1_000L);
+        assertThat((Object[]) stored.get("array"))
+                .containsExactly("fixed", new byte[]{4, 5});
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void deeplyFreezesNestedCollectionsAndRejectsUnsupportedMutableValues() {
+        byte[] nestedBytes = new byte[]{6, 7};
+        Map<String, Object> nestedMap = new LinkedHashMap<String, Object>();
+        nestedMap.put("bytes", nestedBytes);
+        Set<Object> nestedSet = new LinkedHashSet<Object>();
+        nestedSet.add(new Date(4_000L));
+        List<Object> source = new ArrayList<Object>();
+        source.add(nestedMap);
+        source.add(nestedSet);
+        DatasetRow row = TestFixtures.row("nested", source);
+
+        nestedBytes[0] = 9;
+        nestedMap.put("extra", "changed");
+        nestedSet.clear();
+        source.clear();
+
+        List<?> stored = (List<?>) row.get("nested");
+        assertThat(stored).hasSize(2);
+        Map<?, ?> storedMap = (Map<?, ?>) stored.get(0);
+        Set<?> storedSet = (Set<?>) stored.get(1);
+        assertThat((byte[]) storedMap.get("bytes")).containsExactly(6, 7);
+        assertThat(storedMap.containsKey("extra")).isFalse();
+        assertThat(storedSet).containsExactly(new Date(4_000L));
+        assertThatThrownBy(() -> ((List<Object>) stored).add("changed"))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> ((Map<Object, Object>) storedMap).put("x", "y"))
+                .isInstanceOf(UnsupportedOperationException.class);
+
+        byte[] returnedNestedBytes = (byte[]) storedMap.get("bytes");
+        returnedNestedBytes[0] = 8;
+        List<?> reread = (List<?>) row.get("nested");
+        assertThat((byte[]) ((Map<?, ?>) reread.get(0)).get("bytes"))
+                .containsExactly(6, 7);
+        assertThatThrownBy(() -> DatasetRow.of("unsupported", new StringBuilder("x")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(StringBuilder.class.getName());
     }
 
     @Test

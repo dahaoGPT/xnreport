@@ -3,6 +3,7 @@ package com.xn.report.sql;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,8 +16,6 @@ import java.io.Reader;
 import java.io.StringReader;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.sql.Blob;
-import java.sql.Clob;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -156,96 +155,126 @@ class ResultSetRowMapperTest {
     }
 
     @Test
-    void streamsClobAndBlobAtConfiguredBoundaryThenClosesAndFreesThem()
+    void streamsLargeJdbcTypesAtBoundaryWithoutMaterializingObjects()
             throws Exception {
-        Clob clob = mock(Clob.class);
-        Blob blob = mock(Blob.class);
-        CloseTrackingReader reader = new CloseTrackingReader("abc");
-        CloseTrackingInputStream stream =
+        ResultSet resultSet = resultSetWithoutObjects(
+                new String[] {
+                    "clobText", "longText", "longNText",
+                    "blobPayload", "longPayload"
+                },
+                new int[] {
+                    Types.CLOB, Types.LONGVARCHAR, Types.LONGNVARCHAR,
+                    Types.BLOB, Types.LONGVARBINARY
+                });
+        CloseTrackingReader clobReader = new CloseTrackingReader("abc");
+        CloseTrackingReader longReader = new CloseTrackingReader("def");
+        CloseTrackingReader longNReader = new CloseTrackingReader("ghi");
+        CloseTrackingInputStream blobStream =
                 new CloseTrackingInputStream(new byte[] {1, 2, 3});
-        when(clob.getCharacterStream()).thenReturn(reader);
-        when(blob.getBinaryStream()).thenReturn(stream);
+        CloseTrackingInputStream longStream =
+                new CloseTrackingInputStream(new byte[] {4, 5, 6});
+        when(resultSet.getCharacterStream(1)).thenReturn(clobReader);
+        when(resultSet.getCharacterStream(2)).thenReturn(longReader);
+        when(resultSet.getCharacterStream(3)).thenReturn(longNReader);
+        when(resultSet.getBinaryStream(4)).thenReturn(blobStream);
+        when(resultSet.getBinaryStream(5)).thenReturn(longStream);
 
-        DatasetRow row = new ResultSetRowMapper(3, 3).map(resultSet(
-                new String[] {"description", "payload"},
-                new int[] {Types.CLOB, Types.BLOB},
-                new Object[] {clob, blob}));
+        DatasetRow row = new ResultSetRowMapper(3, 3).map(resultSet);
 
-        assertThat(row.get("description")).isEqualTo("abc");
-        assertThat((byte[]) row.get("payload")).containsExactly(1, 2, 3);
-        assertThat(reader.closed()).isTrue();
-        assertThat(stream.closed()).isTrue();
-        verify(clob).free();
-        verify(blob).free();
+        assertThat(row.get("clobText")).isEqualTo("abc");
+        assertThat(row.get("longText")).isEqualTo("def");
+        assertThat(row.get("longNText")).isEqualTo("ghi");
+        assertThat((byte[]) row.get("blobPayload")).containsExactly(1, 2, 3);
+        assertThat((byte[]) row.get("longPayload")).containsExactly(4, 5, 6);
+        assertThat(clobReader.closed()).isTrue();
+        assertThat(longReader.closed()).isTrue();
+        assertThat(longNReader.closed()).isTrue();
+        assertThat(blobStream.closed()).isTrue();
+        assertThat(longStream.closed()).isTrue();
+        for (int index = 1; index <= 5; index++) {
+            verify(resultSet, never()).getObject(index);
+        }
     }
 
     @Test
-    void rejectsClobAndBlobAsSoonAsStreamExceedsConfiguredLimit()
+    void stopsReadingLargeJdbcStreamsImmediatelyAfterLimitExceeded()
             throws Exception {
-        Clob clob = mock(Clob.class);
-        Blob blob = mock(Blob.class);
-        CloseTrackingReader reader = new CloseTrackingReader("abcd");
-        CloseTrackingInputStream stream =
-                new CloseTrackingInputStream(new byte[] {1, 2, 3, 4});
-        when(clob.getCharacterStream()).thenReturn(reader);
-        when(blob.getBinaryStream()).thenReturn(stream);
+        ResultSet characterResult = resultSetWithoutObjects(
+                new String[] {"description"},
+                new int[] {Types.LONGVARCHAR});
+        ResultSet binaryResult = resultSetWithoutObjects(
+                new String[] {"payload"},
+                new int[] {Types.LONGVARBINARY});
+        ChunkedReader reader = new ChunkedReader("abc", "d", "ignored");
+        ChunkedInputStream stream =
+                new ChunkedInputStream(
+                        new byte[] {1, 2, 3},
+                        new byte[] {4},
+                        new byte[] {9});
+        when(characterResult.getCharacterStream(1)).thenReturn(reader);
+        when(binaryResult.getBinaryStream(1)).thenReturn(stream);
         ResultSetRowMapper mapper = new ResultSetRowMapper(3, 3);
 
-        assertThatThrownBy(() -> mapper.map(resultSet(
-                new String[] {"description"},
-                new int[] {Types.CLOB},
-                new Object[] {clob})))
+        assertThatThrownBy(() -> mapper.map(characterResult))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("description")
                 .hasMessageContaining("3");
-        assertThatThrownBy(() -> mapper.map(resultSet(
-                new String[] {"payload"},
-                new int[] {Types.BLOB},
-                new Object[] {blob})))
+        assertThatThrownBy(() -> mapper.map(binaryResult))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("payload")
                 .hasMessageContaining("3");
 
         assertThat(reader.closed()).isTrue();
         assertThat(stream.closed()).isTrue();
-        verify(clob).free();
-        verify(blob).free();
+        assertThat(reader.readCalls()).isEqualTo(2);
+        assertThat(stream.readCalls()).isEqualTo(2);
+        verify(characterResult, never()).getObject(1);
+        verify(binaryResult, never()).getObject(1);
     }
 
     @Test
-    void closesAndFreesClobAndBlobWhenStreamReadFails() throws Exception {
-        Clob clob = mock(Clob.class);
-        Blob blob = mock(Blob.class);
+    void closesLargeJdbcStreamsWhenStreamReadFails() throws Exception {
+        ResultSet characterResult = resultSetWithoutObjects(
+                new String[] {"description"},
+                new int[] {Types.CLOB});
+        ResultSet binaryResult = resultSetWithoutObjects(
+                new String[] {"payload"},
+                new int[] {Types.BLOB});
         FailingReader reader = new FailingReader();
         FailingInputStream stream = new FailingInputStream();
-        when(clob.getCharacterStream()).thenReturn(reader);
-        when(blob.getBinaryStream()).thenReturn(stream);
+        when(characterResult.getCharacterStream(1)).thenReturn(reader);
+        when(binaryResult.getBinaryStream(1)).thenReturn(stream);
 
-        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
-                new String[] {"description"},
-                new int[] {Types.CLOB},
-                new Object[] {clob})))
+        assertThatThrownBy(() ->
+                new ResultSetRowMapper().map(characterResult))
                 .isInstanceOf(SQLException.class)
                 .hasMessageContaining("description")
                 .hasCauseInstanceOf(IOException.class);
-        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
-                new String[] {"payload"},
-                new int[] {Types.BLOB},
-                new Object[] {blob})))
+        assertThatThrownBy(() ->
+                new ResultSetRowMapper().map(binaryResult))
                 .isInstanceOf(SQLException.class)
                 .hasMessageContaining("payload")
                 .hasCauseInstanceOf(IOException.class);
 
         assertThat(reader.closed()).isTrue();
         assertThat(stream.closed()).isTrue();
-        verify(clob).free();
-        verify(blob).free();
+        verify(characterResult, never()).getObject(1);
+        verify(binaryResult, never()).getObject(1);
     }
 
     @Test
-    void rejectsByteArrayAboveConfiguredBinaryLimitBeforeCopying()
+    void rejectsOrdinaryCharacterAndBinaryValuesAboveConfiguredLimits()
             throws Exception {
-        assertThatThrownBy(() -> new ResultSetRowMapper(3, 2).map(resultSet(
+        ResultSetRowMapper mapper = new ResultSetRowMapper(2, 2);
+
+        assertThatThrownBy(() -> mapper.map(resultSet(
+                new String[] {"description"},
+                new int[] {Types.VARCHAR},
+                new Object[] {"abc"})))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("description")
+                .hasMessageContaining("2");
+        assertThatThrownBy(() -> mapper.map(resultSet(
                 new String[] {"payload"},
                 new int[] {Types.VARBINARY},
                 new Object[] {new byte[] {1, 2, 3}})))
@@ -260,7 +289,7 @@ class ResultSetRowMapperTest {
         DatasetRow row = new ResultSetRowMapper().map(
                 resultSet(
                         new String[] {"payload"},
-                        new int[] {Types.LONGVARBINARY},
+                        new int[] {Types.VARBINARY},
                         new Object[] {source}));
 
         source[0] = 9;
@@ -290,12 +319,18 @@ class ResultSetRowMapperTest {
 
     private static ResultSet resultSet(
             String[] labels, int[] columnTypes, Object[] values) throws Exception {
-        ResultSet resultSet = mock(ResultSet.class);
-        ResultSetMetaData metadata = metadata(labels, columnTypes);
-        when(resultSet.getMetaData()).thenReturn(metadata);
+        ResultSet resultSet = resultSetWithoutObjects(labels, columnTypes);
         for (int index = 0; index < labels.length; index++) {
             when(resultSet.getObject(index + 1)).thenReturn(values[index]);
         }
+        return resultSet;
+    }
+
+    private static ResultSet resultSetWithoutObjects(
+            String[] labels, int[] columnTypes) throws Exception {
+        ResultSet resultSet = mock(ResultSet.class);
+        ResultSetMetaData resultSetMetaData = metadata(labels, columnTypes);
+        when(resultSet.getMetaData()).thenReturn(resultSetMetaData);
         return resultSet;
     }
 
@@ -387,6 +422,83 @@ class ResultSetRowMapperTest {
         @Override
         public void close() {
             closed = true;
+        }
+
+        private boolean closed() {
+            return closed;
+        }
+    }
+
+    private static final class ChunkedReader extends Reader {
+
+        private final String[] chunks;
+        private int chunkIndex;
+        private int readCalls;
+        private boolean closed;
+
+        private ChunkedReader(String... chunks) {
+            this.chunks = chunks;
+        }
+
+        @Override
+        public int read(char[] buffer, int offset, int length) {
+            readCalls++;
+            if (chunkIndex == chunks.length) {
+                return -1;
+            }
+            String chunk = chunks[chunkIndex++];
+            chunk.getChars(0, chunk.length(), buffer, offset);
+            return chunk.length();
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        private int readCalls() {
+            return readCalls;
+        }
+
+        private boolean closed() {
+            return closed;
+        }
+    }
+
+    private static final class ChunkedInputStream extends InputStream {
+
+        private final byte[][] chunks;
+        private int chunkIndex;
+        private int readCalls;
+        private boolean closed;
+
+        private ChunkedInputStream(byte[]... chunks) {
+            this.chunks = chunks;
+        }
+
+        @Override
+        public int read() {
+            throw new UnsupportedOperationException("bulk reads only");
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) {
+            readCalls++;
+            if (chunkIndex == chunks.length) {
+                return -1;
+            }
+            byte[] chunk = chunks[chunkIndex++];
+            System.arraycopy(chunk, 0, buffer, offset, chunk.length);
+            return chunk.length;
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        private int readCalls() {
+            return readCalls;
         }
 
         private boolean closed() {

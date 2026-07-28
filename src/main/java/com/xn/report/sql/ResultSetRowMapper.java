@@ -8,8 +8,6 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.sql.Blob;
-import java.sql.Clob;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -67,14 +65,26 @@ public final class ResultSetRowMapper {
         Map<String, String> normalizedLabels = new LinkedHashMap<String, String>();
         for (int index = 1; index <= columnCount; index++) {
             String label = uniqueLabel(metadata, index, normalizedLabels);
-            values.put(
-                    label,
-                    normalize(
-                            label,
-                            metadata.getColumnType(index),
-                            resultSet.getObject(index)));
+            int columnType = metadata.getColumnType(index);
+            values.put(label, readColumn(
+                    resultSet, index, label, columnType));
         }
         return toRow(values);
+    }
+
+    private Object readColumn(
+            ResultSet resultSet,
+            int index,
+            String label,
+            int columnType) throws SQLException {
+        if (isLargeCharacter(columnType)) {
+            return readCharacterStream(
+                    label, resultSet.getCharacterStream(index));
+        }
+        if (isLargeBinary(columnType)) {
+            return readBinaryStream(label, resultSet.getBinaryStream(index));
+        }
+        return normalize(label, columnType, resultSet.getObject(index));
     }
 
     private static DatasetRow toRow(Map<String, Object> values) {
@@ -136,10 +146,7 @@ public final class ResultSetRowMapper {
             return normalizeBoolean(label, columnType, value);
         }
         if (isCharacter(columnType)) {
-            if (value instanceof Clob) {
-                return readClob(label, (Clob) value);
-            }
-            return String.valueOf(value);
+            return checkCharacterLength(label, String.valueOf(value));
         }
         if (isBinary(columnType)) {
             return normalizeBinary(label, columnType, value);
@@ -213,72 +220,66 @@ public final class ResultSetRowMapper {
         if (value instanceof byte[]) {
             return copyBinary(label, (byte[]) value);
         }
-        if (value instanceof Blob) {
-            return readBlob(label, (Blob) value);
-        }
         throw incompatible(label, columnType, value);
     }
 
-    private String readClob(String label, Clob clob) throws SQLException {
-        try {
-            try (Reader reader = clob.getCharacterStream()) {
-                if (reader == null) {
-                    throw new SQLException(
-                            "JDBC character column " + label
-                                    + " returned a null character stream");
+    private String readCharacterStream(String label, Reader reader)
+            throws SQLException {
+        if (reader == null) {
+            return null;
+        }
+        try (Reader source = reader) {
+            StringBuilder value = new StringBuilder(
+                    Math.min(maxLobChars, LOB_BUFFER_SIZE));
+            char[] buffer = new char[LOB_BUFFER_SIZE];
+            int total = 0;
+            int count;
+            while ((count = source.read(buffer, 0, buffer.length)) != -1) {
+                if (count > maxLobChars - total) {
+                    throw lobTooLarge(label, "character", maxLobChars);
                 }
-                StringBuilder value = new StringBuilder(
-                        Math.min(maxLobChars, LOB_BUFFER_SIZE));
-                char[] buffer = new char[LOB_BUFFER_SIZE];
-                int total = 0;
-                int count;
-                while ((count = reader.read(buffer, 0, buffer.length)) != -1) {
-                    if (count > maxLobChars - total) {
-                        throw lobTooLarge(label, "character", maxLobChars);
-                    }
-                    value.append(buffer, 0, count);
-                    total += count;
-                }
-                return value.toString();
-            } catch (IOException exception) {
-                throw new SQLException(
-                        "Failed to read JDBC character column " + label,
-                        exception);
+                value.append(buffer, 0, count);
+                total += count;
             }
-        } finally {
-            clob.free();
+            return value.toString();
+        } catch (IOException exception) {
+            throw new SQLException(
+                    "Failed to read JDBC character column " + label,
+                    exception);
         }
     }
 
-    private byte[] readBlob(String label, Blob blob) throws SQLException {
-        try {
-            try (InputStream stream = blob.getBinaryStream()) {
-                if (stream == null) {
-                    throw new SQLException(
-                            "JDBC binary column " + label
-                                    + " returned a null binary stream");
-                }
-                ByteArrayOutputStream value = new ByteArrayOutputStream(
-                        Math.min(maxLobBytes, LOB_BUFFER_SIZE));
-                byte[] buffer = new byte[LOB_BUFFER_SIZE];
-                int total = 0;
-                int count;
-                while ((count = stream.read(buffer, 0, buffer.length)) != -1) {
-                    if (count > maxLobBytes - total) {
-                        throw lobTooLarge(label, "binary", maxLobBytes);
-                    }
-                    value.write(buffer, 0, count);
-                    total += count;
-                }
-                return value.toByteArray();
-            } catch (IOException exception) {
-                throw new SQLException(
-                        "Failed to read JDBC binary column " + label,
-                        exception);
-            }
-        } finally {
-            blob.free();
+    private byte[] readBinaryStream(String label, InputStream stream)
+            throws SQLException {
+        if (stream == null) {
+            return null;
         }
+        try (InputStream source = stream) {
+            ByteArrayOutputStream value = new ByteArrayOutputStream(
+                    Math.min(maxLobBytes, LOB_BUFFER_SIZE));
+            byte[] buffer = new byte[LOB_BUFFER_SIZE];
+            int total = 0;
+            int count;
+            while ((count = source.read(buffer, 0, buffer.length)) != -1) {
+                if (count > maxLobBytes - total) {
+                    throw lobTooLarge(label, "binary", maxLobBytes);
+                }
+                value.write(buffer, 0, count);
+                total += count;
+            }
+            return value.toByteArray();
+        } catch (IOException exception) {
+            throw new SQLException(
+                    "Failed to read JDBC binary column " + label,
+                    exception);
+        }
+    }
+
+    private String checkCharacterLength(String label, String value) {
+        if (value.length() > maxLobChars) {
+            throw lobTooLarge(label, "character", maxLobChars);
+        }
+        return value;
     }
 
     private byte[] copyBinary(String label, byte[] value) {
@@ -320,11 +321,23 @@ public final class ResultSetRowMapper {
                 || columnType == Types.NCLOB;
     }
 
+    private static boolean isLargeCharacter(int columnType) {
+        return columnType == Types.CLOB
+                || columnType == Types.NCLOB
+                || columnType == Types.LONGVARCHAR
+                || columnType == Types.LONGNVARCHAR;
+    }
+
     private static boolean isBinary(int columnType) {
         return columnType == Types.BINARY
                 || columnType == Types.VARBINARY
                 || columnType == Types.LONGVARBINARY
                 || columnType == Types.BLOB;
+    }
+
+    private static boolean isLargeBinary(int columnType) {
+        return columnType == Types.BLOB
+                || columnType == Types.LONGVARBINARY;
     }
 
     private static Class<?> normalizedClass(int columnType) {

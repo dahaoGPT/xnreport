@@ -6,7 +6,6 @@ import com.xn.report.error.ReportErrorCode;
 import com.xn.report.error.ReportException;
 import com.xn.report.sql.SqlQueryResult;
 import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -151,9 +150,6 @@ public final class DatasetResultValidator {
     }
 
     private static boolean matches(Class<?> expectedType, Object value) {
-        if (expectedType == Long.class) {
-            return value instanceof Long || value instanceof BigInteger;
-        }
         return expectedType.isInstance(value);
     }
 

@@ -9,6 +9,7 @@ import com.xn.report.error.ReportErrorCode;
 import com.xn.report.error.ReportException;
 import com.xn.report.sql.SqlQueryResult;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collections;
@@ -130,6 +131,27 @@ class DatasetResultValidatorTest {
                                 .isEqualTo(ReportErrorCode.DATA_003))
                 .hasMessageContaining("avgHours")
                 .hasMessageContaining("DECIMAL");
+    }
+
+    @Test
+    void rejectsNonNormalizedBigIntegerForIntegerAndLongContracts() {
+        DatasetDefinition integerDefinition = definition(
+                DatasetType.LIST, field("value", "INTEGER", false));
+        DatasetDefinition longDefinition = definition(
+                DatasetType.LIST, field("value", "LONG", false));
+        List<DatasetRow> rows = Collections.singletonList(
+                DatasetRow.of("value", BigInteger.ONE));
+
+        assertThatThrownBy(() -> validator.validate(integerDefinition, rows))
+                .isInstanceOfSatisfying(ReportException.class, exception ->
+                        assertThat(exception.getErrorCode())
+                                .isEqualTo(ReportErrorCode.DATA_003))
+                .hasMessageContaining("INTEGER");
+        assertThatThrownBy(() -> validator.validate(longDefinition, rows))
+                .isInstanceOfSatisfying(ReportException.class, exception ->
+                        assertThat(exception.getErrorCode())
+                                .isEqualTo(ReportErrorCode.DATA_003))
+                .hasMessageContaining("LONG");
     }
 
     @Test

@@ -118,12 +118,12 @@ public final class ResultSetRowMapper {
         if (isCharacter(columnType)) {
             if (value instanceof Clob) {
                 Clob clob = (Clob) value;
-                long length = clob.length();
-                if (length > Integer.MAX_VALUE) {
-                    throw new IllegalArgumentException(
-                            "JDBC character column " + label + " is too large");
-                }
                 try {
+                    long length = clob.length();
+                    if (length > Integer.MAX_VALUE) {
+                        throw new IllegalArgumentException(
+                                "JDBC character column " + label + " is too large");
+                    }
                     return clob.getSubString(1L, (int) length);
                 } finally {
                     clob.free();
@@ -205,12 +205,12 @@ public final class ResultSetRowMapper {
         }
         if (value instanceof Blob) {
             Blob blob = (Blob) value;
-            long length = blob.length();
-            if (length > Integer.MAX_VALUE) {
-                throw new IllegalArgumentException(
-                        "JDBC binary column " + label + " is too large");
-            }
             try {
+                long length = blob.length();
+                if (length > Integer.MAX_VALUE) {
+                    throw new IllegalArgumentException(
+                            "JDBC binary column " + label + " is too large");
+                }
                 return blob.getBytes(1L, (int) length);
             } finally {
                 blob.free();

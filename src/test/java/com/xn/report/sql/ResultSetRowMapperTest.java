@@ -3,15 +3,18 @@ package com.xn.report.sql;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetSchema;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.sql.Blob;
 import java.sql.Clob;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
@@ -151,7 +154,85 @@ class ResultSetRowMapperTest {
                 new Object[] {clob}));
 
         assertThat(row.get("description")).isEqualTo("hello");
-        org.mockito.Mockito.verify(clob).free();
+        verify(clob).free();
+    }
+
+    @Test
+    void releasesClobAndBlobWhenLengthFails() throws Exception {
+        Clob clob = mock(Clob.class);
+        Blob blob = mock(Blob.class);
+        when(clob.length()).thenThrow(new SQLException("clob length failed"));
+        when(blob.length()).thenThrow(new SQLException("blob length failed"));
+
+        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
+                new String[] {"description"},
+                new int[] {Types.CLOB},
+                new Object[] {clob})))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("clob length failed");
+        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
+                new String[] {"payload"},
+                new int[] {Types.BLOB},
+                new Object[] {blob})))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("blob length failed");
+
+        verify(clob).free();
+        verify(blob).free();
+    }
+
+    @Test
+    void releasesClobAndBlobWhenReadFails() throws Exception {
+        Clob clob = mock(Clob.class);
+        Blob blob = mock(Blob.class);
+        when(clob.length()).thenReturn(3L);
+        when(clob.getSubString(1L, 3))
+                .thenThrow(new SQLException("clob read failed"));
+        when(blob.length()).thenReturn(3L);
+        when(blob.getBytes(1L, 3))
+                .thenThrow(new SQLException("blob read failed"));
+
+        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
+                new String[] {"description"},
+                new int[] {Types.CLOB},
+                new Object[] {clob})))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("clob read failed");
+        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
+                new String[] {"payload"},
+                new int[] {Types.BLOB},
+                new Object[] {blob})))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("blob read failed");
+
+        verify(clob).free();
+        verify(blob).free();
+    }
+
+    @Test
+    void releasesClobAndBlobWhenLengthExceedsSupportedLimit()
+            throws Exception {
+        Clob clob = mock(Clob.class);
+        Blob blob = mock(Blob.class);
+        long oversized = (long) Integer.MAX_VALUE + 1L;
+        when(clob.length()).thenReturn(oversized);
+        when(blob.length()).thenReturn(oversized);
+
+        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
+                new String[] {"description"},
+                new int[] {Types.CLOB},
+                new Object[] {clob})))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("too large");
+        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
+                new String[] {"payload"},
+                new int[] {Types.BLOB},
+                new Object[] {blob})))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("too large");
+
+        verify(clob).free();
+        verify(blob).free();
     }
 
     @Test

@@ -75,6 +75,7 @@ public final class RuleEngine {
                             + exception.getMessage(), exception);
         }
 
+        preResolveExternalReferences(definition.getCondition(), context);
         List<DatasetRow> input = rows(dataset);
         List<DatasetRow> current = filter(input, condition, context);
         current = distinct(current, safe(resultDefinition.getDistinctFields()));
@@ -251,9 +252,10 @@ public final class RuleEngine {
                 for (SortFieldDefinition field : fields) {
                     Object leftValue = requireField(left, field.getField());
                     Object rightValue = requireField(right, field.getField());
+                    boolean containsNull = leftValue == null || rightValue == null;
                     int compared = compareSortValues(
                             leftValue, rightValue, field.getNullOrder());
-                    if (field.getDirection() == Direction.DESC) {
+                    if (!containsNull && field.getDirection() == Direction.DESC) {
                         compared = -compared;
                     }
                     if (compared != 0) {
@@ -294,25 +296,127 @@ public final class RuleEngine {
         if (fields.isEmpty()) {
             return Collections.emptyMap();
         }
-        LinkedHashMap<String, List<DatasetRow>> grouped =
-                new LinkedHashMap<String, List<DatasetRow>>();
+        LinkedHashMap<Object, List<DatasetRow>> grouped =
+                new LinkedHashMap<Object, List<DatasetRow>>();
         for (DatasetRow row : rows) {
-            ArrayList<String> parts = new ArrayList<String>();
+            ArrayList<Object> parts = new ArrayList<Object>();
             for (String field : fields) {
-                parts.add(String.valueOf(requireField(row, field)));
+                parts.add(RuleValues.deepKey(requireField(row, field)));
             }
-            String key = String.join("|", parts);
+            Object key = RuleValues.deepKey(parts);
             grouped.computeIfAbsent(key, unused -> new ArrayList<DatasetRow>()).add(row);
         }
         LinkedHashMap<String, RuleGroupResult> result =
                 new LinkedHashMap<String, RuleGroupResult>();
-        for (Map.Entry<String, List<DatasetRow>> entry : grouped.entrySet()) {
-            result.put(entry.getKey(), new RuleGroupResult(
-                    entry.getKey(),
+        int groupIndex = 0;
+        for (Map.Entry<Object, List<DatasetRow>> entry : grouped.entrySet()) {
+            String displayKey = "g" + groupIndex + ":"
+                    + encodeGroupKey(entry.getKey());
+            result.put(displayKey, new RuleGroupResult(
+                    displayKey,
                     entry.getValue(),
                     summary(entry.getValue(), entry.getValue().size(), summaries)));
+            groupIndex++;
         }
         return result;
+    }
+
+    private void preResolveExternalReferences(
+            ConditionDefinition condition, RuleEvaluationContext context) {
+        if (condition == null) {
+            return;
+        }
+        preResolveExternalReference(condition.getLeft(), context);
+        preResolveExternalReference(condition.getRight(), context);
+        if (condition.getChildren() != null) {
+            for (ConditionDefinition child : condition.getChildren()) {
+                preResolveExternalReferences(child, context);
+            }
+        }
+    }
+
+    private void preResolveExternalReference(
+            ValueReferenceDefinition reference, RuleEvaluationContext context) {
+        if (reference == null
+                || reference.getSource()
+                        == ValueReferenceDefinition.Source.CURRENT_FIELD) {
+            return;
+        }
+        compile(reference).resolve(context, DatasetRow.empty());
+    }
+
+    private static String encodeGroupKey(Object key) {
+        StringBuilder encoded = new StringBuilder();
+        appendEncoded(encoded, key);
+        return encoded.toString();
+    }
+
+    private static void appendEncoded(StringBuilder target, Object value) {
+        if (value == null) {
+            target.append('N');
+        } else if (value instanceof String) {
+            String text = (String) value;
+            target.append('S').append(text.length()).append(':').append(text);
+        } else if (value instanceof Character) {
+            target.append('C').append((int) ((Character) value).charValue());
+        } else if (value instanceof Number || value instanceof Boolean
+                || value instanceof Enum<?> || value instanceof java.util.UUID
+                || value instanceof Class<?>
+                || value.getClass().getName().startsWith("java.time.")) {
+            String text = String.valueOf(value);
+            target.append('V')
+                    .append(value.getClass().getName().length())
+                    .append(':').append(value.getClass().getName())
+                    .append(':').append(text.length()).append(':').append(text);
+        } else if (value instanceof java.sql.Timestamp) {
+            java.sql.Timestamp timestamp = (java.sql.Timestamp) value;
+            target.append("TS:").append(timestamp.getTime())
+                    .append(':').append(timestamp.getNanos());
+        } else if (value instanceof java.util.Date) {
+            target.append("DT:")
+                    .append(value.getClass().getName())
+                    .append(':').append(((java.util.Date) value).getTime());
+        } else if (value instanceof java.util.Calendar) {
+            java.util.Calendar calendar = (java.util.Calendar) value;
+            target.append("CL:").append(calendar.getTimeInMillis())
+                    .append(':').append(calendar.getTimeZone().getID());
+        } else if (value instanceof java.util.Set<?>) {
+            List<String> elements = new ArrayList<String>();
+            for (Object element : (java.util.Set<?>) value) {
+                elements.add(encodeGroupKey(element));
+            }
+            Collections.sort(elements);
+            target.append('E').append(elements.size()).append('[');
+            for (String element : elements) {
+                target.append(element.length()).append(':').append(element);
+            }
+            target.append(']');
+        } else if (value instanceof java.util.Collection<?>) {
+            target.append('L').append(((java.util.Collection<?>) value).size())
+                    .append('[');
+            for (Object element : (java.util.Collection<?>) value) {
+                appendEncoded(target, element);
+                target.append(';');
+            }
+            target.append(']');
+        } else if (value instanceof Map<?, ?>) {
+            List<String> entries = new ArrayList<String>();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                String encodedKey = encodeGroupKey(entry.getKey());
+                String encodedValue = encodeGroupKey(entry.getValue());
+                entries.add(encodedKey.length() + ":" + encodedKey
+                        + encodedValue.length() + ":" + encodedValue);
+            }
+            Collections.sort(entries);
+            target.append('M').append(((Map<?, ?>) value).size()).append('{');
+            for (String entry : entries) {
+                target.append(entry.length()).append(':').append(entry);
+            }
+            target.append('}');
+        } else {
+            throw RuleErrors.invalid(
+                    "Unsupported group key type: " + value.getClass().getName());
+        }
     }
 
     private static List<DatasetRow> limit(List<DatasetRow> rows, Integer maxItems) {

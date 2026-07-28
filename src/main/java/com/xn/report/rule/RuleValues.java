@@ -35,8 +35,16 @@ final class RuleValues {
         return freezeMap(source);
     }
 
-    static Object deepKey(Object value) {
+    static Object freezeValue(Object value) {
         return freeze(value, new IdentityHashMap<Object, Boolean>());
+    }
+
+    static Object copyValue(Object value) {
+        return freezeValue(value);
+    }
+
+    static Object deepKey(Object value) {
+        return freezeValue(value);
     }
 
     private static Object freeze(

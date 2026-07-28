@@ -94,11 +94,16 @@ public final class ReportDefinitionValidator {
                 new LinkedHashMap<String, DatasetType>();
         Map<String, Set<String>> datasetFields =
                 new LinkedHashMap<String, Set<String>>();
+        Set<String> knownFieldContracts = new LinkedHashSet<String>();
         for (DatasetDefinition dataset : datasets) {
             if (dataset != null && hasText(dataset.getId())) {
                 datasetTypes.put(dataset.getId(), dataset.getResultType());
                 datasetFields.put(
                         dataset.getId(), availableDatasetFields(dataset));
+                if (dataset.getExpectedFields() != null
+                        && !dataset.getExpectedFields().isEmpty()) {
+                    knownFieldContracts.add(dataset.getId());
+                }
             }
         }
         Set<String> ids = new LinkedHashSet<String>();
@@ -136,12 +141,18 @@ public final class ReportDefinitionValidator {
                     rule.getDataset(),
                     datasetTypes,
                     datasetFields,
+                    knownFieldContracts,
                     parameters == null
                             ? Collections.<String, ParameterDefinition>emptyMap()
                             : parameters,
                     path + ".condition",
                     result);
-            validateRuleResult(rule.getResult(), path + ".result", result);
+            validateRuleResult(
+                    rule.getResult(),
+                    datasetFields.get(rule.getDataset()),
+                    knownFieldContracts.contains(rule.getDataset()),
+                    path + ".result",
+                    result);
         }
     }
 
@@ -150,6 +161,7 @@ public final class ReportDefinitionValidator {
             String currentDataset,
             Map<String, DatasetType> datasetTypes,
             Map<String, Set<String>> datasetFields,
+            Set<String> knownFieldContracts,
             Map<String, ParameterDefinition> parameters,
             String path,
             ValidationResult result) {
@@ -161,6 +173,7 @@ public final class ReportDefinitionValidator {
                 currentDataset,
                 datasetTypes,
                 datasetFields,
+                knownFieldContracts,
                 parameters,
                 path + ".left",
                 result);
@@ -169,6 +182,7 @@ public final class ReportDefinitionValidator {
                 currentDataset,
                 datasetTypes,
                 datasetFields,
+                knownFieldContracts,
                 parameters,
                 path + ".right",
                 result);
@@ -180,6 +194,7 @@ public final class ReportDefinitionValidator {
                         currentDataset,
                         datasetTypes,
                         datasetFields,
+                        knownFieldContracts,
                         parameters,
                         path + ".children[" + index + "]", result);
             }
@@ -209,6 +224,7 @@ public final class ReportDefinitionValidator {
             String currentDataset,
             Map<String, DatasetType> datasetTypes,
             Map<String, Set<String>> datasetFields,
+            Set<String> knownFieldContracts,
             Map<String, ParameterDefinition> parameters,
             String path,
             ValidationResult result) {
@@ -219,6 +235,7 @@ public final class ReportDefinitionValidator {
             case CURRENT_FIELD:
                 if (hasText(currentDataset)
                         && hasText(reference.getField())
+                        && knownFieldContracts.contains(currentDataset)
                         && !containsField(
                                 datasetFields.get(currentDataset),
                                 reference.getField())) {
@@ -239,6 +256,7 @@ public final class ReportDefinitionValidator {
                     result.add("RULE-001", path + ".dataset",
                             "DATASET_FIELD requires SCALAR or SINGLE dataset");
                 } else if (hasText(reference.getField())
+                        && knownFieldContracts.contains(reference.getDataset())
                         && !containsField(
                                 datasetFields.get(reference.getDataset()),
                                 reference.getField())) {
@@ -294,6 +312,8 @@ public final class ReportDefinitionValidator {
 
     private void validateRuleResult(
             RuleDefinition.ResultDefinition definition,
+            Set<String> availableFields,
+            boolean knownFieldContract,
             String path,
             ValidationResult result) {
         if (definition == null) {
@@ -313,8 +333,20 @@ public final class ReportDefinitionValidator {
         }
         validateTextList(
                 definition.getDistinctFields(), path + ".distinctFields", result);
+        validateKnownFields(
+                definition.getDistinctFields(),
+                availableFields,
+                knownFieldContract,
+                path + ".distinctFields",
+                result);
         validateTextList(
                 definition.getGroupByFields(), path + ".groupByFields", result);
+        validateKnownFields(
+                definition.getGroupByFields(),
+                availableFields,
+                knownFieldContract,
+                path + ".groupByFields",
+                result);
         List<SortFieldDefinition> sorts = safeList(definition.getSort());
         for (int index = 0; index < sorts.size(); index++) {
             SortFieldDefinition sort = sorts.get(index);
@@ -323,6 +355,10 @@ public final class ReportDefinitionValidator {
                     || sort.getDirection() == null || sort.getNullOrder() == null) {
                 result.add("RULE-001", sortPath,
                         "Rule sort requires field, direction and nullOrder");
+            } else if (knownFieldContract
+                    && !containsField(availableFields, sort.getField())) {
+                result.add("RULE-001", sortPath + ".field",
+                        "Unknown rule result field " + sort.getField());
             }
         }
         List<RuleDefinition.SummaryDefinition> summaries =
@@ -335,6 +371,29 @@ public final class ReportDefinitionValidator {
                     || summary.getOperation() == null) {
                 result.add("RULE-001", summaryPath,
                         "Rule summary requires name, field and operation");
+            } else if (knownFieldContract
+                    && !containsField(availableFields, summary.getField())) {
+                result.add("RULE-001", summaryPath + ".field",
+                        "Unknown rule result field " + summary.getField());
+            }
+        }
+    }
+
+    private void validateKnownFields(
+            List<String> fields,
+            Set<String> availableFields,
+            boolean knownFieldContract,
+            String path,
+            ValidationResult result) {
+        if (!knownFieldContract) {
+            return;
+        }
+        List<String> safeFields = safeList(fields);
+        for (int index = 0; index < safeFields.size(); index++) {
+            String field = safeFields.get(index);
+            if (hasText(field) && !containsField(availableFields, field)) {
+                result.add("RULE-001", path + "[" + index + "]",
+                        "Unknown rule result field " + field);
             }
         }
     }

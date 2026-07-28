@@ -211,6 +211,68 @@ class RuleConfigurationTest {
                 .noneMatch(issue -> "RULE-001".equals(issue.getCode()));
     }
 
+    @Test
+    void validatorChecksAllRuleResultFieldsWhenContractIsKnown() {
+        DatasetDefinition people = TestFixtures.dataset("people");
+        people.setExpectedFields(fields("name", "avgHours", "center"));
+        ReportDefinition report = TestFixtures.report(people);
+        RuleDefinition rule = rule(
+                "resultFields",
+                "people",
+                comparison(currentField("avgHours"), literalValue(10)));
+        RuleDefinition.ResultDefinition result =
+                new RuleDefinition.ResultDefinition();
+        result.setDistinctFields(Collections.singletonList("nmae"));
+        com.xn.report.config.definition.SortFieldDefinition sort =
+                new com.xn.report.config.definition.SortFieldDefinition();
+        sort.setField("avgHour");
+        sort.setDirection(com.xn.report.transform.Direction.DESC);
+        sort.setNullOrder(com.xn.report.transform.NullOrder.LAST);
+        result.setSort(Collections.singletonList(sort));
+        result.setGroupByFields(Collections.singletonList("centre"));
+        RuleDefinition.SummaryDefinition summary =
+                new RuleDefinition.SummaryDefinition();
+        summary.setName("maxHours");
+        summary.setField("hour");
+        summary.setOperation(RuleDefinition.SummaryDefinition.Operation.MAX);
+        result.setSummaries(Collections.singletonList(summary));
+        rule.setResult(result);
+        report.setRules(Collections.singletonList(rule));
+
+        assertThat(new ReportDefinitionValidator().validate(report).issues())
+                .filteredOn(issue -> "RULE-001".equals(issue.getCode()))
+                .extracting(ValidationIssue::getMessage)
+                .anyMatch(message -> message.contains("nmae"))
+                .anyMatch(message -> message.contains("avgHour"))
+                .anyMatch(message -> message.contains("centre"))
+                .anyMatch(message -> message.contains("hour"));
+    }
+
+    @Test
+    void emptyExpectedFieldsMeansUnknownContractAndDoesNotRejectFieldNames() {
+        DatasetDefinition people = TestFixtures.dataset("people");
+        ReportDefinition report = TestFixtures.report(people);
+        RuleDefinition rule = rule(
+                "unknownContract",
+                "people",
+                comparison(currentField("anyCurrentField"), literalValue(10)));
+        RuleDefinition.ResultDefinition result =
+                new RuleDefinition.ResultDefinition();
+        result.setDistinctFields(Collections.singletonList("anyDistinctField"));
+        result.setGroupByFields(Collections.singletonList("anyGroupField"));
+        RuleDefinition.SummaryDefinition summary =
+                new RuleDefinition.SummaryDefinition();
+        summary.setName("anything");
+        summary.setField("anySummaryField");
+        summary.setOperation(RuleDefinition.SummaryDefinition.Operation.MAX);
+        result.setSummaries(Collections.singletonList(summary));
+        rule.setResult(result);
+        report.setRules(Collections.singletonList(rule));
+
+        assertThat(new ReportDefinitionValidator().validate(report).issues())
+                .noneMatch(issue -> "RULE-001".equals(issue.getCode()));
+    }
+
     private static RuleDefinition rule(
             String id, String dataset, ConditionDefinition condition) {
         RuleDefinition rule = new RuleDefinition();

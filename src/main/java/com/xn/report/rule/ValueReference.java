@@ -26,7 +26,8 @@ public final class ValueReference {
             String field,
             String parameter) {
         this.source = source;
-        this.literal = literal;
+        this.literal = source == Source.LITERAL
+                ? RuleValues.freezeValue(literal) : literal;
         this.dataset = dataset;
         this.field = field;
         this.parameter = parameter;
@@ -65,7 +66,7 @@ public final class ValueReference {
         }
         switch (source) {
             case LITERAL:
-                return literal;
+                return RuleValues.copyValue(literal);
             case CURRENT_FIELD:
                 if (!row.containsField(field)) {
                     throw RuleErrors.reference("Missing current field: " + field);

@@ -1,8 +1,6 @@
 package com.xn.report.rule;
 
 import com.xn.report.dataset.DatasetContext;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 public final class RuleEvaluationContext {
@@ -19,8 +17,7 @@ public final class RuleEvaluationContext {
             throw new IllegalArgumentException("Runtime parameters are required");
         }
         this.datasets = datasets;
-        this.runtimeParameters = Collections.unmodifiableMap(
-                new LinkedHashMap<String, Object>(runtimeParameters));
+        this.runtimeParameters = RuleValues.freezeMap(runtimeParameters);
     }
 
     public DatasetContext getDatasets() {
@@ -31,10 +28,10 @@ public final class RuleEvaluationContext {
         if (!runtimeParameters.containsKey(name)) {
             throw RuleErrors.reference("Missing runtime parameter: " + name);
         }
-        return runtimeParameters.get(name);
+        return RuleValues.copyValue(runtimeParameters.get(name));
     }
 
     public Map<String, Object> getRuntimeParameters() {
-        return runtimeParameters;
+        return RuleValues.copyMap(runtimeParameters);
     }
 }

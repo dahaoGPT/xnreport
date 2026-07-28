@@ -4,7 +4,9 @@ import com.xn.report.config.ReportDefinition;
 import com.xn.report.config.ReportMetadata;
 import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.dataset.DatasetRow;
+import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetType;
+import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -44,6 +46,16 @@ public final class TestFixtures {
 
     public static DatasetRow row(Object... pairs) {
         return DatasetRow.of(pairs);
+    }
+
+    public static DatasetRow person(String name, String avgHours) {
+        return DatasetRow.of(
+                "personName", name,
+                "avgHours", new BigDecimal(avgHours));
+    }
+
+    public static DatasetResult people(DatasetRow... rows) {
+        return DatasetResult.list("people", Arrays.asList(rows));
     }
 
     public static Map<String, Object> parameters(Object... keyValues) {

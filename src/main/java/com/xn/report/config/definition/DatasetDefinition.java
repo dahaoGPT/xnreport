@@ -18,6 +18,8 @@ public class DatasetDefinition {
             new LinkedHashMap<String, ParameterBindingDefinition>();
     private Map<String, FieldDefinition> expectedFields =
             new LinkedHashMap<String, FieldDefinition>();
+    private List<TransformDefinition> transforms =
+            new ArrayList<TransformDefinition>();
     private Integer timeoutSeconds;
     private Integer maxRows;
 
@@ -85,6 +87,15 @@ public class DatasetDefinition {
     public void setExpectedFields(Map<String, FieldDefinition> expectedFields) {
         this.expectedFields = expectedFields == null
                 ? new LinkedHashMap<String, FieldDefinition>() : expectedFields;
+    }
+
+    public List<TransformDefinition> getTransforms() {
+        return transforms;
+    }
+
+    public void setTransforms(List<TransformDefinition> transforms) {
+        this.transforms = transforms == null
+                ? new ArrayList<TransformDefinition>() : transforms;
     }
 
     public Integer getTimeoutSeconds() {

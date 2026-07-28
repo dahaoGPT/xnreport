@@ -6,6 +6,8 @@ import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetType;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public final class TestFixtures {
 
@@ -42,5 +44,16 @@ public final class TestFixtures {
 
     public static DatasetRow row(Object... pairs) {
         return DatasetRow.of(pairs);
+    }
+
+    public static Map<String, Object> parameters(Object... keyValues) {
+        if (keyValues == null || keyValues.length % 2 != 0) {
+            throw new IllegalArgumentException("keyValues must be pairs");
+        }
+        Map<String, Object> values = new LinkedHashMap<String, Object>();
+        for (int index = 0; index < keyValues.length; index += 2) {
+            values.put(String.valueOf(keyValues[index]), keyValues[index + 1]);
+        }
+        return values;
     }
 }

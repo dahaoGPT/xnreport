@@ -84,6 +84,7 @@ public final class ReportDefinitionValidator {
         Set<String> narrativeIds =
                 validateNarratives(
                         definition.getNarratives(),
+                        datasets,
                         datasetIds,
                         definition.getParameters(),
                         result);
@@ -875,10 +876,18 @@ public final class ReportDefinitionValidator {
 
     private Set<String> validateNarratives(
             List<NarrativeDefinition> narratives,
+            List<DatasetDefinition> datasets,
             Set<String> datasetIds,
             Map<String, ParameterDefinition> parameters,
             ValidationResult result) {
         Set<String> narrativeIds = new LinkedHashSet<String>();
+        Map<String, DatasetDefinition> datasetsById =
+                new LinkedHashMap<String, DatasetDefinition>();
+        for (DatasetDefinition dataset : safeList(datasets)) {
+            if (dataset != null && hasText(dataset.getId())) {
+                datasetsById.put(dataset.getId(), dataset);
+            }
+        }
         List<NarrativeDefinition> safeNarratives = safeList(narratives);
         for (int index = 0; index < safeNarratives.size(); index++) {
             NarrativeDefinition narrative = safeNarratives.get(index);
@@ -913,7 +922,8 @@ public final class ReportDefinitionValidator {
                         "Unknown dataset reference: " + narrative.getDataset());
             }
             validateNarrativeVariant(
-                    narrative, path, datasetIds, parameters, result);
+                    narrative, path, datasetIds, datasetsById,
+                    parameters, result);
             if (narrative.hasProperty("distribution")
                     && narrative.getDistribution() == null) {
                 result.add("TEXT-001", path + ".distribution",
@@ -940,6 +950,7 @@ public final class ReportDefinitionValidator {
             NarrativeDefinition narrative,
             String path,
             Set<String> datasetIds,
+            Map<String, DatasetDefinition> datasetsById,
             Map<String, ParameterDefinition> parameters,
             ValidationResult result) {
         rejectNarrativeExplicitNull(
@@ -986,6 +997,7 @@ public final class ReportDefinitionValidator {
                             narrative.getTrend(),
                             path + ".trend",
                             datasetIds,
+                            datasetsById,
                             parameters,
                             result);
                 }
@@ -1020,6 +1032,7 @@ public final class ReportDefinitionValidator {
             TrendDefinition trend,
             String path,
             Set<String> datasetIds,
+            Map<String, DatasetDefinition> datasetsById,
             Map<String, ParameterDefinition> parameters,
             ValidationResult result) {
         if (!hasText(trend.getPeriodField())) {
@@ -1092,6 +1105,12 @@ public final class ReportDefinitionValidator {
                         path + ".comparisonDataset",
                         datasetIds,
                         result);
+                validateTrendComparisonField(
+                        trend.getComparisonDataset(),
+                        trend.getComparisonField(),
+                        path + ".comparisonField",
+                        datasetsById,
+                        result);
                 rejectTrendProperties(trend, path, result,
                         "comparisonParameter", "comparisonValue");
                 break;
@@ -1101,7 +1120,12 @@ public final class ReportDefinitionValidator {
                         path + ".comparisonField",
                         "comparisonField is required",
                         result);
-                String baseline = hasText(trend.getComparisonDataset())
+                if (trend.hasProperty("comparisonDataset")
+                        && trend.getComparisonDataset() == null) {
+                    result.add("TEXT-001", path + ".comparisonDataset",
+                            "comparisonDataset must not be null");
+                }
+                String baseline = trend.hasProperty("comparisonDataset")
                         ? trend.getComparisonDataset() : narrative.getBaseline();
                 if (!hasText(baseline)) {
                     result.add("TEXT-001", path + ".comparisonDataset",
@@ -1110,6 +1134,12 @@ public final class ReportDefinitionValidator {
                     validateTrendDataset(
                             baseline, path + ".comparisonDataset",
                             datasetIds, result);
+                    validateTrendComparisonField(
+                            baseline,
+                            trend.getComparisonField(),
+                            path + ".comparisonField",
+                            datasetsById,
+                            result);
                 }
                 rejectTrendProperties(trend, path, result,
                         "comparisonParameter", "comparisonValue");
@@ -1117,6 +1147,35 @@ public final class ReportDefinitionValidator {
             default:
                 result.add("TEXT-001", path + ".comparisonSource",
                         "Unsupported comparisonSource");
+        }
+    }
+
+    private void validateTrendComparisonField(
+            String datasetId,
+            String field,
+            String path,
+            Map<String, DatasetDefinition> datasetsById,
+            ValidationResult result) {
+        DatasetDefinition dataset = datasetsById.get(datasetId);
+        if (dataset == null
+                || dataset.getExpectedFields() == null
+                || dataset.getExpectedFields().isEmpty()
+                || !hasText(field)) {
+            return;
+        }
+        boolean found = false;
+        for (String actual : dataset.getExpectedFields().keySet()) {
+            if (actual.equalsIgnoreCase(field)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            result.add("TEXT-001", path,
+                    "Unknown comparison field " + field
+                            + " for dataset " + datasetId
+                            + "; expected "
+                            + dataset.getExpectedFields().keySet());
         }
     }
 

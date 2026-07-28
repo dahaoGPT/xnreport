@@ -52,7 +52,14 @@ public final class TextRenderContext {
         matchingScopes += summary.containsKey(name) ? 1 : 0;
         matchingScopes += runtime.containsKey(name) ? 1 : 0;
         for (DatasetResult result : datasets.asMap().values()) {
-            matchingScopes += result.schema().containsField(name) ? 1 : 0;
+            if (result.type() == DatasetType.SINGLE
+                    && result.schema().containsField(name)) {
+                matchingScopes++;
+            } else if (result.type() == DatasetType.SCALAR
+                    && (result.schema().containsField(name)
+                    || "value".equals(name))) {
+                matchingScopes++;
+            }
         }
         if (matchingScopes > 1) {
             throw new TextRenderException(
@@ -90,7 +97,8 @@ public final class TextRenderContext {
         DatasetResult result = datasets.get(datasetId);
         Object value;
         if (result.type() == DatasetType.SCALAR) {
-            if (!"value".equals(field)) {
+            if (!result.schema().containsField(field)
+                    && !"value".equals(field)) {
                 return Resolution.missing();
             }
             value = result.scalar();

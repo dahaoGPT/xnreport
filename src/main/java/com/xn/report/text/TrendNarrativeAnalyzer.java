@@ -145,6 +145,19 @@ final class TrendNarrativeAnalyzer implements ControlledNarrativeAnalyzer {
             TextRenderContext context, String datasetId, String field) {
         DatasetResult dataset = requiredDataset(context, datasetId);
         if (dataset.type() == DatasetType.SCALAR) {
+            List<String> actualFields = dataset.schema().fieldNames();
+            if (actualFields.size() != 1) {
+                throw new IllegalArgumentException(
+                        "Scalar comparison dataset " + datasetId
+                                + " must expose exactly one schema field: "
+                                + actualFields);
+            }
+            if (field == null || !dataset.schema().containsField(field)) {
+                throw new IllegalArgumentException(
+                        "Scalar comparison field " + field
+                                + " does not match actual field "
+                                + actualFields.get(0));
+            }
             return numeric(dataset.scalar(), "dataset comparison");
         }
         if (dataset.type() != DatasetType.SINGLE) {

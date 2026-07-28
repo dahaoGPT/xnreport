@@ -191,6 +191,69 @@ class NarrativeConfigurationTest {
                 .isTrue();
     }
 
+    @Test
+    void rejectsAnnualBaselineExplicitNullAndKnownScalarFieldTypo()
+            throws Exception {
+        String annual = "schemaVersion: '1.0'\n"
+                + "report: {code: demo, name: Demo}\n"
+                + "datasets:\n"
+                + "  - id: monthly\n"
+                + "    sheetName: Monthly\n"
+                + "    sql: 'select 1'\n"
+                + "    expectedFields: {month: {}, hours: {}}\n"
+                + "  - id: baseline\n"
+                + "    sheetName: Baseline\n"
+                + "    sql: 'select 1'\n"
+                + "    resultType: SCALAR\n"
+                + "    expectedFields: {standardHours: {}}\n"
+                + "narratives:\n"
+                + "  - id: trend\n"
+                + "    sourceType: RULE_GENERATED\n"
+                + "    analyzer: approvalTrend\n"
+                + "    analyzerType: TREND\n"
+                + "    dataset: monthly\n"
+                + "    baseline: baseline\n"
+                + "    sentence: '${summary.direction}'\n"
+                + "    trend:\n"
+                + "      periodField: month\n"
+                + "      valueField: hours\n"
+                + "      comparisonSource: ANNUAL_BASELINE\n"
+                + "      comparisonDataset: null\n"
+                + "      comparisonField: standardHour\n";
+        Path path = temp.resolve("annual-null.yml");
+        Files.write(path, annual.getBytes(StandardCharsets.UTF_8));
+        ReportDefinition definition =
+                ReportDefinitionLoader.createDefault().load(path);
+
+        assertThat(new ReportDefinitionValidator().validate(definition).issues())
+                .filteredOn(issue -> "TEXT-001".equals(issue.getCode()))
+                .extracting(ValidationIssue::getMessage)
+                .anyMatch(message -> message.contains("comparisonDataset"));
+
+        String typo = annual.replace(
+                "comparisonDataset: null",
+                "comparisonDataset: baseline");
+        Path typoPath = temp.resolve("annual-typo.yml");
+        Files.write(typoPath, typo.getBytes(StandardCharsets.UTF_8));
+        ReportDefinition typoDefinition =
+                ReportDefinitionLoader.createDefault().load(typoPath);
+        assertThat(new ReportDefinitionValidator()
+                .validate(typoDefinition).issues())
+                .filteredOn(issue -> "TEXT-001".equals(issue.getCode()))
+                .extracting(ValidationIssue::getMessage)
+                .anyMatch(message -> message.contains("standardHour"));
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode schema;
+        try (java.io.InputStream input = getClass().getResourceAsStream(
+                "/schema/report-definition.schema.json")) {
+            schema = mapper.readTree(input);
+        }
+        JsonNode json = new com.fasterxml.jackson.dataformat.yaml.YAMLMapper()
+                .readTree(annual);
+        assertThat(new JsonSchemaContract(schema).validate(json)).isNotEmpty();
+    }
+
     private static String validYaml() {
         return "schemaVersion: '1.0'\n"
                 + "report: {code: demo, name: Demo}\n"

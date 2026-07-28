@@ -172,6 +172,10 @@ public final class NarrativeEngine {
                         == TrendDefinition.ComparisonSource.DATASET_FIELD) {
                     requireText(trend.getComparisonDataset(),
                             "Trend comparisonDataset");
+                } else if (trend.hasProperty("comparisonDataset")
+                        && trend.getComparisonDataset() == null) {
+                    throw new IllegalArgumentException(
+                            "Trend comparisonDataset must not be null");
                 }
                 rejectTrendCross(trend, "comparisonParameter", "comparisonValue");
                 break;

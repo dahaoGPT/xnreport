@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xn.report.support.TestFixtures;
 import com.xn.report.error.ReportErrorCode;
+import com.xn.report.dataset.DatasetContext;
+import com.xn.report.dataset.DatasetResult;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -165,5 +167,43 @@ class TextRendererTest {
                         .doesNotContain(".getDeclared");
             }
         }
+    }
+
+    @Test
+    void resolvesScalarDatasetByItsActualSchemaFieldAndRejectsTypos() {
+        TextRenderContext context = TextRenderContext.builder()
+                .datasets(DatasetContext.builder()
+                        .put(DatasetResult.scalar(
+                                "baselineSummary",
+                                java.util.Collections.singletonList(
+                                        TestFixtures.row(
+                                                "standardHours",
+                                                new java.math.BigDecimal("10")))))
+                        .build())
+                .build();
+
+        assertThat(renderer.render(
+                "${dataset.baselineSummary.standardHours|number:0.00}",
+                context)).isEqualTo("10.00");
+        assertThatThrownBy(() -> renderer.render(
+                "${dataset.baselineSummary.standardHour}", context))
+                .isInstanceOf(TextRenderException.class)
+                .hasMessageContaining("standardHour");
+    }
+
+    @Test
+    void listDatasetFieldsDoNotCreateFalseUnqualifiedAmbiguity() {
+        TextRenderContext context = TextRenderContext.builder()
+                .currentRow(TestFixtures.row("period", "current"))
+                .datasets(DatasetContext.builder()
+                        .put(DatasetResult.list(
+                                "monthly",
+                                java.util.Collections.singletonList(
+                                        TestFixtures.row("period", "list"))))
+                        .build())
+                .build();
+
+        assertThat(renderer.render("${period}", context))
+                .isEqualTo("current");
     }
 }

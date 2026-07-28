@@ -156,6 +156,40 @@ class NarrativeEngineTest {
                 nullId, distributionContext()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("id");
+
+        NarrativeDefinition annual = trendNarrative();
+        annual.setBaseline("baseline");
+        annual.getTrend().setComparisonSource(
+                TrendDefinition.ComparisonSource.ANNUAL_BASELINE);
+        annual.getTrend().setComparisonDataset(null);
+        assertThatThrownBy(() -> engine.generate(annual, trendContext()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("comparisonDataset")
+                .hasMessageContaining("null");
+    }
+
+    @Test
+    void scalarComparisonDatasetRequiresItsActualSchemaField() {
+        NarrativeDefinition definition = trendNarrative();
+        definition.getTrend().setComparisonField("standardHour");
+        TextRenderContext context = TextRenderContext.builder()
+                .datasets(DatasetContext.builder()
+                        .put(DatasetResult.list("monthly", Arrays.asList(
+                                DatasetRow.of("month", "2026-01",
+                                        "hours", new BigDecimal("8")),
+                                DatasetRow.of("month", "2026-02",
+                                        "hours", new BigDecimal("12")))))
+                        .put(DatasetResult.scalar(
+                                "baseline",
+                                Collections.singletonList(DatasetRow.of(
+                                        "standardHours", new BigDecimal("9")))))
+                        .build())
+                .build();
+
+        assertThatThrownBy(() -> engine.generate(definition, context))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("standardHour")
+                .hasMessageContaining("standardHours");
     }
 
     private static NarrativeDefinition trendNarrative() {

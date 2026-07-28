@@ -188,6 +188,49 @@ class SqlParameterResolverTest {
                 .hasMessageContaining("Cyclic");
     }
 
+    @Test
+    void resolverRejectsSelfReferentialListWithoutStackOverflow() {
+        List<Object> cycle = new ArrayList<Object>();
+        cycle.add(cycle);
+        DatasetDefinition definition = definition(
+                binding("cycle", constant(cycle)));
+
+        assertThatThrownBy(() -> resolver.resolve(
+                definition,
+                Collections.<String, Object>emptyMap(),
+                DatasetContext.builder().build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Cyclic");
+    }
+
+    @Test
+    void resolverRejectsMutuallyReferentialListAndMapGraphs() {
+        List<Object> left = new ArrayList<Object>();
+        List<Object> right = new ArrayList<Object>();
+        Map<String, Object> map = new LinkedHashMap<String, Object>();
+        left.add(right);
+        right.add(left);
+        map.put("list", left);
+        left.add(map);
+        DatasetDefinition listDefinition = definition(
+                binding("cycle", constant(left)));
+        DatasetDefinition mapDefinition = definition(
+                binding("cycle", constant(map)));
+
+        assertThatThrownBy(() -> resolver.resolve(
+                listDefinition,
+                Collections.<String, Object>emptyMap(),
+                DatasetContext.builder().build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Cyclic");
+        assertThatThrownBy(() -> resolver.resolve(
+                mapDefinition,
+                Collections.<String, Object>emptyMap(),
+                DatasetContext.builder().build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Cyclic");
+    }
+
     private static DatasetDefinition definition(
             Map.Entry<String, ParameterBindingDefinition>... bindings) {
         DatasetDefinition definition = new DatasetDefinition();

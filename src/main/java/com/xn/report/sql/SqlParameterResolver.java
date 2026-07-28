@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +41,12 @@ public final class SqlParameterResolver {
             }
             Object value = resolveValue(
                     parameterName, binding, runtimeParameters, datasetContext);
-            resolved.put(parameterName, normalize(parameterName, value));
+            resolved.put(
+                    parameterName,
+                    normalize(
+                            parameterName,
+                            value,
+                            new IdentityHashMap<Object, Boolean>()));
         }
         return new ResolvedSqlParameters(resolved);
     }
@@ -83,7 +89,10 @@ public final class SqlParameterResolver {
                 "Unsupported parameter source for " + parameterName + ": " + source);
     }
 
-    private static Object normalize(String parameterName, Object value) {
+    private static Object normalize(
+            String parameterName,
+            Object value,
+            IdentityHashMap<Object, Boolean> visiting) {
         if (value instanceof LocalDateTime) {
             return Timestamp.valueOf((LocalDateTime) value);
         }
@@ -96,11 +105,19 @@ public final class SqlParameterResolver {
                 throw new IllegalArgumentException(
                         "SQL collection parameter must not be empty: " + parameterName);
             }
-            List<Object> copy = new ArrayList<Object>(source.size());
-            for (Object element : source) {
-                copy.add(normalize(parameterName, element));
+            if (visiting.put(source, Boolean.TRUE) != null) {
+                throw new IllegalArgumentException(
+                        "Cyclic SQL parameter value: " + parameterName);
             }
-            return Collections.unmodifiableList(copy);
+            try {
+                List<Object> copy = new ArrayList<Object>(source.size());
+                for (Object element : source) {
+                    copy.add(normalize(parameterName, element, visiting));
+                }
+                return Collections.unmodifiableList(copy);
+            } finally {
+                visiting.remove(source);
+            }
         }
         if (value instanceof Timestamp) {
             Timestamp source = (Timestamp) value;

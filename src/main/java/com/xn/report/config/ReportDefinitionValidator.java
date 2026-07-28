@@ -16,6 +16,9 @@ import com.xn.report.config.definition.TrendDefinition;
 import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
+import com.xn.report.config.definition.ExcelDefinition;
+import com.xn.report.config.definition.ExcelTableBinding;
+import com.xn.report.config.definition.ExcelValueBinding;
 import com.xn.report.excel.ExcelSheetNameRules;
 import com.xn.report.dataset.DatasetType;
 import com.xn.report.rule.RuleEngine;
@@ -80,6 +83,11 @@ public final class ReportDefinitionValidator {
         Set<String> datasetIds = validateDatasets(datasets, result);
         validateDependencies(datasets, datasetIds, result);
         validateDependencyCycles(datasets, datasetIds, result);
+        if (definition.isExcelExplicitNull()) {
+            result.add("EXCEL-001", "$.excel",
+                    "excel must not be null");
+        }
+        validateExcel(definition.getExcel(), datasets, datasetIds, result);
         if (definition.isRulesExplicitNull()) {
             result.add("RULE-001", "$.rules", "rules must not be null");
         }
@@ -940,6 +948,217 @@ public final class ReportDefinitionValidator {
             validateTransforms(dataset, path, result);
         }
         return ids;
+    }
+
+    private void validateExcel(
+            ExcelDefinition excel,
+            List<DatasetDefinition> datasets,
+            Set<String> datasetIds,
+            ValidationResult result) {
+        if (excel == null) {
+            result.add("EXCEL-001", "$.excel",
+                    "excel must not be null");
+            return;
+        }
+        Map<String, DatasetDefinition> datasetsById =
+                new LinkedHashMap<String, DatasetDefinition>();
+        for (DatasetDefinition dataset : datasets) {
+            if (dataset != null && hasText(dataset.getId())) {
+                datasetsById.put(dataset.getId(), dataset);
+            }
+        }
+        if (excel.isValueBindingsExplicitNull()) {
+            result.add("EXCEL-001", "$.excel.valueBindings",
+                    "valueBindings must not be null");
+        }
+        for (int index = 0;
+                index < safeList(excel.getValueBindings()).size();
+                index++) {
+            ExcelValueBinding binding =
+                    safeList(excel.getValueBindings()).get(index);
+            String path = "$.excel.valueBindings[" + index + "]";
+            if (binding == null) {
+                result.add("EXCEL-001", path,
+                        "Excel value binding must not be null");
+                continue;
+            }
+            requireText(result, binding.getSheet(), "EXCEL-001",
+                    path + ".sheet", "Value binding sheet is required");
+            requireText(result, binding.getValue(), "EXCEL-001",
+                    path + ".value", "Value binding value is required");
+            validateCellReference(binding.getCell(),
+                    path + ".cell", result);
+        }
+
+        if (excel.isTableBindingsExplicitNull()) {
+            result.add("EXCEL-001", "$.excel.tableBindings",
+                    "tableBindings must not be null");
+        }
+        Set<String> boundDatasets = new LinkedHashSet<String>();
+        Set<String> tableNames = new LinkedHashSet<String>();
+        List<ExcelTableBinding> tableBindings =
+                safeList(excel.getTableBindings());
+        for (int index = 0; index < tableBindings.size(); index++) {
+            ExcelTableBinding binding = tableBindings.get(index);
+            String path = "$.excel.tableBindings[" + index + "]";
+            if (binding == null) {
+                result.add("EXCEL-001", path,
+                        "Excel table binding must not be null");
+                continue;
+            }
+            DatasetDefinition dataset =
+                    datasetsById.get(binding.getDataset());
+            if (!hasText(binding.getDataset())
+                    || !datasetIds.contains(binding.getDataset())) {
+                result.add("EXCEL-001", path + ".dataset",
+                        "Unknown table binding dataset: "
+                                + binding.getDataset());
+            } else if (!boundDatasets.add(binding.getDataset())) {
+                result.add("EXCEL-001", path + ".dataset",
+                        "Dataset has more than one table binding: "
+                                + binding.getDataset());
+            }
+            if (!hasText(binding.getSheet())) {
+                result.add("EXCEL-001", path + ".sheet",
+                        "Table binding sheet is required");
+            } else if (dataset != null
+                    && !binding.getSheet().equals(
+                            dataset.getSheetName())) {
+                result.add("EXCEL-001", path + ".sheet",
+                        "Table binding sheet must match dataset sheetName "
+                                + dataset.getSheetName());
+            }
+            validateTableName(
+                    binding.getTable(), path + ".table",
+                    tableNames, result);
+            if (binding.getStartRow() == null
+                    || binding.getStartRow().intValue() < 0
+                    || binding.getStartRow().intValue() >= 1048576) {
+                result.add("EXCEL-001", path + ".startRow",
+                        "startRow must be between 0 and 1048575");
+            }
+            if (binding.isColumnsExplicitNull()
+                    || safeList(binding.getColumns()).isEmpty()) {
+                result.add("EXCEL-001", path + ".columns",
+                        "Table binding requires at least one column");
+                continue;
+            }
+            Set<String> fields = new LinkedHashSet<String>();
+            Set<String> headers = new LinkedHashSet<String>();
+            for (int columnIndex = 0;
+                    columnIndex < binding.getColumns().size();
+                    columnIndex++) {
+                ExcelTableBinding.ColumnBinding column =
+                        binding.getColumns().get(columnIndex);
+                String columnPath = path + ".columns["
+                        + columnIndex + "]";
+                if (column == null) {
+                    result.add("EXCEL-001", columnPath,
+                            "Excel table column must not be null");
+                    continue;
+                }
+                if (!hasText(column.getField())) {
+                    result.add("EXCEL-001", columnPath + ".field",
+                            "Column field is required");
+                } else {
+                    String normalized =
+                            column.getField().toLowerCase(Locale.ROOT);
+                    if (!fields.add(normalized)) {
+                        result.add("EXCEL-001",
+                                columnPath + ".field",
+                                "Duplicate table column field: "
+                                        + column.getField());
+                    }
+                    if (dataset != null
+                            && dataset.getExpectedFields() != null
+                            && !dataset.getExpectedFields().isEmpty()
+                            && !containsIgnoreCase(
+                                    dataset.getExpectedFields().keySet(),
+                                    column.getField())) {
+                        result.add("EXCEL-001",
+                                columnPath + ".field",
+                                "Unknown dataset field: "
+                                        + column.getField());
+                    }
+                }
+                if (!hasText(column.getHeader())) {
+                    result.add("EXCEL-001", columnPath + ".header",
+                            "Column header is required");
+                } else if (!headers.add(
+                        column.getHeader().toLowerCase(Locale.ROOT))) {
+                    result.add("EXCEL-001", columnPath + ".header",
+                            "Duplicate table column header: "
+                                    + column.getHeader());
+                }
+            }
+        }
+    }
+
+    private void validateCellReference(
+            String reference, String path, ValidationResult result) {
+        if (!hasText(reference)
+                || !reference.matches(
+                        "^\\$?[A-Za-z]{1,3}\\$?[1-9][0-9]*$")) {
+            result.add("EXCEL-001", path,
+                    "Cell must be a single A1 reference");
+            return;
+        }
+        String normalized = reference.replace("$", "");
+        int split = 0;
+        while (split < normalized.length()
+                && Character.isLetter(normalized.charAt(split))) {
+            split++;
+        }
+        int column = org.apache.poi.ss.util.CellReference
+                .convertColStringToIndex(
+                        normalized.substring(0, split));
+        long row;
+        try {
+            row = Long.parseLong(normalized.substring(split));
+        } catch (NumberFormatException exception) {
+            result.add("EXCEL-001", path,
+                    "Cell is outside the XLSX worksheet bounds");
+            return;
+        }
+        if (column < 0 || column >= 16384
+                || row < 1 || row > 1048576) {
+            result.add("EXCEL-001", path,
+                    "Cell is outside the XLSX worksheet bounds");
+        }
+    }
+
+    private void validateTableName(
+            String tableName,
+            String path,
+            Set<String> seen,
+            ValidationResult result) {
+        if (!hasText(tableName)
+                || tableName.length() > 255
+                || !tableName.matches(
+                        "^[A-Za-z_][A-Za-z0-9_.]*$")
+                || tableName.matches(
+                        "(?i)^[A-Z]{1,3}[1-9][0-9]*$")
+                || tableName.matches(
+                        "(?i)^R[1-9][0-9]*C[1-9][0-9]*$")) {
+            result.add("EXCEL-001", path,
+                    "Invalid Excel table name: " + tableName);
+            return;
+        }
+        String normalized = tableName.toLowerCase(Locale.ROOT);
+        if (!seen.add(normalized)) {
+            result.add("EXCEL-001", path,
+                    "Duplicate Excel table name: " + tableName);
+        }
+    }
+
+    private static boolean containsIgnoreCase(
+            Iterable<String> values, String expected) {
+        for (String value : values) {
+            if (value.equalsIgnoreCase(expected)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void validateTransforms(

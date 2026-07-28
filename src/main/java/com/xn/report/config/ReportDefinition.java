@@ -7,6 +7,7 @@ import com.xn.report.config.definition.NarrativeDefinition;
 import com.xn.report.config.definition.PolicyDefinition;
 import com.xn.report.config.definition.RuleDefinition;
 import com.xn.report.config.definition.WordDefinition;
+import com.xn.report.config.definition.ExcelDefinition;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,6 +30,9 @@ public class ReportDefinition {
     @JsonIgnore
     private boolean rulesExplicitNull;
     private WordDefinition word = new WordDefinition();
+    private ExcelDefinition excel = new ExcelDefinition();
+    @JsonIgnore
+    private boolean excelExplicitNull;
     private PolicyDefinition policies = new PolicyDefinition();
 
     public String getSchemaVersion() {
@@ -118,6 +122,20 @@ public class ReportDefinition {
 
     public PolicyDefinition getPolicies() {
         return policies;
+    }
+
+    public ExcelDefinition getExcel() {
+        return excel;
+    }
+
+    public void setExcel(ExcelDefinition excel) {
+        this.excelExplicitNull = excel == null;
+        this.excel = excel == null ? new ExcelDefinition() : excel;
+    }
+
+    @JsonIgnore
+    public boolean isExcelExplicitNull() {
+        return excelExplicitNull;
     }
 
     public void setPolicies(PolicyDefinition policies) {

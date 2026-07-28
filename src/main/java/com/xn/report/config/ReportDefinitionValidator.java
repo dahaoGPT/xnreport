@@ -10,6 +10,7 @@ import com.xn.report.config.definition.ValueReferenceDefinition;
 import com.xn.report.config.definition.SortFieldDefinition;
 import com.xn.report.config.definition.TransformDefinition;
 import com.xn.report.config.definition.TransformOperator;
+import com.xn.report.config.definition.TrendDefinition;
 import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
@@ -81,7 +82,11 @@ public final class ReportDefinitionValidator {
                     "narratives must not be null");
         }
         Set<String> narrativeIds =
-                validateNarratives(definition.getNarratives(), datasetIds, result);
+                validateNarratives(
+                        definition.getNarratives(),
+                        datasetIds,
+                        definition.getParameters(),
+                        result);
         validateWord(definition.getWord(), narrativeIds, result);
         return result;
     }
@@ -871,6 +876,7 @@ public final class ReportDefinitionValidator {
     private Set<String> validateNarratives(
             List<NarrativeDefinition> narratives,
             Set<String> datasetIds,
+            Map<String, ParameterDefinition> parameters,
             ValidationResult result) {
         Set<String> narrativeIds = new LinkedHashSet<String>();
         List<NarrativeDefinition> safeNarratives = safeList(narratives);
@@ -882,7 +888,7 @@ public final class ReportDefinitionValidator {
                 continue;
             }
             if (!hasText(narrative.getId())) {
-                result.add("CFG-NARRATIVE-ID", path + ".id", "Narrative id is required");
+                result.add("TEXT-001", path + ".id", "Narrative id is required");
             } else if (!narrativeIds.add(narrative.getId())) {
                 result.add("CFG-DUPLICATE-NARRATIVE", path + ".id",
                         "Duplicate narrative id: " + narrative.getId());
@@ -906,7 +912,8 @@ public final class ReportDefinitionValidator {
                 result.add("CFG-UNKNOWN-DATASET-REFERENCE", path + ".dataset",
                         "Unknown dataset reference: " + narrative.getDataset());
             }
-            validateNarrativeVariant(narrative, path, result);
+            validateNarrativeVariant(
+                    narrative, path, datasetIds, parameters, result);
             if (narrative.hasProperty("distribution")
                     && narrative.getDistribution() == null) {
                 result.add("TEXT-001", path + ".distribution",
@@ -932,7 +939,13 @@ public final class ReportDefinitionValidator {
     private void validateNarrativeVariant(
             NarrativeDefinition narrative,
             String path,
+            Set<String> datasetIds,
+            Map<String, ParameterDefinition> parameters,
             ValidationResult result) {
+        rejectNarrativeExplicitNull(
+                narrative, "baseline", narrative.getBaseline(), path, result);
+        rejectNarrativeExplicitNull(
+                narrative, "format", narrative.getFormat(), path, result);
         if (narrative.getSourceType()
                 == NarrativeDefinition.SourceType.FIXED_TEMPLATE) {
             if (!hasText(narrative.getTemplate())) {
@@ -941,7 +954,8 @@ public final class ReportDefinitionValidator {
             }
             rejectNarrativeProperties(
                     narrative, path, result,
-                    "analyzer", "baseline", "format", "sentence", "distribution");
+                    "analyzer", "analyzerType", "baseline", "format",
+                    "sentence", "distribution", "trend");
         } else if (narrative.getSourceType()
                 == NarrativeDefinition.SourceType.RULE_GENERATED) {
             if (!hasText(narrative.getAnalyzer())) {
@@ -957,6 +971,211 @@ public final class ReportDefinitionValidator {
                         "RULE_GENERATED requires sentence");
             }
             rejectNarrativeProperties(narrative, path, result, "template");
+            if (narrative.getAnalyzerType() == null) {
+                result.add("TEXT-001", path + ".analyzerType",
+                        "RULE_GENERATED requires analyzerType");
+            } else if (narrative.getAnalyzerType()
+                    == NarrativeDefinition.AnalyzerType.TREND) {
+                if (!narrative.hasProperty("trend")
+                        || narrative.getTrend() == null) {
+                    result.add("TEXT-001", path + ".trend",
+                            "TREND requires non-null trend");
+                } else {
+                    validateTrend(
+                            narrative,
+                            narrative.getTrend(),
+                            path + ".trend",
+                            datasetIds,
+                            parameters,
+                            result);
+                }
+                rejectNarrativeProperties(
+                        narrative, path, result, "distribution");
+            } else {
+                if (!narrative.hasProperty("distribution")
+                        || narrative.getDistribution() == null) {
+                    result.add("TEXT-001", path + ".distribution",
+                            "DISTRIBUTION requires non-null distribution");
+                }
+                rejectNarrativeProperties(
+                        narrative, path, result, "trend", "baseline");
+            }
+        }
+    }
+
+    private void rejectNarrativeExplicitNull(
+            NarrativeDefinition narrative,
+            String property,
+            Object value,
+            String path,
+            ValidationResult result) {
+        if (narrative.hasProperty(property) && value == null) {
+            result.add("TEXT-001", path + "." + property,
+                    property + " must not be null");
+        }
+    }
+
+    private void validateTrend(
+            NarrativeDefinition narrative,
+            TrendDefinition trend,
+            String path,
+            Set<String> datasetIds,
+            Map<String, ParameterDefinition> parameters,
+            ValidationResult result) {
+        if (!hasText(trend.getPeriodField())) {
+            result.add("TEXT-001", path + ".periodField",
+                    "Trend periodField is required");
+        }
+        if (!hasText(trend.getValueField())) {
+            result.add("TEXT-001", path + ".valueField",
+                    "Trend valueField is required");
+        }
+        if (trend.getComparisonSource() == null) {
+            result.add("TEXT-001", path + ".comparisonSource",
+                    "Trend comparisonSource is required");
+            return;
+        }
+        rejectTrendExplicitNull(
+                trend, "flatTolerance", trend.getFlatTolerance(), path, result);
+        rejectTrendExplicitNull(
+                trend, "abnormalThreshold", trend.getAbnormalThreshold(), path, result);
+        if (trend.getFlatTolerance() == null
+                || trend.getFlatTolerance().signum() < 0) {
+            result.add("TEXT-001", path + ".flatTolerance",
+                    "Trend flatTolerance must be non-negative");
+        }
+        switch (trend.getComparisonSource()) {
+            case PREVIOUS_YEAR:
+                rejectTrendProperties(trend, path, result,
+                        "comparisonDataset", "comparisonField",
+                        "comparisonParameter", "comparisonValue");
+                break;
+            case LITERAL:
+                requireTrendProperty(
+                        trend, "comparisonValue", trend.getComparisonValue(),
+                        path, result);
+                rejectTrendProperties(trend, path, result,
+                        "comparisonDataset", "comparisonField",
+                        "comparisonParameter");
+                break;
+            case RUNTIME_PARAMETER:
+                requireTrendText(
+                        trend.getComparisonParameter(),
+                        path + ".comparisonParameter",
+                        "comparisonParameter is required",
+                        result);
+                if (hasText(trend.getComparisonParameter())
+                        && (parameters == null
+                        || !parameters.containsKey(
+                        trend.getComparisonParameter()))) {
+                    result.add("TEXT-001", path + ".comparisonParameter",
+                            "Unknown runtime parameter: "
+                                    + trend.getComparisonParameter());
+                }
+                rejectTrendProperties(trend, path, result,
+                        "comparisonDataset", "comparisonField",
+                        "comparisonValue");
+                break;
+            case DATASET_FIELD:
+                requireTrendText(
+                        trend.getComparisonDataset(),
+                        path + ".comparisonDataset",
+                        "comparisonDataset is required",
+                        result);
+                requireTrendText(
+                        trend.getComparisonField(),
+                        path + ".comparisonField",
+                        "comparisonField is required",
+                        result);
+                validateTrendDataset(
+                        trend.getComparisonDataset(),
+                        path + ".comparisonDataset",
+                        datasetIds,
+                        result);
+                rejectTrendProperties(trend, path, result,
+                        "comparisonParameter", "comparisonValue");
+                break;
+            case ANNUAL_BASELINE:
+                requireTrendText(
+                        trend.getComparisonField(),
+                        path + ".comparisonField",
+                        "comparisonField is required",
+                        result);
+                String baseline = hasText(trend.getComparisonDataset())
+                        ? trend.getComparisonDataset() : narrative.getBaseline();
+                if (!hasText(baseline)) {
+                    result.add("TEXT-001", path + ".comparisonDataset",
+                            "ANNUAL_BASELINE requires comparisonDataset or baseline");
+                } else {
+                    validateTrendDataset(
+                            baseline, path + ".comparisonDataset",
+                            datasetIds, result);
+                }
+                rejectTrendProperties(trend, path, result,
+                        "comparisonParameter", "comparisonValue");
+                break;
+            default:
+                result.add("TEXT-001", path + ".comparisonSource",
+                        "Unsupported comparisonSource");
+        }
+    }
+
+    private void validateTrendDataset(
+            String id,
+            String path,
+            Set<String> datasetIds,
+            ValidationResult result) {
+        if (hasText(id) && !datasetIds.contains(id)) {
+            result.add("TEXT-001", path,
+                    "Unknown comparison dataset: " + id);
+        }
+    }
+
+    private void requireTrendText(
+            String value,
+            String path,
+            String message,
+            ValidationResult result) {
+        if (!hasText(value)) {
+            result.add("TEXT-001", path, message);
+        }
+    }
+
+    private void requireTrendProperty(
+            TrendDefinition trend,
+            String property,
+            Object value,
+            String path,
+            ValidationResult result) {
+        if (!trend.hasProperty(property) || value == null) {
+            result.add("TEXT-001", path + "." + property,
+                    property + " is required");
+        }
+    }
+
+    private void rejectTrendExplicitNull(
+            TrendDefinition trend,
+            String property,
+            Object value,
+            String path,
+            ValidationResult result) {
+        if (trend.hasProperty(property) && value == null) {
+            result.add("TEXT-001", path + "." + property,
+                    property + " must not be null");
+        }
+    }
+
+    private void rejectTrendProperties(
+            TrendDefinition trend,
+            String path,
+            ValidationResult result,
+            String... properties) {
+        for (String property : properties) {
+            if (trend.hasProperty(property)) {
+                result.add("TEXT-001", path + "." + property,
+                        property + " is not allowed for "
+                                + trend.getComparisonSource());
+            }
         }
     }
 

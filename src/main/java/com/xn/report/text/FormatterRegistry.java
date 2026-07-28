@@ -1,6 +1,5 @@
 package com.xn.report.text;
 
-import java.lang.reflect.Array;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
@@ -154,9 +153,10 @@ public final class FormatterRegistry {
                     }
                     return output.toString();
                 }
-                if (value.getClass().isArray()) {
-                    for (int index = 0; index < Array.getLength(value); index++) {
-                        appendJoined(output, Array.get(value, index), delimiter);
+                Collection<?> array = TextArrayValues.copy(value);
+                if (array != null) {
+                    for (Object element : array) {
+                        appendJoined(output, element, delimiter);
                     }
                     return output.toString();
                 }

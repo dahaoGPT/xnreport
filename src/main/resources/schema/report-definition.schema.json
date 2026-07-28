@@ -956,8 +956,10 @@
             "id",
             "sourceType",
             "analyzer",
+            "analyzerType",
             "dataset",
-            "sentence"
+            "sentence",
+            "trend"
           ],
           "properties": {
             "id": {
@@ -975,6 +977,12 @@
               "type": "string",
               "minLength": 1,
               "x-java-nonBlank": true
+            },
+            "analyzerType": {
+              "type": "string",
+              "enum": [
+                "TREND"
+              ]
             },
             "dataset": {
               "type": "string",
@@ -998,8 +1006,272 @@
             "parameters": {
               "type": "object"
             },
+            "trend": {
+              "$ref": "#/definitions/trend"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "sourceType",
+            "analyzer",
+            "analyzerType",
+            "dataset",
+            "sentence",
+            "distribution"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "sourceType": {
+              "type": "string",
+              "enum": [
+                "RULE_GENERATED"
+              ]
+            },
+            "analyzer": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "analyzerType": {
+              "type": "string",
+              "enum": [
+                "DISTRIBUTION"
+              ]
+            },
+            "dataset": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "format": {
+              "type": "string"
+            },
+            "sentence": {
+              "type": "string",
+              "minLength": 1
+            },
+            "emptyStrategy": {
+              "$ref": "#/definitions/narrativeEmptyStrategy"
+            },
+            "parameters": {
+              "type": "object"
+            },
             "distribution": {
               "$ref": "#/definitions/distribution"
+            }
+          }
+        }
+      ]
+    },
+    "trend": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "periodField",
+            "valueField",
+            "comparisonSource"
+          ],
+          "properties": {
+            "periodField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "valueField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "comparisonSource": {
+              "type": "string",
+              "enum": [
+                "PREVIOUS_YEAR"
+              ]
+            },
+            "flatTolerance": {
+              "type": "number",
+              "minimum": 0
+            },
+            "abnormalThreshold": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "periodField",
+            "valueField",
+            "comparisonSource",
+            "comparisonField"
+          ],
+          "properties": {
+            "periodField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "valueField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "comparisonSource": {
+              "type": "string",
+              "enum": [
+                "ANNUAL_BASELINE"
+              ]
+            },
+            "comparisonDataset": {
+              "type": "string",
+              "minLength": 1
+            },
+            "comparisonField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "flatTolerance": {
+              "type": "number",
+              "minimum": 0
+            },
+            "abnormalThreshold": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "periodField",
+            "valueField",
+            "comparisonSource",
+            "comparisonValue"
+          ],
+          "properties": {
+            "periodField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "valueField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "comparisonSource": {
+              "type": "string",
+              "enum": [
+                "LITERAL"
+              ]
+            },
+            "comparisonValue": {
+              "type": "number"
+            },
+            "flatTolerance": {
+              "type": "number",
+              "minimum": 0
+            },
+            "abnormalThreshold": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "periodField",
+            "valueField",
+            "comparisonSource",
+            "comparisonDataset",
+            "comparisonField"
+          ],
+          "properties": {
+            "periodField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "valueField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "comparisonSource": {
+              "type": "string",
+              "enum": [
+                "DATASET_FIELD"
+              ]
+            },
+            "comparisonDataset": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "comparisonField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "flatTolerance": {
+              "type": "number",
+              "minimum": 0
+            },
+            "abnormalThreshold": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "periodField",
+            "valueField",
+            "comparisonSource",
+            "comparisonParameter"
+          ],
+          "properties": {
+            "periodField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "valueField": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "comparisonSource": {
+              "type": "string",
+              "enum": [
+                "RUNTIME_PARAMETER"
+              ]
+            },
+            "comparisonParameter": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "flatTolerance": {
+              "type": "number",
+              "minimum": 0
+            },
+            "abnormalThreshold": {
+              "type": "number"
             }
           }
         }

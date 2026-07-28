@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.math.BigDecimal;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -803,8 +804,20 @@ class ReportDefinitionValidatorTest {
             if (narrative.getSourceType()
                     == NarrativeDefinition.SourceType.RULE_GENERATED) {
                 narrative.setAnalyzer("testAnalyzer");
+                narrative.setAnalyzerType(
+                        NarrativeDefinition.AnalyzerType.DISTRIBUTION);
                 narrative.setDataset("source");
                 narrative.setSentence("test sentence");
+                DistributionDefinition distribution =
+                        new DistributionDefinition();
+                distribution.setField("value");
+                BinDefinition all = new BinDefinition();
+                all.setId("all");
+                all.setLabel("All");
+                distribution.setBins(Collections.singletonList(all));
+                distribution.setLabelMode(
+                        DistributionDefinition.LabelMode.COUNT);
+                narrative.setDistribution(distribution);
             } else {
                 narrative.setTemplate("test template");
             }
@@ -822,6 +835,7 @@ class ReportDefinitionValidatorTest {
             boolean maxInclusive) {
         BinDefinition bin = new DistributionDefinition.BinDefinition();
         bin.setId(id);
+        bin.setLabel(id);
         bin.setMin(new BigDecimal(min));
         bin.setMinInclusive(minInclusive);
         bin.setMax(new BigDecimal(max));

@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.xn.report.config.definition.DistributionDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
+import com.xn.report.config.definition.TrendDefinition;
 import com.xn.report.support.JsonSchemaContract;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,6 +31,8 @@ class NarrativeConfigurationTest {
 
         assertThat(narrative.getSourceType())
                 .isEqualTo(NarrativeDefinition.SourceType.RULE_GENERATED);
+        assertThat(narrative.getAnalyzerType())
+                .isEqualTo(NarrativeDefinition.AnalyzerType.DISTRIBUTION);
         assertThat(narrative.getEmptyStrategy())
                 .isEqualTo(NarrativeDefinition.EmptyStrategy.OUTPUT_MESSAGE);
         assertThat(narrative.getDistribution().getLabelMode())
@@ -101,10 +105,90 @@ class NarrativeConfigurationTest {
         String crossVariant = valid.replace(
                 "\"sentence\":\"${summary.total}\"",
                 "\"sentence\":\"${summary.total}\",\"template\":\"forbidden\"");
+        String nullInclusivity = valid.replace(
+                "\"maxInclusive\":true", "\"maxInclusive\":null");
+        String nullDistribution = valid.replace(
+                "\"distribution\":{\"field\":\"hours\"",
+                "\"distribution\":null,\"unused\":{\"field\":\"hours\"");
 
         assertThat(contract.validate(mapper.readTree(valid))).isEmpty();
         assertThat(contract.validate(mapper.readTree(nullLabel))).isNotEmpty();
         assertThat(contract.validate(mapper.readTree(crossVariant))).isNotEmpty();
+        assertThat(contract.validate(mapper.readTree(nullInclusivity))).isNotEmpty();
+        assertThat(contract.validate(mapper.readTree(nullDistribution))).isNotEmpty();
+
+        JsonNode validNode = mapper.readTree(valid);
+        java.util.List<ObjectNode> invalidShapes =
+                new java.util.ArrayList<ObjectNode>();
+        ObjectNode nullId = validNode.deepCopy();
+        ((ObjectNode) nullId.path("narratives").get(0)).putNull("id");
+        invalidShapes.add(nullId);
+        ObjectNode crossBaseline = validNode.deepCopy();
+        ((ObjectNode) crossBaseline.path("narratives").get(0))
+                .put("baseline", "forbidden");
+        invalidShapes.add(crossBaseline);
+        ObjectNode nullFormat = validNode.deepCopy();
+        ((ObjectNode) nullFormat.path("narratives").get(0))
+                .putNull("format");
+        invalidShapes.add(nullFormat);
+        ObjectNode missingAnalyzerType = validNode.deepCopy();
+        ((ObjectNode) missingAnalyzerType.path("narratives").get(0))
+                .remove("analyzerType");
+        invalidShapes.add(missingAnalyzerType);
+        ObjectNode nullRuntimeDistribution = validNode.deepCopy();
+        ((ObjectNode) nullRuntimeDistribution.path("narratives").get(0))
+                .putNull("distribution");
+        invalidShapes.add(nullRuntimeDistribution);
+        ObjectNode nullBoundary = validNode.deepCopy();
+        ((ObjectNode) nullBoundary.path("narratives").get(0)
+                .path("distribution").path("bins").get(0))
+                .putNull("maxInclusive");
+        invalidShapes.add(nullBoundary);
+
+        for (ObjectNode invalid : invalidShapes) {
+            assertThat(contract.validate(invalid)).isNotEmpty();
+            ReportDefinition parsed =
+                    mapper.treeToValue(invalid, ReportDefinition.class);
+            assertThat(new ReportDefinitionValidator().validate(parsed).issues())
+                    .extracting(ValidationIssue::getCode)
+                    .contains("TEXT-001");
+        }
+    }
+
+    @Test
+    void loadsAndValidatesStronglyTypedTrendComparison() throws Exception {
+        Path path = temp.resolve("trend.yml");
+        Files.write(path, ("schemaVersion: '1.0'\n"
+                + "report: {code: demo, name: Demo}\n"
+                + "datasets:\n"
+                + "  - {id: monthly, sheetName: Monthly, sql: 'select 1'}\n"
+                + "  - {id: baseline, sheetName: Baseline, sql: 'select 1',"
+                + " resultType: SINGLE}\n"
+                + "narratives:\n"
+                + "  - id: trend\n"
+                + "    sourceType: RULE_GENERATED\n"
+                + "    analyzer: approvalTrend\n"
+                + "    analyzerType: TREND\n"
+                + "    dataset: monthly\n"
+                + "    sentence: '${summary.direction}'\n"
+                + "    trend:\n"
+                + "      periodField: month\n"
+                + "      valueField: hours\n"
+                + "      comparisonSource: DATASET_FIELD\n"
+                + "      comparisonDataset: baseline\n"
+                + "      comparisonField: standardHours\n"
+                + "      flatTolerance: 0.01\n"
+                + "      abnormalThreshold: 24\n")
+                .getBytes(StandardCharsets.UTF_8));
+
+        ReportDefinition definition =
+                ReportDefinitionLoader.createDefault().load(path);
+        TrendDefinition trend = definition.getNarratives().get(0).getTrend();
+
+        assertThat(trend.getComparisonSource())
+                .isEqualTo(TrendDefinition.ComparisonSource.DATASET_FIELD);
+        assertThat(new ReportDefinitionValidator().validate(definition).isValid())
+                .isTrue();
     }
 
     private static String validYaml() {
@@ -116,6 +200,7 @@ class NarrativeConfigurationTest {
                 + "  - id: distribution\n"
                 + "    sourceType: RULE_GENERATED\n"
                 + "    analyzer: approvalDistribution\n"
+                + "    analyzerType: DISTRIBUTION\n"
                 + "    dataset: monthly\n"
                 + "    sentence: '${summary.total}'\n"
                 + "    emptyStrategy: OUTPUT_MESSAGE\n"
@@ -135,6 +220,7 @@ class NarrativeConfigurationTest {
                 + "\"narratives\":[{\"id\":\"distribution\","
                 + "\"sourceType\":\"RULE_GENERATED\","
                 + "\"analyzer\":\"approvalDistribution\","
+                + "\"analyzerType\":\"DISTRIBUTION\","
                 + "\"dataset\":\"monthly\","
                 + "\"sentence\":\"${summary.total}\","
                 + "\"emptyStrategy\":\"OUTPUT_MESSAGE\","

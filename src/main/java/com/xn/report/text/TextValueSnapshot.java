@@ -1,6 +1,5 @@
 package com.xn.report.text;
 
-import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -65,10 +64,11 @@ final class TextValueSnapshot {
                 }
                 return Collections.unmodifiableList(copy);
             }
-            if (value.getClass().isArray()) {
+            List<Object> array = TextArrayValues.copy(value);
+            if (array != null) {
                 List<Object> copy = new ArrayList<Object>();
-                for (int index = 0; index < Array.getLength(value); index++) {
-                    copy.add(freeze(Array.get(value, index), active));
+                for (Object element : array) {
+                    copy.add(freeze(element, active));
                 }
                 return Collections.unmodifiableList(copy);
             }

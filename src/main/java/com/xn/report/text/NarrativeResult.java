@@ -12,6 +12,7 @@ public final class NarrativeResult {
     private final String analyzerId;
     private final Map<String, Object> summaryValues;
     private final boolean skipped;
+    private final Object analysisResult;
 
     NarrativeResult(
             String text,
@@ -19,13 +20,15 @@ public final class NarrativeResult {
             String datasetId,
             String analyzerId,
             Map<String, Object> summaryValues,
-            boolean skipped) {
+            boolean skipped,
+            Object analysisResult) {
         this.text = text == null ? "" : text;
         this.sourceType = sourceType;
         this.datasetId = datasetId;
         this.analyzerId = analyzerId;
         this.summaryValues = TextValueSnapshot.map(summaryValues);
         this.skipped = skipped;
+        this.analysisResult = analysisResult;
     }
 
     public String text() {
@@ -50,6 +53,10 @@ public final class NarrativeResult {
 
     public boolean skipped() {
         return skipped;
+    }
+
+    public Object analysisResult() {
+        return analysisResult;
     }
 
 }

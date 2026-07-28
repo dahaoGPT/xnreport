@@ -48,14 +48,32 @@ public final class TextRenderContext {
         if (name.indexOf('.') >= 0) {
             return Resolution.missing();
         }
+        int matchingScopes = currentRow.containsField(name) ? 1 : 0;
+        matchingScopes += summary.containsKey(name) ? 1 : 0;
+        matchingScopes += runtime.containsKey(name) ? 1 : 0;
+        for (DatasetResult result : datasets.asMap().values()) {
+            matchingScopes += result.schema().containsField(name) ? 1 : 0;
+        }
+        if (matchingScopes > 1) {
+            throw new TextRenderException(
+                    "Ambiguous unqualified placeholder: " + name);
+        }
         if (currentRow.containsField(name)) {
             return Resolution.found(currentRow.getOrNull(name));
         }
-        if (summary.containsKey(name) || runtime.containsKey(name)) {
+        if (matchingScopes == 1) {
             throw new TextRenderException(
                     "Cross-scope placeholder must be qualified: " + name);
         }
         return Resolution.missing();
+    }
+
+    DatasetContext datasets() {
+        return datasets;
+    }
+
+    Map<String, Object> runtime() {
+        return runtime;
     }
 
     private Resolution fromDataset(String name) {

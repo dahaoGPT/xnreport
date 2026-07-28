@@ -93,13 +93,13 @@ class DistributionAnalyzerTest {
                 NarrativeDefinition.EmptyStrategy.SKIP).skipped()).isTrue();
 
         DistributionDefinition explicitNull = distribution();
-        explicitNull.setLabelMode(null);
+        explicitNull.getBins().get(0).setMinInclusive(null);
         assertThatThrownBy(() -> analyzer.analyze(
                 Collections.singletonList(row("1")),
                 explicitNull,
                 NarrativeDefinition.EmptyStrategy.FAIL))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("label mode");
+                .hasMessageContaining("minInclusive");
     }
 
     private static DatasetRow row(String value) {
@@ -128,9 +128,13 @@ class DistributionAnalyzerTest {
         BinDefinition bin = new BinDefinition();
         bin.setId(id);
         bin.setLabel(label);
-        bin.setMin(min == null ? null : new BigDecimal(min));
+        if (min != null) {
+            bin.setMin(new BigDecimal(min));
+        }
         bin.setMinInclusive(minInclusive);
-        bin.setMax(max == null ? null : new BigDecimal(max));
+        if (max != null) {
+            bin.setMax(new BigDecimal(max));
+        }
         bin.setMaxInclusive(maxInclusive);
         return bin;
     }

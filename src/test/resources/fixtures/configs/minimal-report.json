@@ -19,10 +19,10 @@
       "id": "summaryNarrative",
       "sourceType": "RULE_GENERATED",
       "analyzer": "DISTRIBUTION",
+      "analyzerType": "DISTRIBUTION",
       "dataset": "summary",
-      "baseline": "summaryBaseline",
       "format": "percent:0.0",
-      "sentence": "1天内占比${within1Day.percent}",
+      "sentence": "1天内占比${summary.within1Day.percent}",
       "parameters": {
         "includeEmpty": false
       },

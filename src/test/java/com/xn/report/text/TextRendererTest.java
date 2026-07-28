@@ -13,6 +13,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import org.junit.jupiter.api.Test;
 
 class TextRendererTest {
@@ -123,5 +126,44 @@ class TextRendererTest {
                 .build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("cyclic");
+    }
+
+    @Test
+    void rejectsAmbiguousUnqualifiedNamesAcrossScopes() {
+        TextRenderContext context = TextRenderContext.builder()
+                .currentRow(TestFixtures.row("period", "row"))
+                .summary(TestFixtures.parameters("period", "summary"))
+                .runtime(TestFixtures.parameters("period", "runtime"))
+                .build();
+
+        assertThatThrownBy(() -> renderer.render("${period}", context))
+                .isInstanceOf(TextRenderException.class)
+                .hasMessageContaining("Ambiguous")
+                .hasMessageContaining("period");
+        assertThat(renderer.render(
+                "${runtime.period}/${summary.period}", context))
+                .isEqualTo("runtime/summary");
+    }
+
+    @Test
+    void textTemplateImplementationDoesNotUseReflection() throws Exception {
+        java.nio.file.Path textRoot = Paths.get(
+                "src/main/java/com/xn/report/text");
+        try (java.util.stream.Stream<java.nio.file.Path> files =
+                     Files.walk(textRoot)) {
+            java.util.Iterator<java.nio.file.Path> iterator = files
+                    .filter(path -> path.toString().endsWith(".java"))
+                    .iterator();
+            while (iterator.hasNext()) {
+                java.nio.file.Path file = iterator.next();
+                String source = new String(
+                        Files.readAllBytes(file), StandardCharsets.UTF_8);
+                assertThat(source)
+                        .as(file.toString())
+                        .doesNotContain("java.lang.reflect")
+                        .doesNotContain("Class.forName(")
+                        .doesNotContain(".getDeclared");
+            }
+        }
     }
 }

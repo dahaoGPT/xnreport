@@ -20,10 +20,16 @@ public class NarrativeDefinition {
         SKIP
     }
 
+    public enum AnalyzerType {
+        TREND,
+        DISTRIBUTION
+    }
+
     private String id;
     private SourceType sourceType;
     private String template;
     private String analyzer;
+    private AnalyzerType analyzerType;
     private String dataset;
     private String baseline;
     private String format;
@@ -31,6 +37,7 @@ public class NarrativeDefinition {
     private EmptyStrategy emptyStrategy = EmptyStrategy.OUTPUT_MESSAGE;
     private Map<String, Object> parameters = new LinkedHashMap<String, Object>();
     private DistributionDefinition distribution = new DistributionDefinition();
+    private TrendDefinition trend;
     @JsonIgnore
     private final Set<String> presentProperties = new LinkedHashSet<String>();
 
@@ -68,6 +75,15 @@ public class NarrativeDefinition {
     public void setAnalyzer(String analyzer) {
         mark("analyzer");
         this.analyzer = analyzer;
+    }
+
+    public AnalyzerType getAnalyzerType() {
+        return analyzerType;
+    }
+
+    public void setAnalyzerType(AnalyzerType analyzerType) {
+        mark("analyzerType");
+        this.analyzerType = analyzerType;
     }
 
     public String getDataset() {
@@ -131,6 +147,15 @@ public class NarrativeDefinition {
     public void setDistribution(DistributionDefinition distribution) {
         mark("distribution");
         this.distribution = distribution;
+    }
+
+    public TrendDefinition getTrend() {
+        return trend;
+    }
+
+    public void setTrend(TrendDefinition trend) {
+        mark("trend");
+        this.trend = trend;
     }
 
     @JsonIgnore

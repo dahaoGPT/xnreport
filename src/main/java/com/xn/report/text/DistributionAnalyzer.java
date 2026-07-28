@@ -163,8 +163,10 @@ public final class DistributionAnalyzer {
 
     private static void requireDefinition(DistributionDefinition definition) {
         if (definition == null
+                || !definition.hasProperty("field")
                 || definition.getField() == null
                 || definition.getField().trim().isEmpty()
+                || !definition.hasProperty("bins")
                 || definition.getBins() == null
                 || definition.getBins().isEmpty()
                 || !definition.hasProperty("labelMode")
@@ -178,13 +180,21 @@ public final class DistributionAnalyzer {
         for (int index = 0; index < bins.size(); index++) {
             BinDefinition bin = bins.get(index);
             if (bin == null
+                    || !bin.hasProperty("id")
                     || bin.getId() == null
                     || bin.getId().trim().isEmpty()
+                    || !bin.hasProperty("label")
                     || bin.getLabel() == null
                     || bin.getLabel().trim().isEmpty()) {
                 throw new IllegalArgumentException(
                         "Distribution bin id and label are required");
             }
+            rejectExplicitNull(bin, "min", bin.getMin());
+            rejectExplicitNull(bin, "max", bin.getMax());
+            rejectExplicitNull(
+                    bin, "minInclusive", bin.getMinInclusive());
+            rejectExplicitNull(
+                    bin, "maxInclusive", bin.getMaxInclusive());
             if (bin.getMin() != null && bin.getMax() != null) {
                 int comparison = bin.getMin().compareTo(bin.getMax());
                 if (comparison > 0
@@ -201,6 +211,14 @@ public final class DistributionAnalyzer {
                                     + bins.get(prior).getId() + " and " + bin.getId());
                 }
             }
+        }
+    }
+
+    private static void rejectExplicitNull(
+            BinDefinition bin, String property, Object value) {
+        if (bin.hasProperty(property) && value == null) {
+            throw new IllegalArgumentException(
+                    "Distribution bin " + property + " must not be null");
         }
     }
 

@@ -15,6 +15,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -131,6 +132,60 @@ class SqlParameterResolverTest {
                 emptySingleContext))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no row");
+    }
+
+    @Test
+    void deeplyCopiesMapsArraysAndCalendarsOnInputAndRead() {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(123456789L);
+        int[] numbers = new int[] {1, 2};
+        List<String> names = new ArrayList<String>(Arrays.asList("A", "B"));
+        Map<String, Object> nested = new LinkedHashMap<String, Object>();
+        nested.put("calendar", calendar);
+        nested.put("numbers", numbers);
+        nested.put("names", names);
+        Map<String, Object> input = new LinkedHashMap<String, Object>();
+        input.put("payload", nested);
+
+        ResolvedSqlParameters resolved = new ResolvedSqlParameters(input);
+        calendar.setTimeInMillis(999L);
+        numbers[0] = 9;
+        names.add("C");
+        nested.put("late", "leak");
+
+        Map<String, Object> firstPayload =
+                (Map<String, Object>) resolved.asMap().get("payload");
+        assertThat(((Calendar) firstPayload.get("calendar")).getTimeInMillis())
+                .isEqualTo(123456789L);
+        assertThat((int[]) firstPayload.get("numbers")).containsExactly(1, 2);
+        assertThat(firstPayload.get("names")).isEqualTo(Arrays.asList("A", "B"));
+        assertThat(firstPayload).doesNotContainKey("late");
+        assertThatThrownBy(() -> firstPayload.put("late", "blocked"))
+                .isInstanceOf(UnsupportedOperationException.class);
+
+        ((Calendar) firstPayload.get("calendar")).setTimeInMillis(1L);
+        ((int[]) firstPayload.get("numbers"))[0] = 7;
+        Map<String, Object> secondPayload =
+                (Map<String, Object>) resolved.asMap().get("payload");
+        assertThat(((Calendar) secondPayload.get("calendar")).getTimeInMillis())
+                .isEqualTo(123456789L);
+        assertThat((int[]) secondPayload.get("numbers")).containsExactly(1, 2);
+    }
+
+    @Test
+    void rejectsUnsupportedMutableAndCyclicParameterValues() {
+        Map<String, Object> unsupported = Collections.<String, Object>singletonMap(
+                "builder", new StringBuilder("mutable"));
+        List<Object> cycle = new ArrayList<Object>();
+        cycle.add(cycle);
+
+        assertThatThrownBy(() -> new ResolvedSqlParameters(unsupported))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported mutable");
+        assertThatThrownBy(() -> new ResolvedSqlParameters(
+                Collections.<String, Object>singletonMap("cycle", cycle)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Cyclic");
     }
 
     private static DatasetDefinition definition(

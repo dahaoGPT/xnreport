@@ -56,7 +56,9 @@ public final class ReadOnlySqlGuard {
                     || state == State.DOUBLE_QUOTE
                     || state == State.BACKTICK) {
                 char delimiter = delimiter(state);
-                if (current == '\\' && index + 1 < sql.length()) {
+                if (state != State.BACKTICK
+                        && current == '\\'
+                        && index + 1 < sql.length()) {
                     index++;
                 } else if (current == delimiter) {
                     if (next == delimiter) {

@@ -60,4 +60,12 @@ class ReadOnlySqlGuardTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("DELETE");
     }
+
+    @Test
+    void backslashDoesNotEscapeBacktickAndHideASecondStatement() {
+        String sql = "SELECT `safe\\`; DELETE FROM t -- `";
+
+        assertThatThrownBy(() -> guard.validate(sql))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

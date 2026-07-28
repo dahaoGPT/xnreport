@@ -15,7 +15,7 @@ class ReadOnlySqlGuardTest {
         "select * from t",
         " -- report\n SELECT ';' AS semicolon",
         "# mysql comment\r\n/* report */ SELECT col FROM t WHERE name = :name",
-        "SELECT 'it\\'s; safe', \"a;name\", `semi;column` FROM `report`;",
+        "SELECT 'it''s; safe', \"a;name\", `semi;column` FROM `report`;",
         "SELECT 'DELETE FROM t' AS statement_text /* UPDATE ignored */ FROM audit",
         "SELECT last_update AS update_time FROM audit -- trailing comment\n;"
     })
@@ -65,6 +65,16 @@ class ReadOnlySqlGuardTest {
     void backslashDoesNotEscapeBacktickAndHideASecondStatement() {
         String sql = "SELECT `safe\\`; DELETE FROM t -- `";
 
+        assertThatThrownBy(() -> guard.validate(sql))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT 'x\\' INTO OUTFILE '/tmp/leak' -- '",
+        "SELECT \"x\\\" INTO OUTFILE '/tmp/leak' -- \""
+    })
+    void rejectsSqlUnsafeUnderAlternateMysqlLexerModes(String sql) {
         assertThatThrownBy(() -> guard.validate(sql))
                 .isInstanceOf(IllegalArgumentException.class);
     }

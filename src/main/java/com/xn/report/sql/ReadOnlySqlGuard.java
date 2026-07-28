@@ -25,11 +25,50 @@ public final class ReadOnlySqlGuard {
         BLOCK_COMMENT
     }
 
+    private enum LexerMode {
+        DEFAULT(true, true),
+        NO_BACKSLASH_ESCAPES(false, false),
+        ANSI_QUOTES(true, false),
+        ANSI_QUOTES_NO_BACKSLASH_ESCAPES(false, false);
+
+        private final boolean singleQuoteBackslashEscapes;
+        private final boolean doubleQuoteBackslashEscapes;
+
+        LexerMode(
+                boolean singleQuoteBackslashEscapes,
+                boolean doubleQuoteBackslashEscapes) {
+            this.singleQuoteBackslashEscapes = singleQuoteBackslashEscapes;
+            this.doubleQuoteBackslashEscapes = doubleQuoteBackslashEscapes;
+        }
+
+        private boolean backslashEscapes(State state) {
+            if (state == State.SINGLE_QUOTE) {
+                return singleQuoteBackslashEscapes;
+            }
+            if (state == State.DOUBLE_QUOTE) {
+                return doubleQuoteBackslashEscapes;
+            }
+            return false;
+        }
+    }
+
     public void validate(String sql) {
         if (sql == null) {
             throw new IllegalArgumentException("SQL must not be null");
         }
+        for (LexerMode mode : LexerMode.values()) {
+            try {
+                validate(sql, mode);
+            } catch (IllegalArgumentException exception) {
+                throw new IllegalArgumentException(
+                        "SQL is unsafe under MySQL lexer mode "
+                                + mode + ": " + exception.getMessage(),
+                        exception);
+            }
+        }
+    }
 
+    private void validate(String sql, LexerMode mode) {
         List<String> tokens = new ArrayList<String>();
         StringBuilder token = new StringBuilder();
         State state = State.NORMAL;
@@ -56,7 +95,7 @@ public final class ReadOnlySqlGuard {
                     || state == State.DOUBLE_QUOTE
                     || state == State.BACKTICK) {
                 char delimiter = delimiter(state);
-                if (state != State.BACKTICK
+                if (mode.backslashEscapes(state)
                         && current == '\\'
                         && index + 1 < sql.length()) {
                     index++;

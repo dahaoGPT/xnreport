@@ -8,6 +8,11 @@ import static org.mockito.Mockito.when;
 
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetSchema;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
+import java.io.StringReader;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Blob;
@@ -143,96 +148,110 @@ class ResultSetRowMapperTest {
     }
 
     @Test
-    void convertsJdbcClobToStringAndReleasesIt() throws Exception {
-        Clob clob = mock(Clob.class);
-        when(clob.length()).thenReturn(5L);
-        when(clob.getSubString(1L, 5)).thenReturn("hello");
-
-        DatasetRow row = new ResultSetRowMapper().map(resultSet(
-                new String[] {"description"},
-                new int[] {Types.CLOB},
-                new Object[] {clob}));
-
-        assertThat(row.get("description")).isEqualTo("hello");
-        verify(clob).free();
+    void defaultsLobLimitsToSixteenMebibytes() {
+        assertThat(ResultSetRowMapper.DEFAULT_MAX_LOB_CHARS)
+                .isEqualTo(16 * 1024 * 1024);
+        assertThat(ResultSetRowMapper.DEFAULT_MAX_LOB_BYTES)
+                .isEqualTo(16 * 1024 * 1024);
     }
 
     @Test
-    void releasesClobAndBlobWhenLengthFails() throws Exception {
-        Clob clob = mock(Clob.class);
-        Blob blob = mock(Blob.class);
-        when(clob.length()).thenThrow(new SQLException("clob length failed"));
-        when(blob.length()).thenThrow(new SQLException("blob length failed"));
-
-        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
-                new String[] {"description"},
-                new int[] {Types.CLOB},
-                new Object[] {clob})))
-                .isInstanceOf(SQLException.class)
-                .hasMessageContaining("clob length failed");
-        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
-                new String[] {"payload"},
-                new int[] {Types.BLOB},
-                new Object[] {blob})))
-                .isInstanceOf(SQLException.class)
-                .hasMessageContaining("blob length failed");
-
-        verify(clob).free();
-        verify(blob).free();
-    }
-
-    @Test
-    void releasesClobAndBlobWhenReadFails() throws Exception {
-        Clob clob = mock(Clob.class);
-        Blob blob = mock(Blob.class);
-        when(clob.length()).thenReturn(3L);
-        when(clob.getSubString(1L, 3))
-                .thenThrow(new SQLException("clob read failed"));
-        when(blob.length()).thenReturn(3L);
-        when(blob.getBytes(1L, 3))
-                .thenThrow(new SQLException("blob read failed"));
-
-        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
-                new String[] {"description"},
-                new int[] {Types.CLOB},
-                new Object[] {clob})))
-                .isInstanceOf(SQLException.class)
-                .hasMessageContaining("clob read failed");
-        assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
-                new String[] {"payload"},
-                new int[] {Types.BLOB},
-                new Object[] {blob})))
-                .isInstanceOf(SQLException.class)
-                .hasMessageContaining("blob read failed");
-
-        verify(clob).free();
-        verify(blob).free();
-    }
-
-    @Test
-    void releasesClobAndBlobWhenLengthExceedsSupportedLimit()
+    void streamsClobAndBlobAtConfiguredBoundaryThenClosesAndFreesThem()
             throws Exception {
         Clob clob = mock(Clob.class);
         Blob blob = mock(Blob.class);
-        long oversized = (long) Integer.MAX_VALUE + 1L;
-        when(clob.length()).thenReturn(oversized);
-        when(blob.length()).thenReturn(oversized);
+        CloseTrackingReader reader = new CloseTrackingReader("abc");
+        CloseTrackingInputStream stream =
+                new CloseTrackingInputStream(new byte[] {1, 2, 3});
+        when(clob.getCharacterStream()).thenReturn(reader);
+        when(blob.getBinaryStream()).thenReturn(stream);
+
+        DatasetRow row = new ResultSetRowMapper(3, 3).map(resultSet(
+                new String[] {"description", "payload"},
+                new int[] {Types.CLOB, Types.BLOB},
+                new Object[] {clob, blob}));
+
+        assertThat(row.get("description")).isEqualTo("abc");
+        assertThat((byte[]) row.get("payload")).containsExactly(1, 2, 3);
+        assertThat(reader.closed()).isTrue();
+        assertThat(stream.closed()).isTrue();
+        verify(clob).free();
+        verify(blob).free();
+    }
+
+    @Test
+    void rejectsClobAndBlobAsSoonAsStreamExceedsConfiguredLimit()
+            throws Exception {
+        Clob clob = mock(Clob.class);
+        Blob blob = mock(Blob.class);
+        CloseTrackingReader reader = new CloseTrackingReader("abcd");
+        CloseTrackingInputStream stream =
+                new CloseTrackingInputStream(new byte[] {1, 2, 3, 4});
+        when(clob.getCharacterStream()).thenReturn(reader);
+        when(blob.getBinaryStream()).thenReturn(stream);
+        ResultSetRowMapper mapper = new ResultSetRowMapper(3, 3);
+
+        assertThatThrownBy(() -> mapper.map(resultSet(
+                new String[] {"description"},
+                new int[] {Types.CLOB},
+                new Object[] {clob})))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("description")
+                .hasMessageContaining("3");
+        assertThatThrownBy(() -> mapper.map(resultSet(
+                new String[] {"payload"},
+                new int[] {Types.BLOB},
+                new Object[] {blob})))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("payload")
+                .hasMessageContaining("3");
+
+        assertThat(reader.closed()).isTrue();
+        assertThat(stream.closed()).isTrue();
+        verify(clob).free();
+        verify(blob).free();
+    }
+
+    @Test
+    void closesAndFreesClobAndBlobWhenStreamReadFails() throws Exception {
+        Clob clob = mock(Clob.class);
+        Blob blob = mock(Blob.class);
+        FailingReader reader = new FailingReader();
+        FailingInputStream stream = new FailingInputStream();
+        when(clob.getCharacterStream()).thenReturn(reader);
+        when(blob.getBinaryStream()).thenReturn(stream);
 
         assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
                 new String[] {"description"},
                 new int[] {Types.CLOB},
                 new Object[] {clob})))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("too large");
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("description")
+                .hasCauseInstanceOf(IOException.class);
         assertThatThrownBy(() -> new ResultSetRowMapper().map(resultSet(
                 new String[] {"payload"},
                 new int[] {Types.BLOB},
                 new Object[] {blob})))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("too large");
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("payload")
+                .hasCauseInstanceOf(IOException.class);
 
+        assertThat(reader.closed()).isTrue();
+        assertThat(stream.closed()).isTrue();
         verify(clob).free();
         verify(blob).free();
+    }
+
+    @Test
+    void rejectsByteArrayAboveConfiguredBinaryLimitBeforeCopying()
+            throws Exception {
+        assertThatThrownBy(() -> new ResultSetRowMapper(3, 2).map(resultSet(
+                new String[] {"payload"},
+                new int[] {Types.VARBINARY},
+                new Object[] {new byte[] {1, 2, 3}})))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("payload")
+                .hasMessageContaining("2");
     }
 
     @Test
@@ -289,5 +308,89 @@ class ResultSetRowMapperTest {
             when(metadata.getColumnType(index + 1)).thenReturn(columnTypes[index]);
         }
         return metadata;
+    }
+
+    private static final class CloseTrackingReader extends StringReader {
+
+        private boolean closed;
+
+        private CloseTrackingReader(String value) {
+            super(value);
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+            super.close();
+        }
+
+        private boolean closed() {
+            return closed;
+        }
+    }
+
+    private static final class CloseTrackingInputStream
+            extends ByteArrayInputStream {
+
+        private boolean closed;
+
+        private CloseTrackingInputStream(byte[] value) {
+            super(value);
+        }
+
+        @Override
+        public void close() throws IOException {
+            closed = true;
+            super.close();
+        }
+
+        private boolean closed() {
+            return closed;
+        }
+    }
+
+    private static final class FailingReader extends Reader {
+
+        private boolean closed;
+
+        @Override
+        public int read(char[] buffer, int offset, int length)
+                throws IOException {
+            throw new IOException("reader failed");
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        private boolean closed() {
+            return closed;
+        }
+    }
+
+    private static final class FailingInputStream extends InputStream {
+
+        private boolean closed;
+
+        @Override
+        public int read() throws IOException {
+            throw new IOException("stream failed");
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length)
+                throws IOException {
+            throw new IOException("stream failed");
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+
+        private boolean closed() {
+            return closed;
+        }
     }
 }

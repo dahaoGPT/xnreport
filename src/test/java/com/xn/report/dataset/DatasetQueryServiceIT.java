@@ -32,7 +32,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -62,16 +61,16 @@ class DatasetQueryServiceIT {
     @BeforeAll
     static void startDatabase() throws Exception {
         assumeTrue(
-                dockerFixtureAvailable(),
-                "Docker or required local MySQL 5.7 images are unavailable; IT skipped");
+                dockerDaemonAvailable(),
+                "Docker daemon is unavailable; integration test skipped");
         MYSQL.start();
         createFixtureData();
 
         dataSource = new DriverManagerDataSource(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
-        service = createService(new BiConsumer<DatasetDefinition, DatasetResult>() {
+        service = createService(new DatasetExecutionObserver() {
             @Override
-            public void accept(
+            public void afterExecution(
                     DatasetDefinition definition, DatasetResult result) {
                 // No-op production path.
             }
@@ -79,7 +78,7 @@ class DatasetQueryServiceIT {
     }
 
     private static DatasetQueryService createService(
-            BiConsumer<DatasetDefinition, DatasetResult> executionObserver) {
+            DatasetExecutionObserver executionObserver) {
         TransactionalDatasetQueryService target =
                 new TransactionalDatasetQueryService(
                         new DatasetPlanner(),
@@ -175,9 +174,9 @@ class DatasetQueryServiceIT {
         Thread updater = updateSnapshotAfterSignal(
                 updateRequested, updateCommitted, updaterFailure);
         DatasetQueryService observedService = createService(
-                new BiConsumer<DatasetDefinition, DatasetResult>() {
+                new DatasetExecutionObserver() {
                     @Override
-                    public void accept(
+                    public void afterExecution(
                             DatasetDefinition definition, DatasetResult result) {
                         if (!"snapshotBefore".equals(definition.getId())) {
                             return;
@@ -210,10 +209,18 @@ class DatasetQueryServiceIT {
                 });
 
         updater.start();
-        DatasetContext context = observedService.executeAll(
-                TestFixtures.report(snapshotAfter(), snapshotBefore()),
-                TestFixtures.parameters("snapshotId", 1L));
-        updater.join(10000L);
+        DatasetContext context;
+        try {
+            context = observedService.executeAll(
+                    TestFixtures.report(snapshotAfter(), snapshotBefore()),
+                    TestFixtures.parameters("snapshotId", 1L));
+        } finally {
+            updateRequested.countDown();
+            updater.join(10000L);
+            assertThat(updater.isAlive())
+                    .as("snapshot updater thread terminated")
+                    .isFalse();
+        }
 
         assertThat(transactionActive.get()).isTrue();
         assertThat(readOnly.get()).isTrue();
@@ -235,9 +242,9 @@ class DatasetQueryServiceIT {
         resetSnapshotState("stable", 1L);
         AtomicInteger completionStatus = new AtomicInteger(-1);
         DatasetQueryService observedService = createService(
-                new BiConsumer<DatasetDefinition, DatasetResult>() {
+                new DatasetExecutionObserver() {
                     @Override
-                    public void accept(
+                    public void afterExecution(
                             DatasetDefinition definition, DatasetResult result) {
                         if ("snapshotBefore".equals(definition.getId())) {
                             TransactionSynchronizationManager.registerSynchronization(
@@ -373,17 +380,9 @@ class DatasetQueryServiceIT {
         return field;
     }
 
-    private static boolean dockerFixtureAvailable() {
+    private static boolean dockerDaemonAvailable() {
         try {
-            DockerClientFactory factory = DockerClientFactory.instance();
-            if (!factory.isDockerAvailable()) {
-                return false;
-            }
-            DockerClientFactory.lazyClient()
-                    .inspectImageCmd("mysql:5.7.44").exec();
-            DockerClientFactory.lazyClient()
-                    .inspectImageCmd("testcontainers/ryuk:0.3.4").exec();
-            return true;
+            return DockerClientFactory.instance().isDockerAvailable();
         } catch (RuntimeException exception) {
             return false;
         }

@@ -2,6 +2,10 @@ package com.xn.report.sql;
 
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetSchema;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Blob;
@@ -20,6 +24,22 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class ResultSetRowMapper {
+
+    public static final int DEFAULT_MAX_LOB_CHARS = 16 * 1024 * 1024;
+    public static final int DEFAULT_MAX_LOB_BYTES = 16 * 1024 * 1024;
+    private static final int LOB_BUFFER_SIZE = 8 * 1024;
+
+    private final int maxLobChars;
+    private final int maxLobBytes;
+
+    public ResultSetRowMapper() {
+        this(DEFAULT_MAX_LOB_CHARS, DEFAULT_MAX_LOB_BYTES);
+    }
+
+    public ResultSetRowMapper(int maxLobChars, int maxLobBytes) {
+        this.maxLobChars = requirePositive("maxLobChars", maxLobChars);
+        this.maxLobBytes = requirePositive("maxLobBytes", maxLobBytes);
+    }
 
     public DatasetSchema schema(ResultSetMetaData metadata) throws SQLException {
         if (metadata == null) {
@@ -67,7 +87,7 @@ public final class ResultSetRowMapper {
         return DatasetRow.of(pairs);
     }
 
-    private static Object normalize(
+    private Object normalize(
             String label, int columnType, Object value) throws SQLException {
         if (value == null) {
             return null;
@@ -117,17 +137,7 @@ public final class ResultSetRowMapper {
         }
         if (isCharacter(columnType)) {
             if (value instanceof Clob) {
-                Clob clob = (Clob) value;
-                try {
-                    long length = clob.length();
-                    if (length > Integer.MAX_VALUE) {
-                        throw new IllegalArgumentException(
-                                "JDBC character column " + label + " is too large");
-                    }
-                    return clob.getSubString(1L, (int) length);
-                } finally {
-                    clob.free();
-                }
+                return readClob(label, (Clob) value);
             }
             return String.valueOf(value);
         }
@@ -135,7 +145,7 @@ public final class ResultSetRowMapper {
             return normalizeBinary(label, columnType, value);
         }
         if (value instanceof byte[]) {
-            return ((byte[]) value).clone();
+            return copyBinary(label, (byte[]) value);
         }
         return value;
     }
@@ -198,25 +208,98 @@ public final class ResultSetRowMapper {
         throw incompatible(label, columnType, value);
     }
 
-    private static byte[] normalizeBinary(
+    private byte[] normalizeBinary(
             String label, int columnType, Object value) throws SQLException {
         if (value instanceof byte[]) {
-            return ((byte[]) value).clone();
+            return copyBinary(label, (byte[]) value);
         }
         if (value instanceof Blob) {
-            Blob blob = (Blob) value;
-            try {
-                long length = blob.length();
-                if (length > Integer.MAX_VALUE) {
-                    throw new IllegalArgumentException(
-                            "JDBC binary column " + label + " is too large");
-                }
-                return blob.getBytes(1L, (int) length);
-            } finally {
-                blob.free();
-            }
+            return readBlob(label, (Blob) value);
         }
         throw incompatible(label, columnType, value);
+    }
+
+    private String readClob(String label, Clob clob) throws SQLException {
+        try {
+            try (Reader reader = clob.getCharacterStream()) {
+                if (reader == null) {
+                    throw new SQLException(
+                            "JDBC character column " + label
+                                    + " returned a null character stream");
+                }
+                StringBuilder value = new StringBuilder(
+                        Math.min(maxLobChars, LOB_BUFFER_SIZE));
+                char[] buffer = new char[LOB_BUFFER_SIZE];
+                int total = 0;
+                int count;
+                while ((count = reader.read(buffer, 0, buffer.length)) != -1) {
+                    if (count > maxLobChars - total) {
+                        throw lobTooLarge(label, "character", maxLobChars);
+                    }
+                    value.append(buffer, 0, count);
+                    total += count;
+                }
+                return value.toString();
+            } catch (IOException exception) {
+                throw new SQLException(
+                        "Failed to read JDBC character column " + label,
+                        exception);
+            }
+        } finally {
+            clob.free();
+        }
+    }
+
+    private byte[] readBlob(String label, Blob blob) throws SQLException {
+        try {
+            try (InputStream stream = blob.getBinaryStream()) {
+                if (stream == null) {
+                    throw new SQLException(
+                            "JDBC binary column " + label
+                                    + " returned a null binary stream");
+                }
+                ByteArrayOutputStream value = new ByteArrayOutputStream(
+                        Math.min(maxLobBytes, LOB_BUFFER_SIZE));
+                byte[] buffer = new byte[LOB_BUFFER_SIZE];
+                int total = 0;
+                int count;
+                while ((count = stream.read(buffer, 0, buffer.length)) != -1) {
+                    if (count > maxLobBytes - total) {
+                        throw lobTooLarge(label, "binary", maxLobBytes);
+                    }
+                    value.write(buffer, 0, count);
+                    total += count;
+                }
+                return value.toByteArray();
+            } catch (IOException exception) {
+                throw new SQLException(
+                        "Failed to read JDBC binary column " + label,
+                        exception);
+            }
+        } finally {
+            blob.free();
+        }
+    }
+
+    private byte[] copyBinary(String label, byte[] value) {
+        if (value.length > maxLobBytes) {
+            throw lobTooLarge(label, "binary", maxLobBytes);
+        }
+        return value.clone();
+    }
+
+    private static IllegalArgumentException lobTooLarge(
+            String label, String kind, int maximum) {
+        return new IllegalArgumentException(
+                "JDBC " + kind + " column " + label
+                        + " exceeded configured limit " + maximum);
+    }
+
+    private static int requirePositive(String name, int value) {
+        if (value < 1) {
+            throw new IllegalArgumentException(name + " must be positive");
+        }
+        return value;
     }
 
     private static boolean isInteger(int columnType) {

@@ -26,13 +26,33 @@ public final class NamedSqlExecutor {
     private final ResultSetRowMapper rowMapper;
 
     public NamedSqlExecutor(DataSource dataSource) {
+        this(
+                dataSource,
+                ResultSetRowMapper.DEFAULT_MAX_LOB_CHARS,
+                ResultSetRowMapper.DEFAULT_MAX_LOB_BYTES);
+    }
+
+    public NamedSqlExecutor(
+            DataSource dataSource, int maxLobChars, int maxLobBytes) {
         this(new NamedParameterJdbcTemplate(
-                Objects.requireNonNull(dataSource, "dataSource")));
+                        Objects.requireNonNull(dataSource, "dataSource")),
+                maxLobChars,
+                maxLobBytes);
     }
 
     public NamedSqlExecutor(NamedParameterJdbcTemplate jdbcTemplate) {
+        this(
+                jdbcTemplate,
+                ResultSetRowMapper.DEFAULT_MAX_LOB_CHARS,
+                ResultSetRowMapper.DEFAULT_MAX_LOB_BYTES);
+    }
+
+    public NamedSqlExecutor(
+            NamedParameterJdbcTemplate jdbcTemplate,
+            int maxLobChars,
+            int maxLobBytes) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate");
-        this.rowMapper = new ResultSetRowMapper();
+        this.rowMapper = new ResultSetRowMapper(maxLobChars, maxLobBytes);
     }
 
     public SqlQueryResult query(

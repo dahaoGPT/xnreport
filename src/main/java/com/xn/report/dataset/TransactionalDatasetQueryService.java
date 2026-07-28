@@ -10,7 +10,6 @@ import com.xn.report.sql.SqlParameterResolver;
 import com.xn.report.sql.SqlQueryResult;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.BiConsumer;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +18,14 @@ public class TransactionalDatasetQueryService
 
     public static final int DEFAULT_QUERY_TIMEOUT_SECONDS = 60;
     public static final int DEFAULT_MAX_ROWS = 10000;
+    private static final DatasetExecutionObserver NO_OP_OBSERVER =
+            new DatasetExecutionObserver() {
+                @Override
+                public void afterExecution(
+                        DatasetDefinition definition, DatasetResult result) {
+                    // No-op production path.
+                }
+            };
 
     private final DatasetPlanner planner;
     private final SqlFileRepository sqlFileRepository;
@@ -26,7 +33,7 @@ public class TransactionalDatasetQueryService
     private final SqlParameterResolver parameterResolver;
     private final NamedSqlExecutor executor;
     private final DatasetResultValidator resultValidator;
-    private final BiConsumer<DatasetDefinition, DatasetResult> executionObserver;
+    private final DatasetExecutionObserver executionObserver;
 
     public TransactionalDatasetQueryService(
             DatasetPlanner planner,
@@ -42,24 +49,17 @@ public class TransactionalDatasetQueryService
                 parameterResolver,
                 executor,
                 resultValidator,
-                new BiConsumer<DatasetDefinition, DatasetResult>() {
-                    @Override
-                    public void accept(
-                            DatasetDefinition definition,
-                            DatasetResult result) {
-                        // No-op by default.
-                    }
-                });
+                NO_OP_OBSERVER);
     }
 
-    public TransactionalDatasetQueryService(
+    TransactionalDatasetQueryService(
             DatasetPlanner planner,
             SqlFileRepository sqlFileRepository,
             ReadOnlySqlGuard sqlGuard,
             SqlParameterResolver parameterResolver,
             NamedSqlExecutor executor,
             DatasetResultValidator resultValidator,
-            BiConsumer<DatasetDefinition, DatasetResult> executionObserver) {
+            DatasetExecutionObserver executionObserver) {
         this.planner = Objects.requireNonNull(planner, "planner");
         this.sqlFileRepository =
                 Objects.requireNonNull(sqlFileRepository, "sqlFileRepository");
@@ -88,7 +88,7 @@ public class TransactionalDatasetQueryService
             DatasetResult result = executeOne(
                     dataset, runtimeParameters, context.buildView());
             context.put(result);
-            executionObserver.accept(dataset, result);
+            executionObserver.afterExecution(dataset, result);
         }
         return context.build();
     }

@@ -16,8 +16,11 @@ import com.xn.report.transform.Direction;
 import com.xn.report.transform.NullOrder;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collections;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -257,6 +260,91 @@ class RuleEngineTest {
                 .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_001);
     }
 
+    @Test
+    void explicitNullResultIsRule001ButOmittedResultUsesDefaults() {
+        RuleDefinition definition = basicConfiguredRule("resultPresence");
+        definition.setResult(null);
+
+        assertThatThrownBy(() -> engine.evaluate(
+                definition, TestFixtures.personAnnual(), emptyContext()))
+                .isInstanceOf(ReportException.class)
+                .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_001);
+
+        RuleDefinition omitted = basicConfiguredRule("resultOmitted");
+        assertThat(engine.evaluate(
+                omitted, TestFixtures.personAnnual(), emptyContext())
+                .getMatchedRows()).hasSize(1);
+    }
+
+    @Test
+    void resultSnapshotsNestedMutableValuesAndRejectsCyclesAndUnknownTypes() {
+        Date date = new Date(1_000L);
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(2_000L);
+        int[] array = new int[] {1, 2};
+        List<Object> nested = new ArrayList<Object>();
+        nested.add(date);
+        nested.add(array);
+        Map<String, Object> summary = new LinkedHashMap<String, Object>();
+        summary.put("nested", nested);
+        summary.put("calendar", calendar);
+
+        RuleResult result = new RuleResult(
+                "immutable",
+                Collections.<DatasetRow>emptyList(),
+                Collections.<String, RuleGroupResult>emptyMap(),
+                null,
+                summary);
+
+        date.setTime(9_000L);
+        calendar.setTimeInMillis(9_000L);
+        array[0] = 9;
+        nested.clear();
+        Map<String, Object> firstRead = result.getSummaryValues();
+        @SuppressWarnings("unchecked")
+        List<Object> frozenNested = (List<Object>) firstRead.get("nested");
+        assertThat(((Date) frozenNested.get(0)).getTime()).isEqualTo(1_000L);
+        assertThat(frozenNested.get(1)).isEqualTo(Arrays.asList(1, 2));
+        assertThat(((Calendar) firstRead.get("calendar")).getTimeInMillis())
+                .isEqualTo(2_000L);
+
+        ((Date) frozenNested.get(0)).setTime(8_000L);
+        assertThat(((Date) ((List<?>) result.getSummaryValues().get("nested"))
+                .get(0)).getTime()).isEqualTo(1_000L);
+
+        Date groupDate = new Date(3_000L);
+        RuleGroupResult group = new RuleGroupResult(
+                "group",
+                Collections.<DatasetRow>emptyList(),
+                Collections.<String, Object>singletonMap("date", groupDate));
+        groupDate.setTime(7_000L);
+        assertThat(((Date) group.getSummaryValues().get("date")).getTime())
+                .isEqualTo(3_000L);
+        ((Date) group.getSummaryValues().get("date")).setTime(8_000L);
+        assertThat(((Date) group.getSummaryValues().get("date")).getTime())
+                .isEqualTo(3_000L);
+
+        List<Object> cycle = new ArrayList<Object>();
+        cycle.add(cycle);
+        assertThatThrownBy(() -> new RuleResult(
+                "cycle",
+                Collections.<DatasetRow>emptyList(),
+                Collections.<String, RuleGroupResult>emptyMap(),
+                null,
+                Collections.<String, Object>singletonMap("cycle", cycle)))
+                .isInstanceOf(ReportException.class)
+                .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_001);
+        assertThatThrownBy(() -> new RuleResult(
+                "unknown",
+                Collections.<DatasetRow>emptyList(),
+                Collections.<String, RuleGroupResult>emptyMap(),
+                null,
+                Collections.<String, Object>singletonMap(
+                        "unknown", new StringBuilder("mutable"))))
+                .isInstanceOf(ReportException.class)
+                .extracting("errorCode").isEqualTo(ReportErrorCode.RULE_001);
+    }
+
     private void assertMatches(
             DatasetRow row,
             RuleEvaluationContext context,
@@ -274,6 +362,18 @@ class RuleEngineTest {
         return new RuleEvaluationContext(
                 DatasetContext.builder().build(),
                 Collections.<String, Object>emptyMap());
+    }
+
+    private static RuleDefinition basicConfiguredRule(String id) {
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId(id);
+        definition.setDataset("personAnnual");
+        ConditionDefinition condition = new ConditionDefinition();
+        condition.setOperator(ConditionDefinition.Operator.GT);
+        condition.setLeft(currentFieldDefinition("avgHours"));
+        condition.setRight(literalDefinition(new BigDecimal("10")));
+        definition.setCondition(condition);
+        return definition;
     }
 
     private static ValueReferenceDefinition currentFieldDefinition(String field) {

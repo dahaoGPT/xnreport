@@ -72,7 +72,12 @@ public final class ReportDefinitionValidator {
         if (definition.isRulesExplicitNull()) {
             result.add("RULE-001", "$.rules", "rules must not be null");
         }
-        validateRules(definition.getRules(), datasets, datasetIds, result);
+        validateRules(
+                definition.getRules(),
+                datasets,
+                datasetIds,
+                definition.getParameters(),
+                result);
         Set<String> narrativeIds =
                 validateNarratives(definition.getNarratives(), datasetIds, result);
         validateWord(definition.getWord(), narrativeIds, result);
@@ -83,12 +88,17 @@ public final class ReportDefinitionValidator {
             List<RuleDefinition> rules,
             List<DatasetDefinition> datasets,
             Set<String> datasetIds,
+            Map<String, ParameterDefinition> parameters,
             ValidationResult result) {
         Map<String, DatasetType> datasetTypes =
                 new LinkedHashMap<String, DatasetType>();
+        Map<String, Set<String>> datasetFields =
+                new LinkedHashMap<String, Set<String>>();
         for (DatasetDefinition dataset : datasets) {
             if (dataset != null && hasText(dataset.getId())) {
                 datasetTypes.put(dataset.getId(), dataset.getResultType());
+                datasetFields.put(
+                        dataset.getId(), availableDatasetFields(dataset));
             }
         }
         Set<String> ids = new LinkedHashSet<String>();
@@ -122,27 +132,55 @@ public final class ReportDefinitionValidator {
                                 ? "Invalid rule condition" : exception.getMessage());
             }
             validateConditionReferences(
-                    rule.getCondition(), datasetTypes, path + ".condition", result);
+                    rule.getCondition(),
+                    rule.getDataset(),
+                    datasetTypes,
+                    datasetFields,
+                    parameters == null
+                            ? Collections.<String, ParameterDefinition>emptyMap()
+                            : parameters,
+                    path + ".condition",
+                    result);
             validateRuleResult(rule.getResult(), path + ".result", result);
         }
     }
 
     private void validateConditionReferences(
             ConditionDefinition condition,
+            String currentDataset,
             Map<String, DatasetType> datasetTypes,
+            Map<String, Set<String>> datasetFields,
+            Map<String, ParameterDefinition> parameters,
             String path,
             ValidationResult result) {
         if (condition == null) {
             return;
         }
         validateValueReference(
-                condition.getLeft(), datasetTypes, path + ".left", result);
+                condition.getLeft(),
+                currentDataset,
+                datasetTypes,
+                datasetFields,
+                parameters,
+                path + ".left",
+                result);
         validateValueReference(
-                condition.getRight(), datasetTypes, path + ".right", result);
+                condition.getRight(),
+                currentDataset,
+                datasetTypes,
+                datasetFields,
+                parameters,
+                path + ".right",
+                result);
         List<ConditionDefinition> children = condition.getChildren();
         if (children != null) {
             for (int index = 0; index < children.size(); index++) {
-                validateConditionReferences(children.get(index), datasetTypes,
+                validateConditionReferences(
+                        children.get(index),
+                        currentDataset,
+                        datasetTypes,
+                        datasetFields,
+                        parameters,
                         path + ".children[" + index + "]", result);
             }
         }
@@ -168,22 +206,90 @@ public final class ReportDefinitionValidator {
 
     private void validateValueReference(
             ValueReferenceDefinition reference,
+            String currentDataset,
             Map<String, DatasetType> datasetTypes,
+            Map<String, Set<String>> datasetFields,
+            Map<String, ParameterDefinition> parameters,
             String path,
             ValidationResult result) {
-        if (reference == null
-                || reference.getSource()
-                        != ValueReferenceDefinition.Source.DATASET_FIELD) {
+        if (reference == null || reference.getSource() == null) {
             return;
         }
-        DatasetType type = datasetTypes.get(reference.getDataset());
-        if (type == null) {
-            result.add("RULE-001", path + ".dataset",
-                    "Unknown referenced dataset: " + reference.getDataset());
-        } else if (type != DatasetType.SCALAR && type != DatasetType.SINGLE) {
-            result.add("RULE-001", path + ".dataset",
-                    "DATASET_FIELD requires SCALAR or SINGLE dataset");
+        switch (reference.getSource()) {
+            case CURRENT_FIELD:
+                if (hasText(currentDataset)
+                        && hasText(reference.getField())
+                        && !containsField(
+                                datasetFields.get(currentDataset),
+                                reference.getField())) {
+                    result.add("RULE-001", path + ".field",
+                            "Unknown CURRENT_FIELD field "
+                                    + reference.getField()
+                                    + " in dataset " + currentDataset);
+                }
+                break;
+            case DATASET_FIELD:
+                DatasetType type = datasetTypes.get(reference.getDataset());
+                if (type == null) {
+                    result.add("RULE-001", path + ".dataset",
+                            "Unknown referenced dataset: "
+                                    + reference.getDataset());
+                } else if (type != DatasetType.SCALAR
+                        && type != DatasetType.SINGLE) {
+                    result.add("RULE-001", path + ".dataset",
+                            "DATASET_FIELD requires SCALAR or SINGLE dataset");
+                } else if (hasText(reference.getField())
+                        && !containsField(
+                                datasetFields.get(reference.getDataset()),
+                                reference.getField())) {
+                    result.add("RULE-001", path + ".field",
+                            "Unknown DATASET_FIELD field "
+                                    + reference.getField()
+                                    + " in dataset " + reference.getDataset());
+                }
+                break;
+            case RUNTIME_PARAMETER:
+                if (hasText(reference.getParameter())
+                        && !parameters.containsKey(reference.getParameter())) {
+                    result.add("RULE-001", path + ".parameter",
+                            "Unknown RUNTIME_PARAMETER "
+                                    + reference.getParameter());
+                }
+                break;
+            case LITERAL:
+                break;
+            default:
+                result.add("RULE-001", path + ".source",
+                        "Unsupported value reference source");
         }
+    }
+
+    private Set<String> availableDatasetFields(DatasetDefinition dataset) {
+        Set<String> fields = new LinkedHashSet<String>();
+        if (dataset.getExpectedFields() != null) {
+            fields.addAll(dataset.getExpectedFields().keySet());
+        }
+        for (TransformDefinition transform : safeList(dataset.getTransforms())) {
+            if (transform != null
+                    && transform.getType()
+                            == com.xn.report.config.definition.TransformType.DERIVED_FIELD
+                    && hasText(transform.getTargetField())) {
+                fields.add(transform.getTargetField());
+            }
+        }
+        return fields;
+    }
+
+    private boolean containsField(Set<String> fields, String requested) {
+        if (fields == null) {
+            return false;
+        }
+        for (String field : fields) {
+            if (field != null && field.equalsIgnoreCase(requested)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void validateRuleResult(

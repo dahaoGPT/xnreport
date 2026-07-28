@@ -56,6 +56,10 @@ public final class RuleEngine {
                 throw RuleErrors.invalid("Rule evaluation context is required");
             }
             condition = compile(definition.getCondition());
+            if (definition.hasProperty("result")
+                    && definition.getResult() == null) {
+                throw RuleErrors.invalid("Rule result must not be null");
+            }
             resultDefinition = definition.getResult() == null
                     ? new ResultDefinition() : definition.getResult();
             validateResult(resultDefinition);

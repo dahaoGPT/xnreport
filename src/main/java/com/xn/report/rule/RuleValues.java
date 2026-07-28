@@ -1,7 +1,12 @@
 package com.xn.report.rule;
 
 import java.lang.reflect.Array;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.sql.Time;
+import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -9,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Date;
 import java.util.Set;
 
 final class RuleValues {
@@ -25,6 +31,10 @@ final class RuleValues {
         return Collections.unmodifiableMap(copy);
     }
 
+    static Map<String, Object> copyMap(Map<String, Object> source) {
+        return freezeMap(source);
+    }
+
     static Object deepKey(Object value) {
         return freeze(value, new IdentityHashMap<Object, Boolean>());
     }
@@ -33,6 +43,24 @@ final class RuleValues {
             Object value, IdentityHashMap<Object, Boolean> visiting) {
         if (value == null || isImmutable(value)) {
             return value;
+        }
+        if (value instanceof Timestamp) {
+            Timestamp source = (Timestamp) value;
+            Timestamp copy = new Timestamp(source.getTime());
+            copy.setNanos(source.getNanos());
+            return copy;
+        }
+        if (value instanceof java.sql.Date) {
+            return new java.sql.Date(((java.sql.Date) value).getTime());
+        }
+        if (value instanceof Time) {
+            return new Time(((Time) value).getTime());
+        }
+        if (value instanceof Date) {
+            return new Date(((Date) value).getTime());
+        }
+        if (value instanceof Calendar) {
+            return ((Calendar) value).clone();
         }
         if (visiting.put(value, Boolean.TRUE) != null) {
             throw RuleErrors.invalid("Cyclic rule result value is not supported");
@@ -68,7 +96,9 @@ final class RuleValues {
                 }
                 return Collections.unmodifiableList(copy);
             }
-            return value;
+            throw RuleErrors.invalid(
+                    "Unsupported mutable rule result value type: "
+                            + value.getClass().getName());
         } finally {
             visiting.remove(value);
         }
@@ -76,11 +106,19 @@ final class RuleValues {
 
     private static boolean isImmutable(Object value) {
         return value instanceof String
-                || value instanceof Number
                 || value instanceof Boolean
+                || value instanceof Byte
+                || value instanceof Short
+                || value instanceof Integer
+                || value instanceof Long
+                || value instanceof Float
+                || value instanceof Double
                 || value instanceof Character
+                || value instanceof BigInteger
+                || value instanceof BigDecimal
                 || value instanceof Enum<?>
-                || value instanceof java.time.temporal.Temporal
-                || value instanceof java.util.UUID;
+                || value instanceof Class<?>
+                || value instanceof java.util.UUID
+                || value.getClass().getName().startsWith("java.time.");
     }
 }

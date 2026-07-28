@@ -36,6 +36,6 @@ public final class RuleGroupResult {
     }
 
     public Map<String, Object> getSummaryValues() {
-        return summaryValues;
+        return RuleValues.copyMap(summaryValues);
     }
 }

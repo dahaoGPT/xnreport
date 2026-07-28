@@ -5,8 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xn.report.config.definition.ConditionDefinition;
+import com.xn.report.config.definition.DatasetDefinition;
+import com.xn.report.config.definition.FieldDefinition;
 import com.xn.report.config.definition.RuleDefinition;
+import com.xn.report.config.definition.TransformDefinition;
+import com.xn.report.config.definition.TransformOperator;
+import com.xn.report.config.definition.TransformType;
 import com.xn.report.config.definition.ValueReferenceDefinition;
+import com.xn.report.dataset.DatasetType;
 import com.xn.report.support.JsonSchemaContract;
 import com.xn.report.support.TestFixtures;
 import java.nio.charset.StandardCharsets;
@@ -14,6 +20,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -150,6 +158,59 @@ class RuleConfigurationTest {
         assertThat(contract.validate(crossVariant)).isNotEmpty();
     }
 
+    @Test
+    void validatorRejectsMisspelledCurrentDatasetAndRuntimeReferences() {
+        DatasetDefinition people = TestFixtures.dataset("people");
+        people.setExpectedFields(fields("avgHours"));
+        DatasetDefinition baseline = TestFixtures.dataset("baseline");
+        baseline.setResultType(DatasetType.SINGLE);
+        baseline.setExpectedFields(fields("standardHours"));
+        ReportDefinition report = TestFixtures.report(people, baseline);
+        report.setParameters(Collections.singletonMap(
+                "period", new ParameterDefinition()));
+
+        RuleDefinition currentTypo = rule("currentTypo", "people",
+                comparison(currentField("avgHour"), literalValue(10)));
+        RuleDefinition datasetTypo = rule("datasetTypo", "people",
+                comparison(
+                        currentField("avgHours"),
+                        datasetField("baseline", "standardHour")));
+        RuleDefinition runtimeTypo = rule("runtimeTypo", "people",
+                comparison(
+                        currentField("avgHours"),
+                        runtimeParameter("peroid")));
+        report.setRules(Arrays.asList(currentTypo, datasetTypo, runtimeTypo));
+
+        ValidationResult result = new ReportDefinitionValidator().validate(report);
+
+        assertThat(result.issues())
+                .filteredOn(issue -> "RULE-001".equals(issue.getCode()))
+                .extracting(ValidationIssue::getMessage)
+                .anyMatch(message -> message.contains("avgHour"))
+                .anyMatch(message -> message.contains("standardHour"))
+                .anyMatch(message -> message.contains("peroid"));
+    }
+
+    @Test
+    void validatorAcceptsCurrentFieldProducedByDerivedTransform() {
+        DatasetDefinition people = TestFixtures.dataset("people");
+        people.setExpectedFields(fields("avgHours"));
+        TransformDefinition transform = new TransformDefinition();
+        transform.setType(TransformType.DERIVED_FIELD);
+        transform.setSourceField("avgHours");
+        transform.setTargetField("normalizedHours");
+        transform.setOperator(TransformOperator.MULTIPLY);
+        transform.setOperand(new java.math.BigDecimal("1"));
+        people.setTransforms(Collections.singletonList(transform));
+        ReportDefinition report = TestFixtures.report(people);
+        report.setRules(Collections.singletonList(rule(
+                "derived", "people",
+                comparison(currentField("normalizedHours"), literalValue(10)))));
+
+        assertThat(new ReportDefinitionValidator().validate(report).issues())
+                .noneMatch(issue -> "RULE-001".equals(issue.getCode()));
+    }
+
     private static RuleDefinition rule(
             String id, String dataset, ConditionDefinition condition) {
         RuleDefinition rule = new RuleDefinition();
@@ -184,6 +245,22 @@ class RuleConfigurationTest {
         return reference;
     }
 
+    private static ValueReferenceDefinition runtimeParameter(String parameter) {
+        ValueReferenceDefinition reference = new ValueReferenceDefinition();
+        reference.setSource(ValueReferenceDefinition.Source.RUNTIME_PARAMETER);
+        reference.setParameter(parameter);
+        return reference;
+    }
+
+    private static Map<String, FieldDefinition> fields(String... names) {
+        Map<String, FieldDefinition> fields =
+                new LinkedHashMap<String, FieldDefinition>();
+        for (String name : names) {
+            fields.put(name, new FieldDefinition());
+        }
+        return fields;
+    }
+
     private static ValueReferenceDefinition literalValue(Object value) {
         ValueReferenceDefinition reference = new ValueReferenceDefinition();
         reference.setSource(ValueReferenceDefinition.Source.LITERAL);
@@ -195,7 +272,11 @@ class RuleConfigurationTest {
         return "schemaVersion: '1.0'\n"
                 + "report: {code: demo, name: Demo}\n"
                 + "datasets:\n"
-                + "  - {id: people, sheetName: People, sql: 'select 1', resultType: LIST}\n"
+                + "  - id: people\n"
+                + "    sheetName: People\n"
+                + "    sql: 'select 1'\n"
+                + "    resultType: LIST\n"
+                + "    expectedFields: {hours: {type: DECIMAL}, name: {type: STRING}}\n"
                 + "rules:\n"
                 + "  - id: timeout\n"
                 + "    dataset: people\n"
@@ -213,7 +294,9 @@ class RuleConfigurationTest {
         return "{\"schemaVersion\":\"1.0\","
                 + "\"report\":{\"code\":\"demo\",\"name\":\"Demo\"},"
                 + "\"datasets\":[{\"id\":\"people\",\"sheetName\":\"People\","
-                + "\"sql\":\"select 1\",\"resultType\":\"LIST\"}],"
+                + "\"sql\":\"select 1\",\"resultType\":\"LIST\","
+                + "\"expectedFields\":{\"hours\":{\"type\":\"DECIMAL\"},"
+                + "\"name\":{\"type\":\"STRING\"}}}],"
                 + "\"rules\":[{\"id\":\"timeout\",\"dataset\":\"people\","
                 + "\"condition\":{\"operator\":\"AND\",\"children\":["
                 + "{\"operator\":\"GT\","

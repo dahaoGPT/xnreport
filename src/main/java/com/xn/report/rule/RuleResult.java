@@ -54,6 +54,6 @@ public final class RuleResult {
     }
 
     public Map<String, Object> getSummaryValues() {
-        return summaryValues;
+        return RuleValues.copyMap(summaryValues);
     }
 }

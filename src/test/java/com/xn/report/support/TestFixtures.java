@@ -1,0 +1,41 @@
+package com.xn.report.support;
+
+import com.xn.report.config.ReportDefinition;
+import com.xn.report.config.ReportMetadata;
+import com.xn.report.config.definition.DatasetDefinition;
+import com.xn.report.dataset.DatasetType;
+import java.util.Arrays;
+
+public final class TestFixtures {
+
+    private TestFixtures() {
+    }
+
+    public static ReportDefinition report(DatasetDefinition... datasets) {
+        ReportMetadata metadata = new ReportMetadata();
+        metadata.setCode("test-report");
+        metadata.setName("Test Report");
+
+        ReportDefinition definition = new ReportDefinition();
+        definition.setSchemaVersion("1.0");
+        definition.setReport(metadata);
+        definition.setDatasets(Arrays.asList(datasets));
+        return definition;
+    }
+
+    public static DatasetDefinition dataset(String id, String... dependsOn) {
+        return dataset(id, id + ".sql", null, dependsOn);
+    }
+
+    public static DatasetDefinition dataset(
+            String id, String sqlFile, String sql, String... dependsOn) {
+        DatasetDefinition dataset = new DatasetDefinition();
+        dataset.setId(id);
+        dataset.setSheetName("Sheet-" + id);
+        dataset.setSqlFile(sqlFile);
+        dataset.setSql(sql);
+        dataset.setResultType(DatasetType.LIST);
+        dataset.setDependsOn(Arrays.asList(dependsOn));
+        return dataset;
+    }
+}

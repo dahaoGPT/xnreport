@@ -1,0 +1,437 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://xn.example/schema/report-definition.schema.json",
+  "title": "Report Definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "report",
+    "datasets"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "report": {
+      "$ref": "#/definitions/report"
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/parameter"
+      }
+    },
+    "datasets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/dataset"
+      }
+    },
+    "narratives": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/narrative"
+      }
+    },
+    "word": {
+      "$ref": "#/definitions/word"
+    },
+    "policies": {
+      "$ref": "#/definitions/policies"
+    }
+  },
+  "definitions": {
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "name"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "excelTemplate": {
+          "type": "string"
+        },
+        "wordTemplate": {
+          "type": "string"
+        },
+        "excelFileName": {
+          "type": "string"
+        },
+        "wordFileName": {
+          "type": "string"
+        },
+        "collisionPolicy": {
+          "type": "string"
+        }
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "minItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "defaultValue": {}
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sheetName"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "sqlFile"
+          ]
+        },
+        {
+          "required": [
+            "sql"
+          ]
+        }
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+        },
+        "sheetName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 31,
+          "pattern": "^[^\\\\/?*\\[\\]:]+$"
+        },
+        "sqlFile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sql": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resultType": {
+          "type": "string",
+          "enum": [
+            "SCALAR",
+            "SINGLE",
+            "LIST"
+          ]
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "expectedFields": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/field"
+          }
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxRows": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "narrative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sourceType"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": [
+            "FIXED_TEMPLATE",
+            "RULE_GENERATED"
+          ]
+        },
+        "template": {
+          "type": "string"
+        },
+        "analyzer": {
+          "type": "string"
+        },
+        "dataset": {
+          "type": "string"
+        },
+        "baseline": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "sentence": {
+          "type": "string"
+        },
+        "emptyStrategy": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "distribution": {
+          "$ref": "#/definitions/distribution"
+        }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "bins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/distributionBin"
+          }
+        },
+        "labelMode": {
+          "type": "string"
+        }
+      }
+    },
+    "distributionBin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "min": {
+          "type": "number"
+        },
+        "minInclusive": {
+          "type": "boolean"
+        },
+        "max": {
+          "type": "number"
+        },
+        "maxInclusive": {
+          "type": "boolean"
+        }
+      }
+    },
+    "word": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cover": {
+          "$ref": "#/definitions/wordCover"
+        },
+        "toc": {
+          "$ref": "#/definitions/wordToc"
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/wordSection"
+          }
+        }
+      }
+    },
+    "wordCover": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "organization": {
+          "type": "string"
+        },
+        "reportPeriod": {
+          "type": "string"
+        },
+        "preparedBy": {
+          "type": "string"
+        },
+        "preparedDate": {
+          "type": "string"
+        }
+      }
+    },
+    "wordToc": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxLevel": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "updateOnOpen": {
+          "type": "boolean"
+        }
+      }
+    },
+    "wordSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "level"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "emptyStrategy": {
+          "type": "string",
+          "enum": [
+            "KEEP",
+            "SHOW_EMPTY",
+            "SKIP"
+          ]
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/wordComponent"
+          }
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/wordSection"
+          }
+        }
+      }
+    },
+    "wordComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "SCENARIO",
+            "KEY_FACTORS",
+            "FIXED_TEXT",
+            "RULE_TEXT",
+            "CHART",
+            "TABLE",
+            "UNIT",
+            "ATTACHMENT"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "chartId": {
+          "type": "string"
+        },
+        "narrativeId": {
+          "type": "string"
+        },
+        "tableId": {
+          "type": "string"
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "emptyData": {
+          "type": "string"
+        },
+        "emptyMessage": {
+          "type": "string"
+        },
+        "missingField": {
+          "type": "string"
+        },
+        "typeMismatch": {
+          "type": "string"
+        },
+        "nullValue": {
+          "type": "string"
+        },
+        "emptyCollectionParameter": {
+          "type": "string"
+        },
+        "unresolvedPlaceholder": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

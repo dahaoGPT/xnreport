@@ -6,6 +6,8 @@ import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.excel.ExcelValueBinder;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Font;
@@ -52,6 +54,10 @@ public final class ExcelChartDataAreaWriter {
 
         Map<String, Integer> columns =
                 new LinkedHashMap<String, Integer>();
+        List<Integer> seriesColumns =
+                new ArrayList<Integer>();
+        List<Integer> sizeColumns =
+                new ArrayList<Integer>();
         int column = startColumn;
         Cell categoryHeader = cell(sheet, headerRow, column);
         categoryHeader.setCellValue(definition.getCategoryField());
@@ -59,23 +65,28 @@ public final class ExcelChartDataAreaWriter {
         columns.put(definition.getCategoryField(), column);
 
         for (ChartSeriesModel series : model.getSeries()) {
+            column++;
+            Cell header = cell(sheet, headerRow, column);
+            header.setCellValue(series.getName());
+            header.setCellStyle(headerStyle);
+            seriesColumns.add(Integer.valueOf(column));
             if (!columns.containsKey(series.getField())) {
-                column++;
-                Cell header = cell(sheet, headerRow, column);
-                header.setCellValue(series.getName());
-                header.setCellStyle(headerStyle);
                 columns.put(series.getField(), column);
             }
-            if (!series.getSizes().isEmpty()
-                    && !columns.containsKey(sizeField(
-                            definition, series.getField()))) {
+            if (!series.getSizes().isEmpty()) {
                 column++;
                 String sizeField =
                         sizeField(definition, series.getField());
-                Cell header = cell(sheet, headerRow, column);
-                header.setCellValue(series.getName() + " size");
-                header.setCellStyle(headerStyle);
-                columns.put(sizeField, column);
+                Cell sizeHeader = cell(
+                        sheet, headerRow, column);
+                sizeHeader.setCellValue(series.getName() + " size");
+                sizeHeader.setCellStyle(headerStyle);
+                sizeColumns.add(Integer.valueOf(column));
+                if (!columns.containsKey(sizeField)) {
+                    columns.put(sizeField, column);
+                }
+            } else {
+                sizeColumns.add(null);
             }
         }
 
@@ -87,16 +98,19 @@ public final class ExcelChartDataAreaWriter {
             binder.bind(cell(
                     sheet, firstDataRow + index,
                     columns.get(definition.getCategoryField())), category);
-            for (ChartSeriesModel series : model.getSeries()) {
+            for (int ordinal = 0;
+                    ordinal < model.getSeries().size();
+                    ordinal++) {
+                ChartSeriesModel series =
+                        model.getSeries().get(ordinal);
                 binder.bind(cell(
                         sheet, firstDataRow + index,
-                        columns.get(series.getField())),
+                        seriesColumns.get(ordinal).intValue()),
                         series.getValues().get(index));
                 if (!series.getSizes().isEmpty()) {
                     binder.bind(cell(
                             sheet, firstDataRow + index,
-                            columns.get(sizeField(
-                                    definition, series.getField()))),
+                            sizeColumns.get(ordinal).intValue()),
                             series.getSizes().get(index));
                 }
             }
@@ -106,7 +120,8 @@ public final class ExcelChartDataAreaWriter {
         }
         return new ChartFormulaRange(
                 sheet.getSheetName(), headerRow, firstDataRow,
-                model.getCategories().size(), columns);
+                model.getCategories().size(), columns,
+                seriesColumns, sizeColumns);
     }
 
     public ChartFormulaRange findRange(
@@ -145,22 +160,33 @@ public final class ExcelChartDataAreaWriter {
         int column = found.getColumnIndex();
         Map<String, Integer> columns =
                 new LinkedHashMap<String, Integer>();
+        List<Integer> seriesColumns =
+                new ArrayList<Integer>();
+        List<Integer> sizeColumns =
+                new ArrayList<Integer>();
         columns.put(definition.getCategoryField(), column++);
         for (ChartSeriesModel series : model.getSeries()) {
+            seriesColumns.add(Integer.valueOf(column));
             if (!columns.containsKey(series.getField())) {
-                columns.put(series.getField(), column++);
+                columns.put(series.getField(), column);
             }
+            column++;
             if (!series.getSizes().isEmpty()) {
                 String sizeField =
                         sizeField(definition, series.getField());
+                sizeColumns.add(Integer.valueOf(column));
                 if (!columns.containsKey(sizeField)) {
-                    columns.put(sizeField, column++);
+                    columns.put(sizeField, column);
                 }
+                column++;
+            } else {
+                sizeColumns.add(null);
             }
         }
         return new ChartFormulaRange(
                 sheet.getSheetName(), headerRow, firstDataRow,
-                model.getCategories().size(), columns);
+                model.getCategories().size(), columns,
+                seriesColumns, sizeColumns);
     }
 
     private static String sizeField(

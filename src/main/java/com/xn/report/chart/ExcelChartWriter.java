@@ -91,6 +91,11 @@ public final class ExcelChartWriter {
             List<ChartModel> models =
                     modelBuilder.buildAll(chart, result);
             validateTemplateGroups(chart, models);
+            if (chart.getMode()
+                    == ChartDefinition.Mode.TEMPLATE_NATIVE) {
+                templateUpdater.validateUniqueTargets(
+                        workbook, chart);
+            }
             for (int index = 0; index < models.size(); index++) {
                 ChartModel model = models.get(index);
                 ChartFormulaRange range = dataAreaWriter.write(

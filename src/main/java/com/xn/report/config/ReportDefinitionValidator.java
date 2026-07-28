@@ -423,6 +423,8 @@ public final class ReportDefinitionValidator {
             return;
         }
         Set<String> groups = new LinkedHashSet<String>();
+        Set<String> markers = new LinkedHashSet<String>();
+        Set<Integer> indexes = new LinkedHashSet<Integer>();
         for (int index = 0; index < locators.size(); index++) {
             String path = chartPath + ".templateChartLocators["
                     + index + "]";
@@ -445,9 +447,22 @@ public final class ReportDefinitionValidator {
             boolean chartIndex = locator.hasProperty("index")
                     && locator.getIndex() != null;
             if (marker == chartIndex) {
-                result.add("CHART-002", path,
+                result.add("CHART-002",
+                        !marker && !chartIndex
+                                ? path + ".marker" : path,
                         "Template chart locator requires exactly one "
                                 + "marker or index");
+            }
+            if (marker && !markers.add(locator.getMarker())) {
+                result.add("CHART-002", path + ".marker",
+                        "marker must be unique within "
+                                + "templateChartLocators");
+            }
+            if (chartIndex
+                    && !indexes.add(locator.getIndex())) {
+                result.add("CHART-002", path + ".index",
+                        "index must be unique within "
+                                + "templateChartLocators");
             }
             if (locator.getIndex() != null
                     && locator.getIndex().intValue() < 0) {

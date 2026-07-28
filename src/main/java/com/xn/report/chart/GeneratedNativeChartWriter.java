@@ -125,15 +125,17 @@ public final class GeneratedNativeChartWriter {
                             model, definition.getCategoryField(),
                             range, group.type);
             for (ChartSeriesModel series : entry.getValue()) {
+                int ordinal = model.getSeries().indexOf(series);
                 XDDFNumericalDataSource<Double> values =
-                        valuesSource(series, range);
+                        valuesSource(series, range, ordinal);
                 XDDFChartData.Series created =
                         data.addSeries(categories, values);
                 created.setTitle(series.getName(),
                         new CellReference(
                                 range.getSheetName(),
                                 range.getHeaderRow(),
-                                range.column(series.getField()),
+                                range.seriesColumn(
+                                        ordinal, series.getField()),
                                 true, true));
                 configureSeries(created, series);
                 configureDataLabels(
@@ -391,7 +393,9 @@ public final class GeneratedNativeChartWriter {
     }
 
     private static XDDFNumericalDataSource<Double> valuesSource(
-            ChartSeriesModel series, ChartFormulaRange range) {
+            ChartSeriesModel series,
+            ChartFormulaRange range,
+            int ordinal) {
         Double[] values = new Double[series.getValues().size()];
         for (int index = 0; index < values.length; index++) {
             BigDecimal value = series.getValues().get(index);
@@ -406,8 +410,10 @@ public final class GeneratedNativeChartWriter {
         XDDFNumericalDataSource<Double> source =
                 XDDFDataSourcesFactory.fromArray(
                         values,
-                        range.formula(series.getField()),
-                        range.column(series.getField()));
+                        range.seriesFormula(
+                                ordinal, series.getField()),
+                        range.seriesColumn(
+                                ordinal, series.getField()));
         if (series.getFormat() != null) {
             source.setFormatCode(series.getFormat());
         }

@@ -1,6 +1,8 @@
 package com.xn.report.chart;
 
 import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -11,6 +13,8 @@ public final class ChartFormulaRange {
     private final int firstDataRow;
     private final int pointCount;
     private final Map<String, Integer> fieldColumns;
+    private final List<Integer> seriesColumns;
+    private final List<Integer> sizeColumns;
 
     public ChartFormulaRange(
             String sheetName,
@@ -18,6 +22,19 @@ public final class ChartFormulaRange {
             int firstDataRow,
             int pointCount,
             Map<String, Integer> fieldColumns) {
+        this(sheetName, headerRow, firstDataRow, pointCount,
+                fieldColumns, Collections.<Integer>emptyList(),
+                Collections.<Integer>emptyList());
+    }
+
+    public ChartFormulaRange(
+            String sheetName,
+            int headerRow,
+            int firstDataRow,
+            int pointCount,
+            Map<String, Integer> fieldColumns,
+            List<Integer> seriesColumns,
+            List<Integer> sizeColumns) {
         if (sheetName == null || sheetName.trim().isEmpty()) {
             throw new IllegalArgumentException(
                     "Chart range sheetName must not be blank");
@@ -31,6 +48,31 @@ public final class ChartFormulaRange {
         this.firstDataRow = firstDataRow;
         this.pointCount = pointCount;
         this.fieldColumns = immutableColumns(fieldColumns);
+        this.seriesColumns = immutableOrdinals(
+                seriesColumns, "series");
+        this.sizeColumns = immutableOrdinals(
+                sizeColumns, "size");
+        if (!this.sizeColumns.isEmpty()
+                && this.sizeColumns.size()
+                != this.seriesColumns.size()) {
+            throw new IllegalArgumentException(
+                    "Chart range size columns must align with series columns");
+        }
+    }
+
+    private static List<Integer> immutableOrdinals(
+            List<Integer> columns, String kind) {
+        List<Integer> copy = new ArrayList<Integer>();
+        if (columns != null) {
+            for (Integer column : columns) {
+                if (column != null && column.intValue() < 0) {
+                    throw new IllegalArgumentException(
+                            "Invalid chart " + kind + " column");
+                }
+                copy.add(column);
+            }
+        }
+        return Collections.unmodifiableList(copy);
     }
 
     public static ChartFormulaRange empty(String sheetName) {
@@ -82,6 +124,71 @@ public final class ChartFormulaRange {
     public String titleFormula(String field) {
         return new ChartFormulaBuilder().cell(
                 sheetName, column(field), headerRow);
+    }
+
+    public int seriesColumn(int ordinal, String fallbackField) {
+        return ordinalColumn(
+                seriesColumns, ordinal, fallbackField, false);
+    }
+
+    public String seriesFormula(
+            int ordinal, String fallbackField) {
+        return new ChartFormulaBuilder().range(
+                sheetName,
+                seriesColumn(ordinal, fallbackField),
+                firstDataRow, pointCount);
+    }
+
+    public String seriesTitleFormula(
+            int ordinal, String fallbackField) {
+        return new ChartFormulaBuilder().cell(
+                sheetName,
+                seriesColumn(ordinal, fallbackField),
+                headerRow);
+    }
+
+    public int sizeColumn(int ordinal, String fallbackField) {
+        return ordinalColumn(
+                sizeColumns, ordinal, fallbackField, true);
+    }
+
+    public String sizeFormula(
+            int ordinal, String fallbackField) {
+        return new ChartFormulaBuilder().range(
+                sheetName,
+                sizeColumn(ordinal, fallbackField),
+                firstDataRow, pointCount);
+    }
+
+    private int ordinalColumn(
+            List<Integer> columns,
+            int ordinal,
+            String fallbackField,
+            boolean nullable) {
+        if (ordinal < 0) {
+            throw new IllegalArgumentException(
+                    "Chart series ordinal must not be negative");
+        }
+        if (columns.isEmpty()) {
+            return column(fallbackField);
+        }
+        if (ordinal >= columns.size()) {
+            throw new IllegalArgumentException(
+                    "Chart series ordinal is outside its data range: "
+                            + ordinal);
+        }
+        Integer column = columns.get(ordinal);
+        if (column == null) {
+            if (nullable) {
+                throw new IllegalArgumentException(
+                        "Chart series has no size column at ordinal "
+                                + ordinal);
+            }
+            throw new IllegalArgumentException(
+                    "Chart series has no value column at ordinal "
+                            + ordinal);
+        }
+        return column.intValue();
     }
 
     public String getSheetName() {

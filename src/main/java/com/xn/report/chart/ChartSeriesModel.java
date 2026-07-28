@@ -20,6 +20,7 @@ public final class ChartSeriesModel {
     private final String format;
     private final ChartNullHandling nullHandling;
     private final int legendOrder;
+    private final int sourceIndex;
     private final List<BigDecimal> values;
     private final List<BigDecimal> sizes;
 
@@ -39,6 +40,29 @@ public final class ChartSeriesModel {
             int legendOrder,
             List<BigDecimal> values,
             List<BigDecimal> sizes) {
+        this(field, name, type, axis, stackGroup, color,
+                lineStyle, lineWidth, marker, dataLabelMode,
+                format, nullHandling, legendOrder, -1,
+                values, sizes);
+    }
+
+    public ChartSeriesModel(
+            String field,
+            String name,
+            ChartType type,
+            ChartAxis axis,
+            String stackGroup,
+            String color,
+            ChartLineStyle lineStyle,
+            BigDecimal lineWidth,
+            boolean marker,
+            ChartDataLabelMode dataLabelMode,
+            String format,
+            ChartNullHandling nullHandling,
+            int legendOrder,
+            int sourceIndex,
+            List<BigDecimal> values,
+            List<BigDecimal> sizes) {
         this.field = field;
         this.name = name;
         this.type = type;
@@ -52,6 +76,7 @@ public final class ChartSeriesModel {
         this.format = format;
         this.nullHandling = nullHandling;
         this.legendOrder = legendOrder;
+        this.sourceIndex = sourceIndex;
         this.values = immutable(values);
         this.sizes = immutable(sizes);
     }
@@ -113,6 +138,10 @@ public final class ChartSeriesModel {
 
     public int getLegendOrder() {
         return legendOrder;
+    }
+
+    public int getSourceIndex() {
+        return sourceIndex;
     }
 
     public List<BigDecimal> getValues() {

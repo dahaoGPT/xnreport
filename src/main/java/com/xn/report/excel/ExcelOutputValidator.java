@@ -194,7 +194,8 @@ public final class ExcelOutputValidator {
                     series[index], namespaces,
                     ".//c:val//c:f | .//c:yVal//c:f");
             String expectedValues =
-                    range.formula(configured.getField());
+                    range.seriesFormula(
+                            index, configured.getField());
             if (!expectedValues.equals(values)) {
                 throw new IllegalStateException(
                         "Chart series formula is invalid for "
@@ -203,7 +204,8 @@ public final class ExcelOutputValidator {
             }
             String title = firstText(
                     series[index], namespaces, ".//c:tx//c:f");
-            if (!range.titleFormula(configured.getField())
+            if (!range.seriesTitleFormula(
+                    index, configured.getField())
                     .equals(title)) {
                 throw new IllegalStateException(
                         "Chart series title formula is invalid for "
@@ -216,7 +218,7 @@ public final class ExcelOutputValidator {
                 String size = firstText(
                         series[index], namespaces,
                         ".//c:bubbleSize//c:f");
-                if (!range.formula(sizeField)
+                if (!range.sizeFormula(index, sizeField)
                         .equals(size)) {
                     throw new IllegalStateException(
                             "Chart bubble size formula is invalid for "

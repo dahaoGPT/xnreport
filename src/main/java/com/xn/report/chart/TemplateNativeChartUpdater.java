@@ -66,6 +66,7 @@ public final class TemplateNativeChartUpdater {
             throw new IllegalArgumentException(
                     "workbook, definition and range must not be null");
         }
+        validateUniqueTargets(workbook, definition);
         LocatorValue locatorValue =
                 locatorValue(definition, model);
         String targetSheet = definition.getExcelSheet() == null
@@ -99,6 +100,38 @@ public final class TemplateNativeChartUpdater {
         return chart;
     }
 
+    public void validateUniqueTargets(
+            XSSFWorkbook workbook,
+            ChartDefinition definition) {
+        if (workbook == null || definition == null) {
+            throw new IllegalArgumentException(
+                    "workbook and definition must not be null");
+        }
+        if (definition.getMode()
+                != ChartDefinition.Mode.TEMPLATE_NATIVE
+                || definition.getGroupByField() == null) {
+            return;
+        }
+        Set<String> targets = new HashSet<String>();
+        for (int index = 0;
+                index < definition.getTemplateChartLocators().size();
+                index++) {
+            TemplateChartLocatorDefinition item =
+                    definition.getTemplateChartLocators().get(index);
+            XSSFChart chart = locator.findUnique(
+                    workbook, definition.getExcelSheet(),
+                    item.getMarker(), item.getIndex());
+            String target = chart.getPackagePart()
+                    .getPartName().getName();
+            if (!targets.add(target)) {
+                throw new IllegalArgumentException(
+                        "templateChartLocators[" + index
+                                + "] resolves to the same template chart "
+                                + "as an earlier locator: " + target);
+            }
+        }
+    }
+
     private static void bindSeries(
             XmlObject[] physical,
             List<DesiredSeries> desired,
@@ -107,10 +140,12 @@ public final class TemplateNativeChartUpdater {
             XSSFSheet dataSheet) {
         Set<Integer> used = new HashSet<Integer>();
         for (XmlObject series : physical) {
-            int desiredIndex = compatibleDesired(
-                    series, desired, used);
+            int sourceIndex = compatibleConfigured(
+                    series, definition, used);
+            int desiredIndex = desiredIndex(
+                    desired, sourceIndex);
             DesiredSeries binding = desired.get(desiredIndex);
-            used.add(Integer.valueOf(desiredIndex));
+            used.add(Integer.valueOf(sourceIndex));
             setUnsignedValue(
                     series, "./c:idx", desiredIndex);
             setUnsignedValue(
@@ -118,7 +153,9 @@ public final class TemplateNativeChartUpdater {
             String categoryFormula =
                     range.formula(definition.getCategoryField());
             String valueFormula =
-                    range.formula(binding.configured.getField());
+                    range.seriesFormula(
+                            desiredIndex,
+                            binding.configured.getField());
             setFormula(series,
                     ".//c:cat//c:f | .//c:xVal//c:f",
                     categoryFormula);
@@ -126,19 +163,22 @@ public final class TemplateNativeChartUpdater {
                     ".//c:val//c:f | .//c:yVal//c:f",
                     valueFormula);
             setFormula(series, ".//c:tx//c:f",
-                    range.titleFormula(
+                    range.seriesTitleFormula(
+                            desiredIndex,
                             binding.configured.getField()));
             if (binding.configured.getSizeField() != null) {
                 setFormula(series,
                         ".//c:bubbleSize//c:f",
-                        range.formula(
+                        range.sizeFormula(
+                                desiredIndex,
                                 binding.configured.getSizeField()));
             }
 
             rebuildStringReferences(
                     series, ".//c:tx//c:strRef",
                     dataSheet, range.getHeaderRow(),
-                    1, range.column(
+                    1, range.seriesColumn(
+                            desiredIndex,
                             binding.configured.getField()));
             rebuildCategoryCaches(
                     series, dataSheet, range,
@@ -148,13 +188,16 @@ public final class TemplateNativeChartUpdater {
                     ".//c:val//c:numRef | .//c:yVal//c:numRef",
                     dataSheet, range.getFirstDataRow(),
                     range.getPointCount(),
-                    range.column(binding.configured.getField()));
+                    range.seriesColumn(
+                            desiredIndex,
+                            binding.configured.getField()));
             if (binding.configured.getSizeField() != null) {
                 rebuildNumberReferences(
                         series, ".//c:bubbleSize//c:numRef",
                         dataSheet, range.getFirstDataRow(),
                         range.getPointCount(),
-                        range.column(
+                        range.sizeColumn(
+                                desiredIndex,
                                 binding.configured.getSizeField()));
             }
         }
@@ -281,56 +324,61 @@ public final class TemplateNativeChartUpdater {
             for (int index = 0;
                     index < definition.getSeries().size(); index++) {
                 result.add(new DesiredSeries(
-                        definition.getSeries().get(index), null));
+                        definition.getSeries().get(index),
+                        index));
             }
             return result;
         }
         List<DesiredSeries> result =
                 new ArrayList<DesiredSeries>();
-        Set<Integer> used = new HashSet<Integer>();
         for (ChartSeriesModel series : model.getSeries()) {
-            int match = -1;
-            for (int index = 0;
-                    index < definition.getSeries().size(); index++) {
-                ChartSeriesDefinition configured =
-                        definition.getSeries().get(index);
-                if (!used.contains(Integer.valueOf(index))
-                        && configured.getField().equalsIgnoreCase(
-                                series.getField())
-                        && configured.getType() == series.getType()) {
-                    match = index;
-                    break;
-                }
-            }
-            if (match < 0) {
+            int sourceIndex = series.getSourceIndex();
+            if (sourceIndex < 0
+                    || sourceIndex >= definition.getSeries().size()) {
                 throw new IllegalArgumentException(
-                        "ChartModel series is not present in template "
-                                + "definition: " + series.getField());
+                        "ChartModel series has no stable source index: "
+                                + series.getName());
             }
-            used.add(Integer.valueOf(match));
+            ChartSeriesDefinition configured =
+                    definition.getSeries().get(sourceIndex);
             result.add(new DesiredSeries(
-                    definition.getSeries().get(match), series));
+                    configured, sourceIndex));
         }
         return Collections.unmodifiableList(result);
     }
 
-    private static int compatibleDesired(
+    private static int compatibleConfigured(
             XmlObject physical,
-            List<DesiredSeries> desired,
+            ChartDefinition definition,
             Set<Integer> used) {
         String plotType = physical.getDomNode().getParentNode()
                 .getLocalName();
-        for (int index = 0; index < desired.size(); index++) {
+        for (int index = 0;
+                index < definition.getSeries().size(); index++) {
             if (!used.contains(Integer.valueOf(index))
                     && compatible(
                             plotType,
-                            desired.get(index).configured.getType())) {
+                            definition.getSeries().get(index)
+                                    .getType())) {
                 return index;
             }
         }
         throw new IllegalArgumentException(
                 "Template plot type " + plotType
                         + " has no compatible ChartModel series");
+    }
+
+    private static int desiredIndex(
+            List<DesiredSeries> desired,
+            int sourceIndex) {
+        for (int index = 0; index < desired.size(); index++) {
+            if (desired.get(index).sourceIndex == sourceIndex) {
+                return index;
+            }
+        }
+        throw new IllegalArgumentException(
+                "Template source series is absent from ChartModel: "
+                        + sourceIndex);
     }
 
     private static boolean compatible(
@@ -425,13 +473,13 @@ public final class TemplateNativeChartUpdater {
 
     private static final class DesiredSeries {
         private final ChartSeriesDefinition configured;
-        private final ChartSeriesModel model;
+        private final int sourceIndex;
 
         private DesiredSeries(
                 ChartSeriesDefinition configured,
-                ChartSeriesModel model) {
+                int sourceIndex) {
             this.configured = configured;
-            this.model = model;
+            this.sourceIndex = sourceIndex;
         }
     }
 

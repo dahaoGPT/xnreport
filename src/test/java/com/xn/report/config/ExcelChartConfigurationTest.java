@@ -134,6 +134,61 @@ class ExcelChartConfigurationTest {
     }
 
     @Test
+    void rejectsDuplicateGroupedMarkersAndIndexesAtSecondLocator()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ReportDefinition duplicateMarkers = mapper.readValue(
+                groupedReportJson(
+                        "[{\"groupKey\":\"A\","
+                                + "\"marker\":\"REPORT_CHART:same\"},"
+                                + "{\"groupKey\":\"B\","
+                                + "\"marker\":\"REPORT_CHART:same\"}]"),
+                ReportDefinition.class);
+        assertThat(new ReportDefinitionValidator()
+                .validate(duplicateMarkers).issues())
+                .anySatisfy(issue -> {
+                    assertThat(issue.getPath()).isEqualTo(
+                            "$.charts[0].templateChartLocators[1].marker");
+                    assertThat(issue.getMessage())
+                            .contains("marker")
+                            .contains("unique");
+                });
+
+        ReportDefinition duplicateIndexes = mapper.readValue(
+                groupedReportJson(
+                        "[{\"groupKey\":\"A\",\"index\":0},"
+                                + "{\"groupKey\":\"B\",\"index\":0}]"),
+                ReportDefinition.class);
+        assertThat(new ReportDefinitionValidator()
+                .validate(duplicateIndexes).issues())
+                .anySatisfy(issue -> {
+                    assertThat(issue.getPath()).isEqualTo(
+                            "$.charts[0].templateChartLocators[1].index");
+                    assertThat(issue.getMessage())
+                            .contains("index")
+                            .contains("unique");
+                });
+    }
+
+    @Test
+    void rejectsGroupedLocatorMissingBothFormsAtMarkerPath()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ReportDefinition missing = mapper.readValue(
+                groupedReportJson("[{\"groupKey\":\"A\"}]"),
+                ReportDefinition.class);
+
+        assertThat(new ReportDefinitionValidator()
+                .validate(missing).issues())
+                .anySatisfy(issue -> {
+                    assertThat(issue.getPath()).isEqualTo(
+                            "$.charts[0].templateChartLocators[0].marker");
+                    assertThat(issue.getMessage())
+                            .contains("marker or index");
+                });
+    }
+
+    @Test
     void schemaRejectsGroupedLocatorWithoutExactlyOneMarkerOrIndex()
             throws Exception {
         ObjectMapper mapper = new ObjectMapper();

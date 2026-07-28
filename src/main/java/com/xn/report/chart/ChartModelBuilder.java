@@ -305,6 +305,7 @@ public final class ChartModelBuilder {
                         ? ChartNullHandling.GAP : source.getNullHandling(),
                 source.getLegendOrder() == null
                         ? defaultOrder : source.getLegendOrder().intValue(),
+                defaultOrder,
                 values,
                 sizes);
     }

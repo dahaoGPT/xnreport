@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.SortFieldDefinition;
+import com.xn.report.config.definition.TransformDefinition;
+import com.xn.report.config.definition.TransformOperator;
 import com.xn.report.config.definition.TransformType;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
@@ -15,9 +17,15 @@ import com.xn.report.dataset.DatasetSchema;
 import com.xn.report.dataset.DatasetType;
 import com.xn.report.support.TestFixtures;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
@@ -168,6 +176,86 @@ class TransformEngineTest {
         assertThatThrownBy(() -> incompatible.apply(source))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("safely comparable");
+    }
+
+    @Test
+    void comparesDateAndTimestampSymmetricallyForSortAndFilter() {
+        Date laterDate = new Date(2_000L);
+        Timestamp earlierTimestamp = new Timestamp(1_000L);
+
+        assertThat(TransformValueComparator.compare(
+                laterDate, earlierTimestamp))
+                .isEqualTo(-TransformValueComparator.compare(
+                        earlierTimestamp, laterDate))
+                .isPositive();
+
+        DatasetResult source = DatasetResult.list(
+                "dates",
+                Arrays.asList(
+                        DatasetRow.of("when", laterDate, "sequence", 1),
+                        DatasetRow.of("when", earlierTimestamp, "sequence", 2)));
+        DatasetResult sorted = new SortTransform(
+                "when", Direction.ASC, NullOrder.LAST).apply(source);
+        assertThat(sorted.list())
+                .extracting(row -> row.get("sequence"))
+                .containsExactly(2, 1);
+
+        DatasetResult filtered = new FilterTransform(
+                "when",
+                FilterTransform.Operator.GREATER_THAN,
+                earlierTimestamp).apply(source);
+        assertThat(filtered.list())
+                .extracting(row -> row.get("sequence"))
+                .containsExactly(1);
+
+        assertThatThrownBy(() -> TransformValueComparator.compare(
+                new java.sql.Date(1_000L),
+                java.time.LocalDate.of(1970, 1, 1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("safely comparable");
+    }
+
+    @Test
+    void filterDefensivelyFreezesExpectedValuesAndRejectsUnknownMutableTypes() {
+        byte[] bytes = new byte[]{1, 2};
+        List<Object> expected = new java.util.ArrayList<Object>();
+        expected.add(bytes);
+        FilterTransform transform = new FilterTransform(
+                "value", FilterTransform.Operator.EQUAL, expected);
+
+        bytes[0] = 9;
+        expected.clear();
+
+        DatasetResult source = DatasetResult.list(
+                "values",
+                Arrays.asList(
+                        DatasetRow.of(
+                                "value",
+                                Collections.singletonList(new byte[]{1, 2}),
+                                "sequence",
+                                1),
+                        DatasetRow.of(
+                                "value",
+                                Collections.singletonList(new byte[]{9, 2}),
+                                "sequence",
+                                2)));
+        assertThat(transform.apply(source).list())
+                .extracting(row -> row.get("sequence"))
+                .containsExactly(1);
+
+        assertThatThrownBy(() -> new FilterTransform(
+                "value",
+                FilterTransform.Operator.EQUAL,
+                new StringBuilder("mutable")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported mutable");
+
+        List<Object> cyclic = new java.util.ArrayList<Object>();
+        cyclic.add(cyclic);
+        assertThatThrownBy(() -> new FilterTransform(
+                "value", FilterTransform.Operator.EQUAL, cyclic))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Cyclic");
     }
 
     @Test
@@ -378,6 +466,48 @@ class TransformEngineTest {
     }
 
     @Test
+    void distinctDeeplyMatchesArraysNestedInCollections() {
+        List<byte[]> firstList =
+                Collections.singletonList(new byte[]{1, 2});
+        List<byte[]> secondList =
+                Collections.singletonList(new byte[]{1, 2});
+        Map<String, int[]> firstMap = new LinkedHashMap<String, int[]>();
+        firstMap.put("numbers", new int[]{3, 4});
+        Map<String, int[]> secondMap = new LinkedHashMap<String, int[]>();
+        secondMap.put("numbers", new int[]{3, 4});
+        Set<byte[]> firstSet = new LinkedHashSet<byte[]>();
+        firstSet.add(new byte[]{5, 6});
+        Set<byte[]> secondSet = new LinkedHashSet<byte[]>();
+        secondSet.add(new byte[]{5, 6});
+
+        DatasetResult source = DatasetResult.list(
+                "nested",
+                Arrays.asList(
+                        DatasetRow.of(
+                                "list", firstList,
+                                "map", firstMap,
+                                "set", firstSet,
+                                "sequence", 1),
+                        DatasetRow.of(
+                                "list", secondList,
+                                "map", secondMap,
+                                "set", secondSet,
+                                "sequence", 2),
+                        DatasetRow.of(
+                                "list", Collections.singletonList(new byte[]{9}),
+                                "map", secondMap,
+                                "set", secondSet,
+                                "sequence", 3)));
+
+        DatasetResult result = new DistinctTransform(
+                Arrays.asList("list", "map", "set")).apply(source);
+
+        assertThat(result.list())
+                .extracting(row -> row.get("sequence"))
+                .containsExactly(1, 3);
+    }
+
+    @Test
     void parsesOrderedSortFieldsAndBuildsRuntimeTransforms() throws Exception {
         String yaml = "id: people\n"
                 + "sheetName: People\n"
@@ -442,6 +572,54 @@ class TransformEngineTest {
 
         assertThatThrownBy(() -> mapper.readValue(yaml, DatasetDefinition.class))
                 .hasMessageContaining("UNKNOWN");
+    }
+
+    @Test
+    void factoryAppliesDefaultsToNullableDerivedConfiguration() {
+        TransformDefinition definition = new TransformDefinition();
+        definition.setType(TransformType.DERIVED_FIELD);
+        definition.setTargetField("ratio");
+        definition.setSourceField("value");
+        definition.setOperator(TransformOperator.DIVIDE);
+        definition.setOperand(new BigDecimal("3"));
+
+        assertThat(definition.getFields()).isNull();
+        assertThat(definition.getSortFields()).isNull();
+
+        DatasetResult source = DatasetResult.list(
+                "values",
+                Collections.singletonList(
+                        DatasetRow.of("value", new BigDecimal("10"))));
+        DatasetResult result = new TransformFactory().create(definition).apply(source);
+
+        assertThat(result.list().get(0).get("ratio"))
+                .isEqualTo(new BigDecimal("3.33"));
+    }
+
+    @Test
+    void factoryRejectsCrossTypeAndOperatorSpecificAttributes() {
+        TransformDefinition filter = new TransformDefinition();
+        filter.setType(TransformType.FILTER);
+        filter.setField("value");
+        filter.setOperator(TransformOperator.EQUAL);
+        filter.setValue(1);
+        filter.setLimit(2);
+
+        assertThatThrownBy(() -> new TransformFactory().create(filter))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not allowed");
+
+        TransformDefinition nonDivide = new TransformDefinition();
+        nonDivide.setType(TransformType.DERIVED_FIELD);
+        nonDivide.setTargetField("result");
+        nonDivide.setSourceField("value");
+        nonDivide.setOperator(TransformOperator.ADD);
+        nonDivide.setOperand(BigDecimal.ONE);
+        nonDivide.setDivideByZeroStrategy(DivideByZeroStrategy.FAIL);
+
+        assertThatThrownBy(() -> new TransformFactory().create(nonDivide))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("DIVIDE");
     }
 
     private Object derived(

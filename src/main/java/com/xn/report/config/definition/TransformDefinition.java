@@ -3,18 +3,17 @@ package com.xn.report.config.definition;
 import com.xn.report.transform.DivideByZeroStrategy;
 import com.xn.report.transform.FieldConflictStrategy;
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
 
 public class TransformDefinition {
 
     private TransformType type;
     private String field;
-    private List<String> fields = new ArrayList<String>();
-    private List<SortFieldDefinition> sortFields =
-            new ArrayList<SortFieldDefinition>();
+    private List<String> fields;
+    private List<SortFieldDefinition> sortFields;
     private TransformOperator operator;
     private Object value;
+    private boolean valueConfigured;
     private String sourceField;
     private String targetField;
     private BigDecimal operand;
@@ -45,7 +44,7 @@ public class TransformDefinition {
     }
 
     public void setFields(List<String> fields) {
-        this.fields = fields == null ? new ArrayList<String>() : fields;
+        this.fields = fields;
     }
 
     public List<SortFieldDefinition> getSortFields() {
@@ -53,8 +52,7 @@ public class TransformDefinition {
     }
 
     public void setSortFields(List<SortFieldDefinition> sortFields) {
-        this.sortFields = sortFields == null
-                ? new ArrayList<SortFieldDefinition>() : sortFields;
+        this.sortFields = sortFields;
     }
 
     public TransformOperator getOperator() {
@@ -71,6 +69,11 @@ public class TransformDefinition {
 
     public void setValue(Object value) {
         this.value = value;
+        this.valueConfigured = true;
+    }
+
+    public boolean hasValue() {
+        return valueConfigured;
     }
 
     public String getSourceField() {

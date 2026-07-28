@@ -270,6 +270,8 @@ class ReportDefinitionValidatorTest {
         filter.setType(TransformType.FILTER);
         filter.setField(" ");
         filter.setOperator(TransformOperator.GREATER_THAN);
+        filter.setLimit(1);
+        filter.setSourceField("wrongForFilter");
 
         TransformDefinition sort = new TransformDefinition();
         sort.setType(TransformType.SORT);
@@ -305,6 +307,7 @@ class ReportDefinitionValidatorTest {
                 "CFG-TRANSFORM-TYPE",
                 "CFG-TRANSFORM-FIELD",
                 "CFG-TRANSFORM-VALUE",
+                "CFG-TRANSFORM-ATTRIBUTE",
                 "CFG-TRANSFORM-SORT-FIELD",
                 "CFG-TRANSFORM-DIRECTION",
                 "CFG-TRANSFORM-NULL-ORDER",
@@ -352,7 +355,6 @@ class ReportDefinitionValidatorTest {
         derived.setOperator(TransformOperator.SUBTRACT);
         derived.setOperand(new BigDecimal("5"));
         derived.setScale(2);
-        derived.setDivideByZeroStrategy(DivideByZeroStrategy.FAIL);
 
         dataset.setTransforms(Arrays.asList(filter, sort, distinct, limit, derived));
 
@@ -380,11 +382,61 @@ class ReportDefinitionValidatorTest {
                 + "{\"type\":\"LIMIT\",\"limit\":10},"
                 + "{\"type\":\"DERIVED_FIELD\",\"targetField\":\"overHours\","
                 + "\"sourceField\":\"avgHours\",\"operator\":\"SUBTRACT\","
-                + "\"operand\":5,\"scale\":2,\"divideByZeroStrategy\":\"FAIL\","
+                + "\"operand\":5,\"scale\":2,"
                 + "\"fieldConflictStrategy\":\"REPLACE\"}"
                 + "]"));
 
         assertThat(schema.validate(valid)).isEmpty();
+        ReportDefinition parsedValid =
+                mapper.treeToValue(valid, ReportDefinition.class);
+        assertThat(validator.validate(parsedValid).isValid()).isTrue();
+
+        ObjectNode nullFilter = valid.deepCopy();
+        ObjectNode nullFilterDefinition = (ObjectNode) nullFilter.path("datasets")
+                .get(0).path("transforms").get(0);
+        nullFilterDefinition.put("operator", "IS_NULL");
+        nullFilterDefinition.remove("value");
+        assertThat(schema.validate(nullFilter)).isEmpty();
+        assertThat(validator.validate(
+                mapper.treeToValue(nullFilter, ReportDefinition.class)).isValid())
+                .isTrue();
+
+        ObjectNode nullFilterWithValue = nullFilter.deepCopy();
+        ((ObjectNode) nullFilterWithValue.path("datasets").get(0)
+                .path("transforms").get(0)).put("value", 5);
+        assertSchemaRejects(schema, nullFilterWithValue);
+        assertThat(validator.validate(mapper.treeToValue(
+                nullFilterWithValue, ReportDefinition.class)).codes())
+                .contains("CFG-TRANSFORM-ATTRIBUTE");
+
+        ObjectNode comparisonWithoutValue = valid.deepCopy();
+        ((ObjectNode) comparisonWithoutValue.path("datasets").get(0)
+                .path("transforms").get(0)).remove("value");
+        assertSchemaRejects(schema, comparisonWithoutValue);
+        assertThat(validator.validate(mapper.treeToValue(
+                comparisonWithoutValue, ReportDefinition.class)).codes())
+                .contains("CFG-TRANSFORM-VALUE");
+
+        ObjectNode defaultWithoutValue = valid.deepCopy();
+        ObjectNode defaultDerived = (ObjectNode) defaultWithoutValue.path("datasets")
+                .get(0).path("transforms").get(4);
+        defaultDerived.put("operator", "DIVIDE");
+        defaultDerived.put("divideByZeroStrategy", "DEFAULT_VALUE");
+        defaultDerived.remove("divideByZeroDefault");
+        assertSchemaRejects(schema, defaultWithoutValue);
+        assertThat(validator.validate(mapper.treeToValue(
+                defaultWithoutValue, ReportDefinition.class)).codes())
+                .contains("CFG-TRANSFORM-DIVIDE-DEFAULT");
+
+        ObjectNode filterWithCrossTypeAttributes = valid.deepCopy();
+        ObjectNode crossTypeFilter = (ObjectNode) filterWithCrossTypeAttributes
+                .path("datasets").get(0).path("transforms").get(0);
+        crossTypeFilter.put("limit", 1);
+        crossTypeFilter.put("sourceField", "wrong");
+        assertSchemaRejects(schema, filterWithCrossTypeAttributes);
+        assertThat(validator.validate(mapper.treeToValue(
+                filterWithCrossTypeAttributes, ReportDefinition.class)).codes())
+                .contains("CFG-TRANSFORM-ATTRIBUTE");
 
         ObjectNode unknownTransformType = valid.deepCopy();
         ((ObjectNode) unknownTransformType.path("datasets").get(0)

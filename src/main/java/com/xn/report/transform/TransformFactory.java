@@ -4,7 +4,10 @@ import com.xn.report.config.definition.SortFieldDefinition;
 import com.xn.report.config.definition.TransformDefinition;
 import com.xn.report.config.definition.TransformOperator;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class TransformFactory {
 
@@ -25,6 +28,7 @@ public final class TransformFactory {
             throw new IllegalArgumentException(
                     "Transform definition type must not be null");
         }
+        validateAttributes(definition);
         switch (definition.getType()) {
             case FILTER:
                 return new FilterTransform(
@@ -105,5 +109,112 @@ public final class TransformFactory {
             throw new IllegalArgumentException(
                     "Not an arithmetic operator: " + operator, exception);
         }
+    }
+
+    private static void validateAttributes(TransformDefinition definition) {
+        Set<String> allowed;
+        switch (definition.getType()) {
+            case FILTER:
+                allowed = names("field", "operator", "value");
+                break;
+            case SORT:
+                allowed = names("sortFields");
+                break;
+            case DISTINCT:
+                allowed = names("fields");
+                break;
+            case LIMIT:
+                allowed = names("limit");
+                break;
+            case DERIVED_FIELD:
+                allowed = names(
+                        "sourceField",
+                        "targetField",
+                        "operator",
+                        "operand",
+                        "scale",
+                        "divideByZeroStrategy",
+                        "divideByZeroDefault",
+                        "fieldConflictStrategy");
+                break;
+            default:
+                throw new IllegalArgumentException(
+                        "Unsupported transform type: " + definition.getType());
+        }
+
+        rejectUnexpected(definition, allowed);
+        if (definition.getType()
+                == com.xn.report.config.definition.TransformType.FILTER) {
+            boolean nullOperator =
+                    definition.getOperator() == TransformOperator.IS_NULL
+                    || definition.getOperator() == TransformOperator.IS_NOT_NULL;
+            if (nullOperator && definition.hasValue()) {
+                throw new IllegalArgumentException(
+                        definition.getOperator() + " does not allow value");
+            }
+            if (!nullOperator
+                    && (!definition.hasValue() || definition.getValue() == null)) {
+                throw new IllegalArgumentException(
+                        "Filter comparison value is required");
+            }
+        }
+        if (definition.getType()
+                == com.xn.report.config.definition.TransformType.DERIVED_FIELD) {
+            boolean divide =
+                    definition.getOperator() == TransformOperator.DIVIDE;
+            if (!divide && (definition.getDivideByZeroStrategy() != null
+                    || definition.getDivideByZeroDefault() != null)) {
+                throw new IllegalArgumentException(
+                        "Divide-by-zero settings require DIVIDE operator");
+            }
+            if (divide
+                    && definition.getDivideByZeroStrategy()
+                            == DivideByZeroStrategy.DEFAULT_VALUE
+                    && definition.getDivideByZeroDefault() == null) {
+                throw new IllegalArgumentException(
+                        "DEFAULT_VALUE requires divideByZeroDefault");
+            }
+            if (divide
+                    && definition.getDivideByZeroStrategy()
+                            != DivideByZeroStrategy.DEFAULT_VALUE
+                    && definition.getDivideByZeroDefault() != null) {
+                throw new IllegalArgumentException(
+                        "divideByZeroDefault requires DEFAULT_VALUE strategy");
+            }
+        }
+    }
+
+    private static void rejectUnexpected(
+            TransformDefinition definition, Set<String> allowed) {
+        reject(definition.getField(), "field", allowed);
+        reject(definition.getFields(), "fields", allowed);
+        reject(definition.getSortFields(), "sortFields", allowed);
+        reject(definition.getOperator(), "operator", allowed);
+        if (definition.hasValue()) {
+            reject(Boolean.TRUE, "value", allowed);
+        }
+        reject(definition.getSourceField(), "sourceField", allowed);
+        reject(definition.getTargetField(), "targetField", allowed);
+        reject(definition.getOperand(), "operand", allowed);
+        reject(definition.getLimit(), "limit", allowed);
+        reject(definition.getScale(), "scale", allowed);
+        reject(definition.getDivideByZeroStrategy(),
+                "divideByZeroStrategy", allowed);
+        reject(definition.getDivideByZeroDefault(),
+                "divideByZeroDefault", allowed);
+        reject(definition.getFieldConflictStrategy(),
+                "fieldConflictStrategy", allowed);
+    }
+
+    private static void reject(
+            Object value, String name, Set<String> allowed) {
+        if (value != null && !allowed.contains(name)) {
+            throw new IllegalArgumentException(
+                    name + " is not allowed for this transform type");
+        }
+    }
+
+    private static Set<String> names(String... names) {
+        return new HashSet<String>(Arrays.asList(names));
     }
 }

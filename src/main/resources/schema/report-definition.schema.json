@@ -191,7 +191,8 @@
           "required": [
             "type",
             "field",
-            "operator"
+            "operator",
+            "value"
           ],
           "properties": {
             "type": {
@@ -219,12 +220,39 @@
                 "LESS_THAN",
                 "LT",
                 "LESS_THAN_OR_EQUAL",
-                "LTE",
-                "IS_NULL",
-                "IS_NOT_NULL"
+                "LTE"
               ]
             },
             "value": {}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "field",
+            "operator"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "FILTER"
+              ]
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "x-java-nonBlank": true
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "IS_NULL",
+                "IS_NOT_NULL"
+              ]
+            }
           }
         },
         {
@@ -297,69 +325,235 @@
           }
         },
         {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "type",
-            "targetField",
-            "sourceField",
-            "operator",
-            "operand"
-          ],
-          "properties": {
-            "type": {
-              "type": "string",
-              "enum": [
-                "DERIVED_FIELD"
-              ]
-            },
-            "targetField": {
-              "type": "string",
-              "minLength": 1,
-              "x-java-nonBlank": true
-            },
-            "sourceField": {
-              "type": "string",
-              "minLength": 1,
-              "x-java-nonBlank": true
-            },
-            "operator": {
-              "type": "string",
-              "enum": [
-                "ADD",
-                "SUBTRACT",
-                "MULTIPLY",
-                "DIVIDE"
-              ]
-            },
-            "operand": {
-              "type": "number"
-            },
-            "scale": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "divideByZeroStrategy": {
-              "type": "string",
-              "enum": [
-                "FAIL",
-                "NULL",
-                "DEFAULT_VALUE"
-              ]
-            },
-            "divideByZeroDefault": {
-              "type": "number"
-            },
-            "fieldConflictStrategy": {
-              "type": "string",
-              "enum": [
-                "FAIL",
-                "REPLACE"
-              ]
-            }
-          }
+          "$ref": "#/definitions/derivedNonDivideTransform"
+        },
+        {
+          "$ref": "#/definitions/derivedDivideDefaultTransform"
+        },
+        {
+          "$ref": "#/definitions/derivedDividePolicyTransform"
+        },
+        {
+          "$ref": "#/definitions/derivedDivideDefaultValueTransform"
         }
       ]
+    },
+    "derivedNonDivideTransform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "targetField",
+        "sourceField",
+        "operator",
+        "operand"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "DERIVED_FIELD"
+          ]
+        },
+        "targetField": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "sourceField": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            "ADD",
+            "SUBTRACT",
+            "MULTIPLY"
+          ]
+        },
+        "operand": {
+          "type": "number"
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fieldConflictStrategy": {
+          "type": "string",
+          "enum": [
+            "FAIL",
+            "REPLACE"
+          ]
+        }
+      }
+    },
+    "derivedDivideDefaultTransform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "targetField",
+        "sourceField",
+        "operator",
+        "operand"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "DERIVED_FIELD"
+          ]
+        },
+        "targetField": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "sourceField": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            "DIVIDE"
+          ]
+        },
+        "operand": {
+          "type": "number"
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fieldConflictStrategy": {
+          "type": "string",
+          "enum": [
+            "FAIL",
+            "REPLACE"
+          ]
+        }
+      }
+    },
+    "derivedDividePolicyTransform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "targetField",
+        "sourceField",
+        "operator",
+        "operand",
+        "divideByZeroStrategy"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "DERIVED_FIELD"
+          ]
+        },
+        "targetField": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "sourceField": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            "DIVIDE"
+          ]
+        },
+        "operand": {
+          "type": "number"
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "divideByZeroStrategy": {
+          "type": "string",
+          "enum": [
+            "FAIL",
+            "NULL"
+          ]
+        },
+        "fieldConflictStrategy": {
+          "type": "string",
+          "enum": [
+            "FAIL",
+            "REPLACE"
+          ]
+        }
+      }
+    },
+    "derivedDivideDefaultValueTransform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "targetField",
+        "sourceField",
+        "operator",
+        "operand",
+        "divideByZeroStrategy",
+        "divideByZeroDefault"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "DERIVED_FIELD"
+          ]
+        },
+        "targetField": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "sourceField": {
+          "type": "string",
+          "minLength": 1,
+          "x-java-nonBlank": true
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            "DIVIDE"
+          ]
+        },
+        "operand": {
+          "type": "number"
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "divideByZeroStrategy": {
+          "type": "string",
+          "enum": [
+            "DEFAULT_VALUE"
+          ]
+        },
+        "divideByZeroDefault": {
+          "type": "number"
+        },
+        "fieldConflictStrategy": {
+          "type": "string",
+          "enum": [
+            "FAIL",
+            "REPLACE"
+          ]
+        }
+      }
     },
     "sortField": {
       "type": "object",

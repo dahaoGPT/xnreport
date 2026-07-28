@@ -123,6 +123,7 @@ public final class ReportDefinitionValidator {
                         "Transform type is required");
                 continue;
             }
+            validateTransformAttributes(transform, path, result);
             switch (transform.getType()) {
                 case FILTER:
                     validateFilterTransform(transform, path, result);
@@ -163,9 +164,13 @@ public final class ReportDefinitionValidator {
         if (!isFilterOperator(operator)) {
             result.add("CFG-TRANSFORM-OPERATOR", path + ".operator",
                     "FILTER requires a filter operator");
-        } else if (operator != TransformOperator.IS_NULL
-                && operator != TransformOperator.IS_NOT_NULL
-                && transform.getValue() == null) {
+        } else if (operator == TransformOperator.IS_NULL
+                || operator == TransformOperator.IS_NOT_NULL) {
+            if (transform.hasValue()) {
+                result.add("CFG-TRANSFORM-ATTRIBUTE", path + ".value",
+                        operator + " must not configure value");
+            }
+        } else if (!transform.hasValue() || transform.getValue() == null) {
             result.add("CFG-TRANSFORM-VALUE", path + ".value",
                     "FILTER comparison requires a value");
         }
@@ -271,6 +276,118 @@ public final class ReportDefinitionValidator {
             result.add("CFG-TRANSFORM-DIVIDE-DEFAULT",
                     path + ".divideByZeroDefault",
                     "DEFAULT_VALUE requires divideByZeroDefault");
+        }
+        if (transform.getOperator() != TransformOperator.DIVIDE
+                && (transform.getDivideByZeroStrategy() != null
+                || transform.getDivideByZeroDefault() != null)) {
+            result.add("CFG-TRANSFORM-ATTRIBUTE", path,
+                    "Divide-by-zero settings require DIVIDE operator");
+        } else if (transform.getOperator() == TransformOperator.DIVIDE
+                && transform.getDivideByZeroStrategy()
+                        != com.xn.report.transform.DivideByZeroStrategy.DEFAULT_VALUE
+                && transform.getDivideByZeroDefault() != null) {
+            result.add("CFG-TRANSFORM-ATTRIBUTE",
+                    path + ".divideByZeroDefault",
+                    "divideByZeroDefault requires DEFAULT_VALUE strategy");
+        }
+    }
+
+    private void validateTransformAttributes(
+            TransformDefinition transform,
+            String path,
+            ValidationResult result) {
+        switch (transform.getType()) {
+            case FILTER:
+                rejectIfConfigured(result, path, "fields", transform.getFields());
+                rejectIfConfigured(result, path, "sortFields", transform.getSortFields());
+                rejectIfConfigured(result, path, "sourceField", transform.getSourceField());
+                rejectIfConfigured(result, path, "targetField", transform.getTargetField());
+                rejectIfConfigured(result, path, "operand", transform.getOperand());
+                rejectIfConfigured(result, path, "limit", transform.getLimit());
+                rejectIfConfigured(result, path, "scale", transform.getScale());
+                rejectIfConfigured(result, path, "divideByZeroStrategy",
+                        transform.getDivideByZeroStrategy());
+                rejectIfConfigured(result, path, "divideByZeroDefault",
+                        transform.getDivideByZeroDefault());
+                rejectIfConfigured(result, path, "fieldConflictStrategy",
+                        transform.getFieldConflictStrategy());
+                break;
+            case SORT:
+                rejectIfConfigured(result, path, "field", transform.getField());
+                rejectIfConfigured(result, path, "fields", transform.getFields());
+                rejectIfConfigured(result, path, "operator", transform.getOperator());
+                rejectValueIfConfigured(result, path, transform);
+                rejectDerivedAndLimitAttributes(transform, path, result);
+                break;
+            case DISTINCT:
+                rejectIfConfigured(result, path, "field", transform.getField());
+                rejectIfConfigured(result, path, "sortFields", transform.getSortFields());
+                rejectIfConfigured(result, path, "operator", transform.getOperator());
+                rejectValueIfConfigured(result, path, transform);
+                rejectDerivedAndLimitAttributes(transform, path, result);
+                break;
+            case LIMIT:
+                rejectIfConfigured(result, path, "field", transform.getField());
+                rejectIfConfigured(result, path, "fields", transform.getFields());
+                rejectIfConfigured(result, path, "sortFields", transform.getSortFields());
+                rejectIfConfigured(result, path, "operator", transform.getOperator());
+                rejectValueIfConfigured(result, path, transform);
+                rejectDerivedAttributes(transform, path, result);
+                break;
+            case DERIVED_FIELD:
+                rejectIfConfigured(result, path, "field", transform.getField());
+                rejectIfConfigured(result, path, "fields", transform.getFields());
+                rejectIfConfigured(result, path, "sortFields", transform.getSortFields());
+                rejectValueIfConfigured(result, path, transform);
+                rejectIfConfigured(result, path, "limit", transform.getLimit());
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void rejectDerivedAndLimitAttributes(
+            TransformDefinition transform,
+            String path,
+            ValidationResult result) {
+        rejectDerivedAttributes(transform, path, result);
+        rejectIfConfigured(result, path, "limit", transform.getLimit());
+    }
+
+    private void rejectDerivedAttributes(
+            TransformDefinition transform,
+            String path,
+            ValidationResult result) {
+        rejectIfConfigured(result, path, "sourceField", transform.getSourceField());
+        rejectIfConfigured(result, path, "targetField", transform.getTargetField());
+        rejectIfConfigured(result, path, "operand", transform.getOperand());
+        rejectIfConfigured(result, path, "scale", transform.getScale());
+        rejectIfConfigured(result, path, "divideByZeroStrategy",
+                transform.getDivideByZeroStrategy());
+        rejectIfConfigured(result, path, "divideByZeroDefault",
+                transform.getDivideByZeroDefault());
+        rejectIfConfigured(result, path, "fieldConflictStrategy",
+                transform.getFieldConflictStrategy());
+    }
+
+    private void rejectValueIfConfigured(
+            ValidationResult result,
+            String path,
+            TransformDefinition transform) {
+        if (transform.hasValue()) {
+            result.add("CFG-TRANSFORM-ATTRIBUTE", path + ".value",
+                    "value is not allowed for " + transform.getType());
+        }
+    }
+
+    private void rejectIfConfigured(
+            ValidationResult result,
+            String path,
+            String attribute,
+            Object value) {
+        if (value != null) {
+            result.add("CFG-TRANSFORM-ATTRIBUTE", path + "." + attribute,
+                    attribute + " is not allowed for this transform type");
         }
     }
 

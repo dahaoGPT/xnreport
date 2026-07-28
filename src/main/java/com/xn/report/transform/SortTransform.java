@@ -2,7 +2,6 @@ package com.xn.report.transform;
 
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -104,20 +103,6 @@ public final class SortTransform implements Transform {
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static int compareValues(Object left, Object right) {
-        if (left instanceof Number && right instanceof Number) {
-            return number((Number) left).compareTo(number((Number) right));
-        }
-        if (left.getClass().isInstance(right) && left instanceof Comparable) {
-            return ((Comparable) left).compareTo(right);
-        }
-        throw new IllegalArgumentException(
-                "Sort values are not safely comparable: "
-                        + left.getClass().getName() + " and "
-                        + right.getClass().getName());
-    }
-
-    private static BigDecimal number(Number value) {
-        return value instanceof BigDecimal
-                ? (BigDecimal) value : new BigDecimal(value.toString());
+        return TransformValueComparator.compare(left, right);
     }
 }

@@ -3,7 +3,6 @@ package com.xn.report.transform;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -13,21 +12,24 @@ public final class DistinctTransform implements Transform {
 
     private static final class DeepKey {
 
-        private final Object[] values;
+        private final TransformDeepValue[] values;
 
         private DeepKey(List<Object> values) {
-            this.values = values.toArray(new Object[values.size()]);
+            this.values = new TransformDeepValue[values.size()];
+            for (int index = 0; index < values.size(); index++) {
+                this.values[index] = TransformDeepValue.of(values.get(index));
+            }
         }
 
         @Override
         public boolean equals(Object object) {
             return object instanceof DeepKey
-                    && Arrays.deepEquals(values, ((DeepKey) object).values);
+                    && java.util.Arrays.equals(values, ((DeepKey) object).values);
         }
 
         @Override
         public int hashCode() {
-            return Arrays.deepHashCode(values);
+            return java.util.Arrays.hashCode(values);
         }
     }
 

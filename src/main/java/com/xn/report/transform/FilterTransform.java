@@ -2,10 +2,8 @@ package com.xn.report.transform;
 
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 public final class FilterTransform implements Transform {
 
@@ -36,7 +34,7 @@ public final class FilterTransform implements Transform {
             throw new IllegalArgumentException("Filter operator must not be null");
         }
         this.operator = operator;
-        this.expected = expected;
+        this.expected = TransformValueSnapshot.freeze(expected);
     }
 
     @Override
@@ -73,7 +71,7 @@ public final class FilterTransform implements Transform {
             case NE:
                 return !valuesEqual(actual, expected);
             default:
-                int comparison = compare(actual, expected);
+                int comparison = TransformValueComparator.compare(actual, expected);
                 switch (operator) {
                     case GREATER_THAN:
                     case GT:
@@ -95,29 +93,7 @@ public final class FilterTransform implements Transform {
     }
 
     private static boolean valuesEqual(Object left, Object right) {
-        if (left instanceof Number && right instanceof Number) {
-            return number((Number) left).compareTo(number((Number) right)) == 0;
-        }
-        return Objects.equals(left, right);
-    }
-
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private static int compare(Object left, Object right) {
-        if (left instanceof Number && right instanceof Number) {
-            return number((Number) left).compareTo(number((Number) right));
-        }
-        if (left.getClass().isInstance(right) && left instanceof Comparable) {
-            return ((Comparable) left).compareTo(right);
-        }
-        throw new IllegalArgumentException(
-                "Filter values are not safely comparable: "
-                        + left.getClass().getName() + " and "
-                        + right.getClass().getName());
-    }
-
-    private static BigDecimal number(Number value) {
-        return value instanceof BigDecimal
-                ? (BigDecimal) value : new BigDecimal(value.toString());
+        return TransformValueComparator.equal(left, right);
     }
 
     private static String requireField(String field) {

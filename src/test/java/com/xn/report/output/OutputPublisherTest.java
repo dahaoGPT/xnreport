@@ -150,6 +150,83 @@ class OutputPublisherTest {
     }
 
     @Test
+    void runtimeFailureBeforeCommitRollsBackAndWrapsAsOutputError()
+            throws Exception {
+        Path output = Files.createDirectory(temp.resolve("runtime-rollback-output"));
+        Path oldExcel = Files.write(output.resolve("report.xlsx"), bytes("old-x"));
+        Path oldWord = Files.write(output.resolve("report.docx"), bytes("old-w"));
+        AtomicInteger finalMoves = new AtomicInteger();
+        OutputPublisher.MoveStrategy runtimeSecondFinalMove =
+                (source, target, options) -> {
+                    String targetName = target.getFileName().toString();
+                    if (!targetName.contains(".publishing-")
+                            && !targetName.contains(".backup-")
+                            && finalMoves.incrementAndGet() == 2) {
+                        throw new IllegalStateException("runtime second final move failed");
+                    }
+                    return Files.move(source, target, options);
+                };
+
+        assertThatThrownBy(() -> new OutputPublisher(
+                output,
+                CollisionPolicy.OVERWRITE,
+                runtimeSecondFinalMove).publish(
+                source("runtime-rollback.xlsx", "new-x"),
+                source("runtime-rollback.docx", "new-w"),
+                new OutputTargets(oldExcel, oldWord)))
+                .isInstanceOfSatisfying(ReportException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(ReportErrorCode.OUT_003);
+                    assertThat(failure.getCause())
+                            .isInstanceOfSatisfying(
+                                    IllegalStateException.class,
+                                    cause -> assertThat(cause)
+                                            .hasMessage("runtime second final move failed"));
+                });
+        assertThat(read(oldExcel)).isEqualTo("old-x");
+        assertThat(read(oldWord)).isEqualTo("old-w");
+        try (java.util.stream.Stream<Path> paths = Files.list(output)) {
+            assertThat(paths.map(path -> path.getFileName().toString()))
+                    .containsExactlyInAnyOrder("report.xlsx", "report.docx");
+        }
+    }
+
+    @Test
+    void runtimeCopyFailureBeforeCommitCleansStagingAndWrapsAsOutputError()
+            throws Exception {
+        Path output = Files.createDirectory(temp.resolve("runtime-copy-output"));
+        AtomicInteger copies = new AtomicInteger();
+        OutputPublisher.CopyStrategy runtimeSecondCopy =
+                (source, target, options) -> {
+                    if (copies.incrementAndGet() == 2) {
+                        throw new IllegalStateException("runtime second copy failed");
+                    }
+                    return Files.copy(source, target, options);
+                };
+        OutputPublisher publisher = new OutputPublisher(
+                output,
+                CollisionPolicy.FAIL,
+                OutputPublisher::defaultMove,
+                Files::deleteIfExists,
+                OutputPublisher::acquireDefaultProcessLock,
+                runtimeSecondCopy);
+
+        assertThatThrownBy(() -> publisher.publish(
+                source("runtime-copy.xlsx", "x"),
+                source("runtime-copy.docx", "w"),
+                new OutputTargets(
+                        output.resolve("report.xlsx"),
+                        output.resolve("report.docx"))))
+                .isInstanceOfSatisfying(ReportException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(ReportErrorCode.OUT_003);
+                    assertThat(failure.getCause())
+                            .isInstanceOf(IllegalStateException.class);
+                });
+        try (java.util.stream.Stream<Path> paths = Files.list(output)) {
+            assertThat(paths).isEmpty();
+        }
+    }
+
+    @Test
     void rejectsWrongExtensionsAndTargetsOutsideOutputRoot() throws Exception {
         Path output = Files.createDirectory(temp.resolve("safe-output"));
         OutputPublisher publisher = new OutputPublisher(output);
@@ -245,6 +322,37 @@ class OutputPublisherTest {
     }
 
     @Test
+    void runtimeBackupCleanupFailureReturnsCommittedPairWithWarning()
+            throws Exception {
+        Path output = Files.createDirectory(temp.resolve("runtime-cleanup-output"));
+        Path oldExcel = Files.write(output.resolve("report.xlsx"), bytes("old-x"));
+        Path oldWord = Files.write(output.resolve("report.docx"), bytes("old-w"));
+        OutputPublisher.DeleteStrategy failingBackupCleanup = path -> {
+            if (path.getFileName().toString().contains(".backup-")) {
+                throw new IllegalStateException("runtime cleanup failed");
+            }
+            return Files.deleteIfExists(path);
+        };
+
+        PublishedOutputs result = new OutputPublisher(
+                output,
+                CollisionPolicy.OVERWRITE,
+                OutputPublisher::defaultMove,
+                failingBackupCleanup).publish(
+                source("runtime-cleanup.xlsx", "new-x"),
+                source("runtime-cleanup.docx", "new-w"),
+                new OutputTargets(oldExcel, oldWord));
+
+        assertThat(read(result.getExcel())).isEqualTo("new-x");
+        assertThat(read(result.getWord())).isEqualTo("new-w");
+        assertThat(result.getWarnings())
+                .singleElement()
+                .asString()
+                .contains("runtime cleanup failed");
+        assertThat(result.getCleanupArtifactPaths()).hasSize(2);
+    }
+
+    @Test
     void lockReleaseAndChannelCloseFailuresDoNotOverrideCommittedResult()
             throws Exception {
         Path output = Files.createDirectory(temp.resolve("lock-close-output"));
@@ -279,6 +387,71 @@ class OutputPublisherTest {
                 .contains("publication lock cleanup failed")
                 .contains("release failed");
         assertThat(result.getCleanupArtifactPaths()).isEmpty();
+    }
+
+    @Test
+    void runtimeLockCloseFailureDoesNotOverrideCommittedResultAndReleasesJvmLock()
+            throws Exception {
+        Path output = Files.createDirectory(temp.resolve("runtime-lock-close-output"));
+        OutputPublisher.LockStrategy failingCloseLock = ignored ->
+                () -> {
+                    throw new IllegalStateException("runtime lock close failed");
+                };
+        OutputPublisher publisher = new OutputPublisher(
+                output,
+                CollisionPolicy.FAIL,
+                OutputPublisher::defaultMove,
+                Files::deleteIfExists,
+                failingCloseLock);
+
+        PublishedOutputs result = publisher.publish(
+                source("runtime-lock-close.xlsx", "x"),
+                source("runtime-lock-close.docx", "w"),
+                new OutputTargets(
+                        output.resolve("report.xlsx"),
+                        output.resolve("report.docx")));
+
+        assertThat(result.getExcel()).exists();
+        assertThat(result.getWord()).exists();
+        assertThat(result.getWarnings())
+                .singleElement()
+                .asString()
+                .contains("runtime lock close failed");
+        assertThat(OutputPublisher.jvmLockRegistrySize()).isZero();
+    }
+
+    @Test
+    void runtimeLockCloseFailureIsSuppressedByPreCommitFailureAndJvmLockIsReleased()
+            throws Exception {
+        Path output = Files.createDirectory(temp.resolve("runtime-precommit-lock-output"));
+        Files.write(output.resolve("report.xlsx"), bytes("old-x"));
+        OutputPublisher.LockStrategy failingCloseLock = ignored ->
+                () -> {
+                    throw new IllegalStateException("runtime lock close failed");
+                };
+        OutputPublisher publisher = new OutputPublisher(
+                output,
+                CollisionPolicy.FAIL,
+                OutputPublisher::defaultMove,
+                Files::deleteIfExists,
+                failingCloseLock);
+
+        assertThatThrownBy(() -> publisher.publish(
+                source("runtime-precommit-lock.xlsx", "x"),
+                source("runtime-precommit-lock.docx", "w"),
+                new OutputTargets(
+                        output.resolve("report.xlsx"),
+                        output.resolve("report.docx"))))
+                .isInstanceOfSatisfying(ReportException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(ReportErrorCode.OUT_002);
+                    assertThat(failure.getSuppressed())
+                            .singleElement()
+                            .isInstanceOfSatisfying(
+                                    IllegalStateException.class,
+                                    suppressed -> assertThat(suppressed)
+                                            .hasMessage("runtime lock close failed"));
+                });
+        assertThat(OutputPublisher.jvmLockRegistrySize()).isZero();
     }
 
     @Test
@@ -326,6 +499,48 @@ class OutputPublisherTest {
                     .anyMatch(name -> name.contains(".backup-"))
                     .anyMatch(name -> name.contains(".publishing-"));
         }
+    }
+
+    @Test
+    void runtimeStagedCleanupFailureIsSuppressedAndReportsRetainedArtifact()
+            throws Exception {
+        Path output = Files.createDirectory(temp.resolve("runtime-precommit-cleanup-output"));
+        AtomicInteger finalMoves = new AtomicInteger();
+        OutputPublisher.MoveStrategy failingSecondFinalMove =
+                (source, target, options) -> {
+                    if (!target.getFileName().toString().contains(".publishing-")
+                            && !target.getFileName().toString().contains(".backup-")
+                            && finalMoves.incrementAndGet() == 2) {
+                        throw new IOException("second final move failed");
+                    }
+                    return Files.move(source, target, options);
+                };
+        OutputPublisher.DeleteStrategy failingPublishingCleanup = path -> {
+            if (path.getFileName().toString().contains(".publishing-")) {
+                throw new IllegalStateException("runtime staged cleanup failed");
+            }
+            return Files.deleteIfExists(path);
+        };
+
+        assertThatThrownBy(() -> new OutputPublisher(
+                output,
+                CollisionPolicy.FAIL,
+                failingSecondFinalMove,
+                failingPublishingCleanup).publish(
+                source("runtime-precommit-cleanup.xlsx", "x"),
+                source("runtime-precommit-cleanup.docx", "w"),
+                new OutputTargets(
+                        output.resolve("report.xlsx"),
+                        output.resolve("report.docx"))))
+                .isInstanceOfSatisfying(ReportException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(ReportErrorCode.OUT_003);
+                    assertThat(failure.getMessage())
+                            .contains("runtime staged cleanup failed")
+                            .contains(".publishing-");
+                    assertThat(failure.getCause().getSuppressed())
+                            .singleElement()
+                            .isInstanceOf(IllegalStateException.class);
+                });
     }
 
     @Test

@@ -34,6 +34,7 @@ public final class OutputPublisher {
     private final MoveStrategy moveStrategy;
     private final DeleteStrategy deleteStrategy;
     private final LockStrategy lockStrategy;
+    private final CopyStrategy copyStrategy;
 
     public OutputPublisher(Path outputRoot) {
         this(outputRoot, CollisionPolicy.VERSIONED);
@@ -45,7 +46,8 @@ public final class OutputPublisher {
                 collisionPolicy,
                 OutputPublisher::defaultMove,
                 Files::deleteIfExists,
-                OutputPublisher::acquireDefaultProcessLock);
+                OutputPublisher::acquireDefaultProcessLock,
+                Files::copy);
     }
 
     OutputPublisher(
@@ -57,7 +59,8 @@ public final class OutputPublisher {
                 collisionPolicy,
                 moveStrategy,
                 Files::deleteIfExists,
-                OutputPublisher::acquireDefaultProcessLock);
+                OutputPublisher::acquireDefaultProcessLock,
+                Files::copy);
     }
 
     OutputPublisher(
@@ -70,7 +73,8 @@ public final class OutputPublisher {
                 collisionPolicy,
                 moveStrategy,
                 deleteStrategy,
-                OutputPublisher::acquireDefaultProcessLock);
+                OutputPublisher::acquireDefaultProcessLock,
+                Files::copy);
     }
 
     OutputPublisher(
@@ -79,6 +83,22 @@ public final class OutputPublisher {
             MoveStrategy moveStrategy,
             DeleteStrategy deleteStrategy,
             LockStrategy lockStrategy) {
+        this(
+                outputRoot,
+                collisionPolicy,
+                moveStrategy,
+                deleteStrategy,
+                lockStrategy,
+                Files::copy);
+    }
+
+    OutputPublisher(
+            Path outputRoot,
+            CollisionPolicy collisionPolicy,
+            MoveStrategy moveStrategy,
+            DeleteStrategy deleteStrategy,
+            LockStrategy lockStrategy,
+            CopyStrategy copyStrategy) {
         Objects.requireNonNull(outputRoot, "outputRoot");
         this.outputRoot = outputRoot.toAbsolutePath().normalize();
         this.collisionPolicy =
@@ -86,6 +106,7 @@ public final class OutputPublisher {
         this.moveStrategy = Objects.requireNonNull(moveStrategy, "moveStrategy");
         this.deleteStrategy = Objects.requireNonNull(deleteStrategy, "deleteStrategy");
         this.lockStrategy = Objects.requireNonNull(lockStrategy, "lockStrategy");
+        this.copyStrategy = Objects.requireNonNull(copyStrategy, "copyStrategy");
         try {
             Files.createDirectories(this.outputRoot);
         } catch (IOException ex) {
@@ -125,7 +146,7 @@ public final class OutputPublisher {
                 if (processLock != null) {
                     try {
                         processLock.close();
-                    } catch (IOException ex) {
+                    } catch (IOException | RuntimeException ex) {
                         if (result != null) {
                             result = result.withWarning(
                                     "publication lock cleanup failed after commit: "
@@ -162,8 +183,8 @@ public final class OutputPublisher {
         boolean excelPublished = false;
         boolean wordPublished = false;
         try {
-            Files.copy(sourceExcel, stagedExcel);
-            Files.copy(sourceWord, stagedWord);
+            copyStrategy.copy(sourceExcel, stagedExcel);
+            copyStrategy.copy(sourceWord, stagedWord);
 
             if (collisionPolicy == CollisionPolicy.OVERWRITE) {
                 if (Files.exists(targets.getExcel())) {
@@ -197,7 +218,7 @@ public final class OutputPublisher {
                     targets.getWord(),
                     cleanup.warnings,
                     cleanup.artifactPaths);
-        } catch (IOException ex) {
+        } catch (IOException | RuntimeException ex) {
             RollbackOutcome rollback = rollback(
                     targets,
                     backupExcel,
@@ -206,15 +227,16 @@ public final class OutputPublisher {
                     wordBackedUp,
                     excelPublished,
                     wordPublished);
+            Throwable failure = ex;
             if (rollback.failure != null) {
-                ex.addSuppressed(rollback.failure);
+                addSuppressedIfDistinct(failure, rollback.failure);
             }
             CleanupOutcome cleanup = cleanupArtifacts(
                     "staged cleanup failed before commit",
                     stagedExcel,
                     stagedWord);
             if (cleanup.failure != null) {
-                ex.addSuppressed(cleanup.failure);
+                addSuppressedIfDistinct(failure, cleanup.failure);
             }
             String retained = retainedArtifacts(
                     backupExcel, backupWord, stagedExcel, stagedWord);
@@ -228,7 +250,7 @@ public final class OutputPublisher {
                             + (cleanup.warnings.isEmpty()
                                     ? ""
                                     : "; " + cleanup.warnings.get(0)),
-                    ex);
+                    failure);
         }
     }
 
@@ -240,7 +262,7 @@ public final class OutputPublisher {
             boolean wordBackedUp,
             boolean excelPublished,
             boolean wordPublished) {
-        IOException failure = null;
+        Throwable failure = null;
         if (wordPublished) {
             failure = deleteForRollback(targets.getWord(), failure);
         }
@@ -256,24 +278,24 @@ public final class OutputPublisher {
         return new RollbackOutcome(failure);
     }
 
-    private IOException restoreBackup(
-            Path backup, Path target, IOException priorFailure) {
+    private Throwable restoreBackup(
+            Path backup, Path target, Throwable priorFailure) {
         try {
             Files.deleteIfExists(target);
             moveStrategy.move(
                     backup, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException ex) {
-            return combine(priorFailure, ex);
+        } catch (IOException | RuntimeException ex) {
+            return combineFailure(priorFailure, ex);
         }
         return priorFailure;
     }
 
-    private static IOException deleteForRollback(
-            Path target, IOException priorFailure) {
+    private static Throwable deleteForRollback(
+            Path target, Throwable priorFailure) {
         try {
             Files.deleteIfExists(target);
-        } catch (IOException ex) {
-            return combine(priorFailure, ex);
+        } catch (IOException | RuntimeException ex) {
+            return combineFailure(priorFailure, ex);
         }
         return priorFailure;
     }
@@ -372,29 +394,20 @@ public final class OutputPublisher {
         }
     }
 
-    private static IOException combine(IOException prior, IOException next) {
-        if (prior == null) {
-            return next;
-        }
-        prior.addSuppressed(next);
-        return prior;
-    }
-
     private CleanupOutcome cleanupArtifacts(String warningPrefix, Path... artifacts) {
-        IOException failure = null;
+        Throwable failure = null;
         List<Path> retained = new ArrayList<Path>();
         for (Path artifact : artifacts) {
-            if (!Files.exists(artifact)) {
-                continue;
-            }
             try {
+                if (!Files.exists(artifact)) {
+                    continue;
+                }
                 deleteStrategy.delete(artifact);
-            } catch (IOException ex) {
-                failure = combine(failure, ex);
-                retained.add(artifact.toAbsolutePath().normalize());
-                continue;
-            }
-            if (Files.exists(artifact)) {
+                if (Files.exists(artifact)) {
+                    retained.add(artifact.toAbsolutePath().normalize());
+                }
+            } catch (IOException | RuntimeException ex) {
+                failure = combineFailure(failure, ex);
                 retained.add(artifact.toAbsolutePath().normalize());
             }
         }
@@ -410,7 +423,14 @@ public final class OutputPublisher {
     private static String retainedArtifacts(Path... backups) {
         StringBuilder retained = new StringBuilder();
         for (Path backup : backups) {
-            if (Files.exists(backup)) {
+            boolean artifactRetained;
+            try {
+                artifactRetained = Files.exists(backup);
+            } catch (RuntimeException ignored) {
+                // Conservatively report an artifact whose state cannot be inspected.
+                artifactRetained = true;
+            }
+            if (artifactRetained) {
                 if (retained.length() > 0) {
                     retained.append(", ");
                 }
@@ -434,7 +454,11 @@ public final class OutputPublisher {
         try {
             return new CrossProcessLock(channel, channel.lock());
         } catch (IOException | RuntimeException ex) {
-            channel.close();
+            try {
+                channel.close();
+            } catch (IOException | RuntimeException closeFailure) {
+                addSuppressedIfDistinct(ex, closeFailure);
+            }
             throw ex;
         }
     }
@@ -481,6 +505,11 @@ public final class OutputPublisher {
     @FunctionalInterface
     interface MoveStrategy {
         Path move(Path source, Path target, CopyOption... options) throws IOException;
+    }
+
+    @FunctionalInterface
+    interface CopyStrategy {
+        Path copy(Path source, Path target, CopyOption... options) throws IOException;
     }
 
     @FunctionalInterface
@@ -542,27 +571,30 @@ public final class OutputPublisher {
 
         @Override
         public void close() throws IOException {
-            IOException failure = null;
+            Throwable failure = null;
             try {
                 lock.release();
-            } catch (IOException ex) {
+            } catch (IOException | RuntimeException ex) {
                 failure = ex;
             }
             try {
                 channel.close();
-            } catch (IOException ex) {
-                failure = combine(failure, ex);
+            } catch (IOException | RuntimeException ex) {
+                failure = combineFailure(failure, ex);
             }
             if (failure != null) {
-                throw failure;
+                if (failure instanceof IOException) {
+                    throw (IOException) failure;
+                }
+                throw (RuntimeException) failure;
             }
         }
     }
 
     private static final class RollbackOutcome {
-        private final IOException failure;
+        private final Throwable failure;
 
-        private RollbackOutcome(IOException failure) {
+        private RollbackOutcome(Throwable failure) {
             this.failure = failure;
         }
     }
@@ -570,12 +602,12 @@ public final class OutputPublisher {
     private static final class CleanupOutcome {
         private final List<String> warnings;
         private final List<Path> artifactPaths;
-        private final IOException failure;
+        private final Throwable failure;
 
         private CleanupOutcome(
                 List<String> warnings,
                 List<Path> artifactPaths,
-                IOException failure) {
+                Throwable failure) {
             this.warnings = warnings;
             this.artifactPaths = artifactPaths;
             this.failure = failure;
@@ -589,23 +621,36 @@ public final class OutputPublisher {
         }
     }
 
-    private static String describe(IOException failure) {
+    private static String describe(Throwable failure) {
         StringBuilder description = new StringBuilder();
         appendDescription(description, failure);
         for (Throwable suppressed : failure.getSuppressed()) {
-            if (suppressed instanceof IOException) {
-                description.append("; ");
-                appendDescription(description, (IOException) suppressed);
-            }
+            description.append("; ");
+            appendDescription(description, suppressed);
         }
         return description.toString();
     }
 
     private static void appendDescription(
-            StringBuilder description, IOException failure) {
+            StringBuilder description, Throwable failure) {
         String message = failure.getMessage();
         description.append(message == null
                 ? failure.getClass().getSimpleName()
                 : message);
+    }
+
+    private static Throwable combineFailure(Throwable prior, Throwable next) {
+        if (prior == null) {
+            return next;
+        }
+        addSuppressedIfDistinct(prior, next);
+        return prior;
+    }
+
+    private static void addSuppressedIfDistinct(
+            Throwable primary, Throwable secondary) {
+        if (primary != secondary) {
+            primary.addSuppressed(secondary);
+        }
     }
 }

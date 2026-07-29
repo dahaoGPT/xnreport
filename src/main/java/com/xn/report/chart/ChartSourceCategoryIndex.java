@@ -4,6 +4,7 @@ import com.xn.report.config.definition.ChartDefinition;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetType;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -13,20 +14,57 @@ import java.util.Objects;
  */
 final class ChartSourceCategoryIndex {
 
-    private final Map<String, SourceValue> categories;
+    interface Factory {
+        ChartSourceCategoryIndex build(
+                ChartDefinition definition,
+                DatasetResult result);
+    }
+
+    private final Map<String, Map<String, SourceValue>> groups;
+    private final String selectedGroup;
 
     private ChartSourceCategoryIndex(
-            Map<String, SourceValue> categories) {
-        this.categories = categories;
+            Map<String, Map<String, SourceValue>> groups,
+            String selectedGroup) {
+        this.groups = immutableGroups(groups);
+        this.selectedGroup = selectedGroup;
+    }
+
+    static Factory factory() {
+        return new Factory() {
+            @Override
+            public ChartSourceCategoryIndex build(
+                    ChartDefinition definition,
+                    DatasetResult result) {
+                return ChartSourceCategoryIndex.build(
+                        definition, result);
+            }
+        };
+    }
+
+    static ChartSourceCategoryIndex build(
+            ChartDefinition definition,
+            DatasetResult result) {
+        return buildAll(definition, result, null);
     }
 
     static ChartSourceCategoryIndex build(
             ChartDefinition definition,
             DatasetResult result,
             String selectedGroupLabel) {
+        return buildAll(
+                definition, result, selectedGroupLabel);
+    }
+
+    private static ChartSourceCategoryIndex buildAll(
+            ChartDefinition definition,
+            DatasetResult result,
+            String selectedGroupLabel) {
         if (result.type() != DatasetType.LIST) {
             return new ChartSourceCategoryIndex(
-                    new LinkedHashMap<String, SourceValue>());
+                    new LinkedHashMap<
+                            String, Map<String, SourceValue>>(),
+                    selectedGroupLabel);
         }
         Map<TypedKey, Map<String, SourceValue>> groups =
                 new LinkedHashMap<TypedKey, Map<String, SourceValue>>();
@@ -60,26 +98,51 @@ final class ChartSourceCategoryIndex {
             }
         }
 
-        TypedKey selected;
-        if (definition.getGroupByField() == null) {
-            selected = TypedKey.of(null);
-        } else {
-            selected = groupLabels.get(selectedGroupLabel);
+        Map<String, Map<String, SourceValue>> byLabel =
+                new LinkedHashMap<
+                        String, Map<String, SourceValue>>();
+        for (Map.Entry<TypedKey, Map<String, SourceValue>> group
+                : groups.entrySet()) {
+            String label = definition.getGroupByField() == null
+                    ? null : group.getKey().label();
+            byLabel.put(label, group.getValue());
         }
-        Map<String, SourceValue> selectedCategories =
-                selected == null ? null : groups.get(selected);
         return new ChartSourceCategoryIndex(
-                selectedCategories == null
-                        ? new LinkedHashMap<String, SourceValue>()
-                        : selectedCategories);
+                byLabel, selectedGroupLabel);
     }
 
     Object source(String categoryLabel) {
-        SourceValue value = categories.get(categoryLabel);
+        return source(selectedGroup, categoryLabel);
+    }
+
+    Object source(
+            String groupLabel,
+            String categoryLabel) {
+        Map<String, SourceValue> categories =
+                groups.get(groupLabel);
+        SourceValue value = categories == null
+                ? null : categories.get(categoryLabel);
         if (value == null || value.raw == null) {
             return categoryLabel;
         }
         return value.raw;
+    }
+
+    private static Map<String, Map<String, SourceValue>>
+            immutableGroups(
+                    Map<String, Map<String, SourceValue>> source) {
+        Map<String, Map<String, SourceValue>> copy =
+                new LinkedHashMap<
+                        String, Map<String, SourceValue>>();
+        for (Map.Entry<String, Map<String, SourceValue>> entry
+                : source.entrySet()) {
+            copy.put(
+                    entry.getKey(),
+                    Collections.unmodifiableMap(
+                            new LinkedHashMap<String, SourceValue>(
+                                    entry.getValue())));
+        }
+        return Collections.unmodifiableMap(copy);
     }
 
     private static void ensureUniqueLabel(

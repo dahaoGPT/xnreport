@@ -33,6 +33,25 @@ public final class ExcelChartDataAreaWriter {
             throw new IllegalArgumentException(
                     "Chart data area arguments must not be null");
         }
+        return write(
+                workbook, dataset, result, definition, model,
+                ChartSourceCategoryIndex.build(
+                        definition, result));
+    }
+
+    ChartFormulaRange write(
+            XSSFWorkbook workbook,
+            DatasetDefinition dataset,
+            DatasetResult result,
+            ChartDefinition definition,
+            ChartModel model,
+            ChartSourceCategoryIndex categoryIndex) {
+        if (workbook == null || dataset == null || result == null
+                || definition == null || model == null
+                || categoryIndex == null) {
+            throw new IllegalArgumentException(
+                    "Chart data area arguments must not be null");
+        }
         XSSFSheet sheet = workbook.getSheet(dataset.getSheetName());
         if (sheet == null) {
             throw new IllegalArgumentException(
@@ -52,9 +71,6 @@ public final class ExcelChartDataAreaWriter {
         ExcelChartBounds.validateDataArea(
                 startColumn, columnCount, firstDataRow,
                 model.getCategories().size());
-        ChartSourceCategoryIndex categoryIndex =
-                ChartSourceCategoryIndex.build(
-                        definition, result, model.getGroupKey());
         ExcelValueBinder binder = new ExcelValueBinder(workbook);
         CellStyle titleStyle = titleStyle(workbook);
         CellStyle headerStyle = headerStyle(workbook);
@@ -108,6 +124,7 @@ public final class ExcelChartDataAreaWriter {
         for (int index = 0;
                 index < model.getCategories().size(); index++) {
             Object category = categoryIndex.source(
+                    model.getGroupKey(),
                     model.getCategories().get(index));
             binder.bind(cell(
                     sheet, firstDataRow + index,

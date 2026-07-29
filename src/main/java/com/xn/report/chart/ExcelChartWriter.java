@@ -22,12 +22,15 @@ public final class ExcelChartWriter {
     private final GeneratedNativeChartWriter generatedWriter;
     private final TemplateNativeChartUpdater templateUpdater;
     private final ExcelChartDataAreaWriter dataAreaWriter;
+    private final ChartSourceCategoryIndex.Factory
+            categoryIndexFactory;
 
     public ExcelChartWriter() {
         this(new ChartModelBuilder(), new ChartRangeResolver(),
                 new GeneratedNativeChartWriter(),
                 new TemplateNativeChartUpdater(),
-                new ExcelChartDataAreaWriter());
+                new ExcelChartDataAreaWriter(),
+                ChartSourceCategoryIndex.factory());
     }
 
     public ExcelChartWriter(
@@ -36,7 +39,8 @@ public final class ExcelChartWriter {
             GeneratedNativeChartWriter generatedWriter,
             TemplateNativeChartUpdater templateUpdater) {
         this(modelBuilder, rangeResolver, generatedWriter,
-                templateUpdater, new ExcelChartDataAreaWriter());
+                templateUpdater, new ExcelChartDataAreaWriter(),
+                ChartSourceCategoryIndex.factory());
     }
 
     public ExcelChartWriter(
@@ -45,6 +49,18 @@ public final class ExcelChartWriter {
             GeneratedNativeChartWriter generatedWriter,
             TemplateNativeChartUpdater templateUpdater,
             ExcelChartDataAreaWriter dataAreaWriter) {
+        this(modelBuilder, rangeResolver, generatedWriter,
+                templateUpdater, dataAreaWriter,
+                ChartSourceCategoryIndex.factory());
+    }
+
+    ExcelChartWriter(
+            ChartModelBuilder modelBuilder,
+            ChartRangeResolver rangeResolver,
+            GeneratedNativeChartWriter generatedWriter,
+            TemplateNativeChartUpdater templateUpdater,
+            ExcelChartDataAreaWriter dataAreaWriter,
+            ChartSourceCategoryIndex.Factory categoryIndexFactory) {
         this.modelBuilder = require(modelBuilder, "modelBuilder");
         this.rangeResolver = require(rangeResolver, "rangeResolver");
         this.generatedWriter = require(
@@ -53,6 +69,8 @@ public final class ExcelChartWriter {
                 templateUpdater, "templateUpdater");
         this.dataAreaWriter = require(
                 dataAreaWriter, "dataAreaWriter");
+        this.categoryIndexFactory = require(
+                categoryIndexFactory, "categoryIndexFactory");
     }
 
     public void write(
@@ -96,10 +114,13 @@ public final class ExcelChartWriter {
                 templateUpdater.validateUniqueTargets(
                         workbook, chart);
             }
+            ChartSourceCategoryIndex categoryIndex =
+                    categoryIndexFactory.build(chart, result);
             for (int index = 0; index < models.size(); index++) {
                 ChartModel model = models.get(index);
                 ChartFormulaRange range = dataAreaWriter.write(
-                        workbook, dataset, result, chart, model);
+                        workbook, dataset, result, chart, model,
+                        categoryIndex);
                 if (chart.getMode()
                         == ChartDefinition.Mode.GENERATED_NATIVE) {
                     generatedWriter.write(

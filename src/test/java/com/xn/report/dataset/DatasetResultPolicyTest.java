@@ -72,6 +72,56 @@ class DatasetResultPolicyTest {
     }
 
     @Test
+    void scalarMissingMetadataWarnAndSkipReturnsExpectedSingleColumnSchema() {
+        List<ReportWarning> warnings = new ArrayList<ReportWarning>();
+        DatasetDefinition definition = definition(
+                "hours", "DECIMAL", true, null);
+        definition.setResultType(DatasetType.SCALAR);
+        definition.getPolicies().setMissingField(
+                MissingFieldPolicy.WARN_AND_SKIP);
+
+        DatasetResult result = validator(warnings).validate(
+                definition,
+                new SqlQueryResult(
+                        DatasetSchema.of("legacy_hours", String.class),
+                        Collections.singletonList(
+                                DatasetRow.of("legacy_hours", "bad"))));
+
+        assertThat(result.scalar()).isNull();
+        assertThat(result.schema().fieldNames())
+                .containsExactly("hours");
+        assertThat(result.schema().typeOf("hours"))
+                .isEqualTo(BigDecimal.class);
+        assertThat(warnings).extracting(ReportWarning::getAction)
+                .containsExactly("WARN_AND_SKIP");
+    }
+
+    @Test
+    void scalarMissingMetadataUseDefaultReplacesOriginalColumnAndValue() {
+        List<ReportWarning> warnings = new ArrayList<ReportWarning>();
+        DatasetDefinition definition = definition(
+                "hours", "DECIMAL", true, new BigDecimal("8.5"));
+        definition.setResultType(DatasetType.SCALAR);
+        definition.getPolicies().setMissingField(
+                MissingFieldPolicy.USE_DEFAULT);
+
+        DatasetResult result = validator(warnings).validate(
+                definition,
+                new SqlQueryResult(
+                        DatasetSchema.of("legacy_hours", String.class),
+                        Collections.singletonList(
+                                DatasetRow.of("legacy_hours", "ignored"))));
+
+        assertThat(result.scalar()).isEqualTo(new BigDecimal("8.5"));
+        assertThat(result.schema().fieldNames())
+                .containsExactly("hours");
+        assertThat(result.schema().typeOf("hours"))
+                .isEqualTo(BigDecimal.class);
+        assertThat(warnings).extracting(ReportWarning::getAction)
+                .containsExactly("USE_DEFAULT");
+    }
+
+    @Test
     void metadataTypeWarnAndSkipKeepsExpectedSchemaForDownstreamBindings() {
         List<ReportWarning> warnings = new ArrayList<ReportWarning>();
         DatasetDefinition definition = definition(

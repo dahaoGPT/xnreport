@@ -94,6 +94,7 @@ public final class DatasetResultValidator {
         validateShape(datasetId, resultType, schema, rows);
         ProcessedData processed = validateFields(
                 datasetId,
+                resultType,
                 definition.getPolicies(),
                 definition.getExpectedFields(),
                 schema,
@@ -130,6 +131,7 @@ public final class DatasetResultValidator {
 
     private ProcessedData validateFields(
             String datasetId,
+            DatasetType resultType,
             PolicyDefinition datasetPolicies,
             Map<String, FieldDefinition> expectedFields,
             DatasetSchema schema,
@@ -142,6 +144,8 @@ public final class DatasetResultValidator {
                 new LinkedHashMap<String, Class<?>>(schema.asMap());
         List<LinkedHashMap<String, Object>> outputRows =
                 mutableRows(rows);
+        boolean replaceScalarAlias = resultType == DatasetType.SCALAR
+                && expectedFields.size() == 1;
         for (Map.Entry<String, FieldDefinition> expected
                 : expectedFields.entrySet()) {
             String fieldName = requireText(expected.getKey(), "expected field");
@@ -166,8 +170,11 @@ public final class DatasetResultValidator {
                                     + " is missing expected alias " + fieldName);
                 }
                 if (policy == MissingFieldPolicy.WARN_AND_SKIP) {
-                    replaceSchemaField(
-                            outputSchema, fieldName, expectedType);
+                    applyExpectedSchema(
+                            outputSchema,
+                            fieldName,
+                            expectedType,
+                            replaceScalarAlias);
                     return new ProcessedData(
                             schemaFrom(outputSchema),
                             Collections.<DatasetRow>emptyList());
@@ -175,8 +182,15 @@ public final class DatasetResultValidator {
                 Object defaultValue = typedDefault(
                         datasetId, fieldName, field, expectedType,
                         ReportErrorCode.DATA_002);
-                outputSchema.put(fieldName, expectedType);
+                applyExpectedSchema(
+                        outputSchema,
+                        fieldName,
+                        expectedType,
+                        replaceScalarAlias);
                 for (Map<String, Object> row : outputRows) {
+                    if (replaceScalarAlias) {
+                        row.clear();
+                    }
                     row.put(fieldName, defaultValue);
                 }
             }
@@ -231,6 +245,9 @@ public final class DatasetResultValidator {
                         continue;
                     }
                     if (policy == MissingFieldPolicy.USE_DEFAULT) {
+                        if (replaceScalarAlias) {
+                            row.clear();
+                        }
                         row.put(
                                 fieldName,
                                 typedDefault(
@@ -313,7 +330,11 @@ public final class DatasetResultValidator {
                             value.getClass().getSimpleName());
                 }
             }
-            replaceSchemaField(outputSchema, fieldName, expectedType);
+            applyExpectedSchema(
+                    outputSchema,
+                    fieldName,
+                    expectedType,
+                    replaceScalarAlias);
         }
         return new ProcessedData(
                 schemaFrom(outputSchema),
@@ -529,6 +550,19 @@ public final class DatasetResultValidator {
         } else {
             schema.put(existing, type);
         }
+    }
+
+    private static void applyExpectedSchema(
+            LinkedHashMap<String, Class<?>> schema,
+            String field,
+            Class<?> type,
+            boolean replaceExistingFields) {
+        if (replaceExistingFields) {
+            schema.clear();
+            schema.put(field, type);
+            return;
+        }
+        replaceSchemaField(schema, field, type);
     }
 
     private static Class<?> resolveType(String fieldName, String type) {

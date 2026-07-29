@@ -5,8 +5,11 @@ import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import org.apache.poi.wp.usermodel.HeaderFooterType;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFFooter;
+import org.apache.poi.xwpf.usermodel.XWPFHeader;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFStyle;
@@ -49,6 +52,9 @@ public final class ReportTemplateFixtureBuilder {
         XWPFDocument document = new XWPFDocument();
         createStyles(document);
         createPageSettings(document);
+        createTheme(document);
+        new WordNumberingManager(document);
+        createHeaderAndFooter(document);
 
         XWPFParagraph title = document.createParagraph();
         title.setAlignment(ParagraphAlignment.CENTER);
@@ -119,8 +125,42 @@ public final class ReportTemplateFixtureBuilder {
         margins.setGutter(BigInteger.ZERO);
     }
 
+    private static void createTheme(XWPFDocument document) {
+        document.createTheme().setName("XN Report Theme");
+    }
+
+    private static void createHeaderAndFooter(XWPFDocument document) {
+        XWPFHeader header =
+                document.createHeader(HeaderFooterType.DEFAULT);
+        XWPFParagraph headerParagraph = header.createParagraph();
+        headerParagraph.setAlignment(ParagraphAlignment.RIGHT);
+        headerParagraph.createRun().setText(
+                "模板页眉标记 | {{cover:organization}}");
+
+        XWPFFooter footer =
+                document.createFooter(HeaderFooterType.DEFAULT);
+        XWPFParagraph footerParagraph = footer.createParagraph();
+        footerParagraph.setAlignment(ParagraphAlignment.CENTER);
+        footerParagraph.createRun().setText(
+                "模板页脚标记 | {{cover:preparedDate}}");
+    }
+
     private static void createStyles(XWPFDocument document) {
         XWPFStyles styles = document.createStyles();
+        CTStyle bodyStyle = CTStyle.Factory.newInstance();
+        bodyStyle.setStyleId("ReportBody");
+        bodyStyle.setType(STStyleType.PARAGRAPH);
+        bodyStyle.addNewName().setVal("Report Body");
+        bodyStyle.addNewBasedOn().setVal("Normal");
+        bodyStyle.addNewNext().setVal("ReportBody");
+        CTRPr bodyRun = bodyStyle.addNewRPr();
+        CTFonts bodyFonts = bodyRun.addNewRFonts();
+        bodyFonts.setAscii("SimSun");
+        bodyFonts.setHAnsi("SimSun");
+        bodyFonts.setEastAsia("SimSun");
+        bodyRun.addNewSz().setVal(BigInteger.valueOf(21L));
+        bodyRun.addNewSzCs().setVal(BigInteger.valueOf(21L));
+        styles.addStyle(new XWPFStyle(bodyStyle));
         for (int level = 1; level <= 4; level++) {
             CTStyle style = CTStyle.Factory.newInstance();
             style.setStyleId("Heading" + level);

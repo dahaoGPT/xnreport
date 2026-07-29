@@ -193,6 +193,31 @@ class WordConfigurationTest {
     }
 
     @Test
+    void schemaAcceptsOnlySupportedWordImageAlignments() throws Exception {
+        String base = reportWithCover(
+                "\"title\":\"研发效能报告\","
+                        + "\"organization\":\"研发中心\","
+                        + "\"reportPeriod\":\"2026年6月\","
+                        + "\"preparedBy\":\"效能小组\","
+                        + "\"preparedDate\":\"2026年7月23日\"")
+                .replace("\"sections\":[]",
+                        "\"sections\":[{\"id\":\"approval\","
+                                + "\"title\":\"审批时长\",\"level\":1,"
+                                + "\"components\":[{\"type\":\"CHART\","
+                                + "\"chartId\":\"trend\","
+                                + "\"alignment\":\"%s\"}]}]");
+
+        assertThat(schema().validate(mapper.readTree(
+                String.format(base, "LEFT")))).isEmpty();
+        assertThat(schema().validate(mapper.readTree(
+                String.format(base, "CENTER")))).isEmpty();
+        assertThat(schema().validate(mapper.readTree(
+                String.format(base, "RIGHT")))).isEmpty();
+        assertThat(schema().validate(mapper.readTree(
+                String.format(base, "JUSTIFY")))).isNotEmpty();
+    }
+
+    @Test
     void runtimeValidatorChecksTableDatasetColumnsAndImageWidth() {
         ReportDefinition definition =
                 TestFixtures.report(TestFixtures.dataset("source"));
@@ -214,6 +239,7 @@ class WordConfigurationTest {
         chart.setType("CHART");
         chart.setChartId("missing");
         chart.setWidthInches(Double.valueOf(0));
+        chart.setAlignment("JUSTIFY");
         section.setComponents(Arrays.asList(table, chart));
         definition.getWord().setSections(Collections.singletonList(section));
 
@@ -224,7 +250,8 @@ class WordConfigurationTest {
                 "CFG-COMPONENT-REFERENCE",
                 "CFG-EMPTY-MESSAGE",
                 "CFG-WORD-TABLE-COLUMN",
-                "CFG-WORD-IMAGE-WIDTH");
+                "CFG-WORD-IMAGE-WIDTH",
+                "CFG-WORD-IMAGE-ALIGNMENT");
     }
 
     @Test

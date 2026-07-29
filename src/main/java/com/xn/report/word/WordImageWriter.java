@@ -2,6 +2,7 @@ package com.xn.report.word;
 
 import com.xn.report.chart.RenderedChart;
 import com.xn.report.config.definition.WordComponentDefinition;
+import com.xn.report.config.definition.WordImageAlignment;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
@@ -40,15 +41,21 @@ public final class WordImageWriter {
             throw new WordTemplateException(
                     "Word chart image must be an existing PNG file");
         }
-        long maxWidth = printableWidthEmu(document);
+        PrintableArea printable = printableAreaEmu(document, paragraph);
         double requested = component.getWidthInches() == null
                 ? (double) chart.getWidthPixels() / Math.max(1, chart.getDpi())
                 : component.getWidthInches().doubleValue();
-        long width = Math.min(maxWidth, Math.max(1L, Units.toEMU(requested)));
+        long width = Math.max(1L, Math.round(
+                requested * Units.EMU_PER_INCH));
         long height = Math.max(1L, Math.round(
                 width * (double) chart.getHeightPixels()
                         / (double) chart.getWidthPixels()));
-        paragraph.setAlignment(ParagraphAlignment.CENTER);
+        double scale = Math.min(1.0d, Math.min(
+                printable.width / (double) width,
+                printable.height / (double) height));
+        width = Math.max(1L, Math.round(width * scale));
+        height = Math.max(1L, Math.round(height * scale));
+        paragraph.setAlignment(alignment(component.getAlignment()));
         clearRuns(paragraph);
         XWPFRun run = paragraph.createRun();
         try (InputStream input = Files.newInputStream(chart.getPath())) {
@@ -98,23 +105,60 @@ public final class WordImageWriter {
         }
     }
 
-    private static long printableWidthEmu(XWPFDocument document) {
+    private static PrintableArea printableAreaEmu(
+            XWPFDocument document, XWPFParagraph insertion) {
         CTSectPr section = document.getDocument().getBody().isSetSectPr()
                 ? document.getDocument().getBody().getSectPr() : null;
-        long page = DEFAULT_PAGE_WIDTH_DXA;
+        for (IBodyElement element : document.getBodyElements()) {
+            if (element == insertion) {
+                break;
+            }
+            if (element instanceof XWPFParagraph) {
+                XWPFParagraph paragraph = (XWPFParagraph) element;
+                if (paragraph.getCTP().isSetPPr()
+                        && paragraph.getCTP().getPPr().isSetSectPr()) {
+                    section = paragraph.getCTP().getPPr().getSectPr();
+                }
+            }
+        }
+        long pageWidth = DEFAULT_PAGE_WIDTH_DXA;
+        long pageHeight = 15840L;
         long left = DEFAULT_MARGIN_DXA;
         long right = DEFAULT_MARGIN_DXA;
+        long top = DEFAULT_MARGIN_DXA;
+        long bottom = DEFAULT_MARGIN_DXA;
         if (section != null && section.isSetPgSz()) {
             CTPageSz pageSize = section.getPgSz();
-            page = number(pageSize.getW(), page);
+            pageWidth = number(pageSize.getW(), pageWidth);
+            pageHeight = number(pageSize.getH(), pageHeight);
         }
         if (section != null && section.isSetPgMar()) {
             CTPageMar margins = section.getPgMar();
             left = number(margins.getLeft(), left);
             right = number(margins.getRight(), right);
+            top = number(margins.getTop(), top);
+            bottom = number(margins.getBottom(), bottom);
         }
+        return new PrintableArea(
+                dxaToEmu(pageWidth - left - right),
+                dxaToEmu(pageHeight - top - bottom));
+    }
+
+    private static long dxaToEmu(long value) {
         return Math.max(1L, Math.round(
-                (page - left - right) / 1440.0 * Units.EMU_PER_INCH));
+                value / 1440.0d * Units.EMU_PER_INCH));
+    }
+
+    private static ParagraphAlignment alignment(String configured) {
+        switch (WordImageAlignment.fromConfig(configured)) {
+            case LEFT:
+                return ParagraphAlignment.LEFT;
+            case RIGHT:
+                return ParagraphAlignment.RIGHT;
+            case CENTER:
+            default:
+                return ParagraphAlignment.CENTER;
+        }
     }
 
     private static long number(Object value, long fallback) {
@@ -130,6 +174,16 @@ public final class WordImageWriter {
     private static void clearRuns(XWPFParagraph paragraph) {
         while (!paragraph.getRuns().isEmpty()) {
             paragraph.removeRun(0);
+        }
+    }
+
+    private static final class PrintableArea {
+        private final long width;
+        private final long height;
+
+        private PrintableArea(long width, long height) {
+            this.width = width;
+            this.height = height;
         }
     }
 }

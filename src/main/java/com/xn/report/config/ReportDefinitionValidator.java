@@ -2773,6 +2773,12 @@ public final class ReportDefinitionValidator {
             result.add("CFG-WORD-IMAGE-WIDTH", path + ".widthInches",
                     "Word chart widthInches must be positive");
         }
+        if ("CHART".equals(type)
+                && !com.xn.report.config.definition.WordImageAlignment
+                .supports(component.getAlignment())) {
+            result.add("CFG-WORD-IMAGE-ALIGNMENT", path + ".alignment",
+                    "Word chart alignment must be LEFT, CENTER, or RIGHT");
+        }
         if ("ATTACHMENT".equals(type)
                 && !hasText(component.getTitle())
                 && !hasText(component.getDescription())

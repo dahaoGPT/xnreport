@@ -15,6 +15,7 @@ public class WordComponentDefinition {
             new ArrayList<WordTableColumnDefinition>();
     private String emptyMessage = "暂无数据";
     private Double widthInches;
+    private String alignment = WordImageAlignment.CENTER.name();
     private String caption;
     private String altText;
     private String title;
@@ -92,6 +93,14 @@ public class WordComponentDefinition {
 
     public void setWidthInches(Double widthInches) {
         this.widthInches = widthInches;
+    }
+
+    public String getAlignment() {
+        return alignment;
+    }
+
+    public void setAlignment(String alignment) {
+        this.alignment = alignment;
     }
 
     public String getCaption() {

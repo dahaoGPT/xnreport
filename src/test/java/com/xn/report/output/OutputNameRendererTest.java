@@ -48,6 +48,16 @@ class OutputNameRendererTest {
     }
 
     @Test
+    void rejectsNameThatBecomesEmptyWhenTruncationLeavesOnlyTrailingDots() {
+        OutputNameRenderer shortRenderer = new OutputNameRenderer(10);
+
+        assertThatThrownBy(() -> shortRenderer.render(
+                "     x.xlsx", Collections.emptyMap()))
+                .isInstanceOf(ReportException.class)
+                .hasMessageContaining("empty");
+    }
+
+    @Test
     void rejectsPlaceholderFragmentsIntroducedByVariableValues() {
         Map<String, Object> values = new HashMap<String, Object>();
         values.put("period", "${injected}");

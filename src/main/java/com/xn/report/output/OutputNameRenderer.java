@@ -73,6 +73,9 @@ public final class OutputNameRenderer {
             base = base.substring(0, allowedBaseLength);
             base = TRAILING_SPACE_OR_DOT.matcher(base).replaceAll("");
         }
+        if (base.isEmpty()) {
+            throw invalid("output file name is empty after truncation and sanitization");
+        }
         return base + extension.toLowerCase();
     }
 

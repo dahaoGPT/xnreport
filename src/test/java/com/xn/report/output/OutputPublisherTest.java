@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -200,7 +201,8 @@ class OutputPublisherTest {
     }
 
     @Test
-    void backupCleanupFailureDoesNotRollbackCommittedNewPair() throws Exception {
+    void backupCleanupFailureReturnsCommittedPairWithImmutableCleanupWarnings()
+            throws Exception {
         Path output = Files.createDirectory(temp.resolve("cleanup-output"));
         Path oldExcel = Files.write(output.resolve("report.xlsx"), bytes("old-x"));
         Path oldWord = Files.write(output.resolve("report.docx"), bytes("old-w"));
@@ -216,13 +218,22 @@ class OutputPublisherTest {
                 OutputPublisher::defaultMove,
                 failingBackupCleanup);
 
-        assertThatThrownBy(() -> publisher.publish(
+        PublishedOutputs result = publisher.publish(
                 source("cleanup.xlsx", "new-x"),
                 source("cleanup.docx", "new-w"),
-                new OutputTargets(oldExcel, oldWord)))
-                .isInstanceOf(ReportException.class)
-                .hasMessageContaining("already committed")
-                .hasMessageContaining(".backup-");
+                new OutputTargets(oldExcel, oldWord));
+
+        assertThat(result.getWarnings())
+                .singleElement()
+                .asString()
+                .contains("backup cleanup failed");
+        assertThat(result.getCleanupArtifactPaths())
+                .hasSize(2)
+                .allMatch(path -> path.getFileName().toString().contains(".backup-"));
+        assertThatThrownBy(() -> result.getWarnings().add("mutate"))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> result.getCleanupArtifactPaths().clear())
+                .isInstanceOf(UnsupportedOperationException.class);
         assertThat(read(oldExcel)).isEqualTo("new-x");
         assertThat(read(oldWord)).isEqualTo("new-w");
         try (java.util.stream.Stream<Path> paths = Files.list(output)) {
@@ -231,6 +242,110 @@ class OutputPublisherTest {
                             .contains(".backup-"))
                     .count()).isEqualTo(2);
         }
+    }
+
+    @Test
+    void lockReleaseAndChannelCloseFailuresDoNotOverrideCommittedResult()
+            throws Exception {
+        Path output = Files.createDirectory(temp.resolve("lock-close-output"));
+        AtomicInteger closeAttempts = new AtomicInteger();
+        OutputPublisher.LockStrategy failingCloseLock = ignored ->
+                () -> {
+                    closeAttempts.incrementAndGet();
+                    IOException release = new IOException("release failed");
+                    release.addSuppressed(new IOException("channel close failed"));
+                    throw release;
+                };
+        OutputPublisher publisher = new OutputPublisher(
+                output,
+                CollisionPolicy.FAIL,
+                OutputPublisher::defaultMove,
+                Files::deleteIfExists,
+                failingCloseLock);
+
+        PublishedOutputs result = publisher.publish(
+                source("lock-close.xlsx", "x"),
+                source("lock-close.docx", "w"),
+                new OutputTargets(
+                        output.resolve("report.xlsx"),
+                        output.resolve("report.docx")));
+
+        assertThat(closeAttempts).hasValue(1);
+        assertThat(result.getExcel()).exists();
+        assertThat(result.getWord()).exists();
+        assertThat(result.getWarnings())
+                .singleElement()
+                .asString()
+                .contains("publication lock cleanup failed")
+                .contains("release failed");
+        assertThat(result.getCleanupArtifactPaths()).isEmpty();
+    }
+
+    @Test
+    void stagedCleanupFailureAfterRollbackIsReportedWithoutDeletingRecoveryBackup()
+            throws Exception {
+        Path output = Files.createDirectory(temp.resolve("precommit-cleanup-output"));
+        Path oldExcel = Files.write(output.resolve("report.xlsx"), bytes("old-x"));
+        Path oldWord = Files.write(output.resolve("report.docx"), bytes("old-w"));
+        AtomicInteger finalMoves = new AtomicInteger();
+        OutputPublisher.MoveStrategy failingFinalAndRestore =
+                (source, target, options) -> {
+                    String sourceName = source.getFileName().toString();
+                    String targetName = target.getFileName().toString();
+                    if (sourceName.contains(".backup-")) {
+                        throw new IOException("restore failed");
+                    }
+                    if (!targetName.contains(".backup-")
+                            && finalMoves.incrementAndGet() == 2) {
+                        throw new IOException("second final move failed");
+                    }
+                    return Files.move(source, target, options);
+                };
+        OutputPublisher.DeleteStrategy failingPublishingCleanup = path -> {
+            if (path.getFileName().toString().contains(".publishing-")) {
+                throw new IOException("staged cleanup failed: " + path);
+            }
+            return Files.deleteIfExists(path);
+        };
+
+        assertThatThrownBy(() -> new OutputPublisher(
+                output,
+                CollisionPolicy.OVERWRITE,
+                failingFinalAndRestore,
+                failingPublishingCleanup,
+                OutputPublisher::acquireDefaultProcessLock).publish(
+                source("precommit.xlsx", "new-x"),
+                source("precommit.docx", "new-w"),
+                new OutputTargets(oldExcel, oldWord)))
+                .isInstanceOf(ReportException.class)
+                .hasMessageContaining("recovery backup retained")
+                .hasMessageContaining("staged cleanup failed")
+                .hasMessageContaining(".publishing-");
+        try (java.util.stream.Stream<Path> paths = Files.list(output)) {
+            assertThat(paths.map(path -> path.getFileName().toString()))
+                    .anyMatch(name -> name.contains(".backup-"))
+                    .anyMatch(name -> name.contains(".publishing-"));
+        }
+    }
+
+    @Test
+    void publishedOutputsDefensivelyCopiesWarningsAndCleanupPaths() {
+        java.util.List<String> warnings =
+                new java.util.ArrayList<String>(Collections.singletonList("warning"));
+        java.util.List<Path> paths =
+                new java.util.ArrayList<Path>(Collections.singletonList(temp.resolve("leftover")));
+
+        PublishedOutputs result = new PublishedOutputs(
+                temp.resolve("report.xlsx"),
+                temp.resolve("report.docx"),
+                warnings,
+                paths);
+        warnings.add("late mutation");
+        paths.add(temp.resolve("late"));
+
+        assertThat(result.getWarnings()).containsExactly("warning");
+        assertThat(result.getCleanupArtifactPaths())
+                .containsExactly(temp.resolve("leftover"));
     }
 
     @Test

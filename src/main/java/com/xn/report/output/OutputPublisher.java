@@ -16,6 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,6 +33,7 @@ public final class OutputPublisher {
     private final CollisionPolicy collisionPolicy;
     private final MoveStrategy moveStrategy;
     private final DeleteStrategy deleteStrategy;
+    private final LockStrategy lockStrategy;
 
     public OutputPublisher(Path outputRoot) {
         this(outputRoot, CollisionPolicy.VERSIONED);
@@ -40,14 +44,20 @@ public final class OutputPublisher {
                 outputRoot,
                 collisionPolicy,
                 OutputPublisher::defaultMove,
-                Files::deleteIfExists);
+                Files::deleteIfExists,
+                OutputPublisher::acquireDefaultProcessLock);
     }
 
     OutputPublisher(
             Path outputRoot,
             CollisionPolicy collisionPolicy,
             MoveStrategy moveStrategy) {
-        this(outputRoot, collisionPolicy, moveStrategy, Files::deleteIfExists);
+        this(
+                outputRoot,
+                collisionPolicy,
+                moveStrategy,
+                Files::deleteIfExists,
+                OutputPublisher::acquireDefaultProcessLock);
     }
 
     OutputPublisher(
@@ -55,12 +65,27 @@ public final class OutputPublisher {
             CollisionPolicy collisionPolicy,
             MoveStrategy moveStrategy,
             DeleteStrategy deleteStrategy) {
+        this(
+                outputRoot,
+                collisionPolicy,
+                moveStrategy,
+                deleteStrategy,
+                OutputPublisher::acquireDefaultProcessLock);
+    }
+
+    OutputPublisher(
+            Path outputRoot,
+            CollisionPolicy collisionPolicy,
+            MoveStrategy moveStrategy,
+            DeleteStrategy deleteStrategy,
+            LockStrategy lockStrategy) {
         Objects.requireNonNull(outputRoot, "outputRoot");
         this.outputRoot = outputRoot.toAbsolutePath().normalize();
         this.collisionPolicy =
                 collisionPolicy == null ? CollisionPolicy.VERSIONED : collisionPolicy;
         this.moveStrategy = Objects.requireNonNull(moveStrategy, "moveStrategy");
         this.deleteStrategy = Objects.requireNonNull(deleteStrategy, "deleteStrategy");
+        this.lockStrategy = Objects.requireNonNull(lockStrategy, "lockStrategy");
         try {
             Files.createDirectories(this.outputRoot);
         } catch (IOException ex) {
@@ -79,16 +104,49 @@ public final class OutputPublisher {
         requireSameBase(requestedExcel, requestedWord);
 
         String lockKey = normalizedLockKey(requestedExcel, requestedWord);
-        try (JvmLockHandle ignoredJvm = acquireJvmLock(lockKey);
-             CrossProcessLock ignoredProcess = acquireProcessLock(lockKey)) {
-            OutputTargets resolved =
-                    resolveCollision(requestedExcel, requestedWord);
-            return publishLocked(sourceExcel, sourceWord, resolved);
-        } catch (IOException ex) {
-            throw new ReportException(
-                    ReportErrorCode.OUT_003,
-                    "cannot acquire or release output publication lock",
-                    ex);
+        JvmLockHandle jvmLock = acquireJvmLock(lockKey);
+        PublicationLock processLock = null;
+        PublishedOutputs result = null;
+        RuntimeException publicationFailure = null;
+        try {
+            try {
+                processLock = lockStrategy.acquire(lockKey);
+                OutputTargets resolved =
+                        resolveCollision(requestedExcel, requestedWord);
+                result = publishLocked(sourceExcel, sourceWord, resolved);
+            } catch (IOException ex) {
+                publicationFailure = new ReportException(
+                        ReportErrorCode.OUT_003,
+                        "cannot acquire output publication lock",
+                        ex);
+            } catch (RuntimeException ex) {
+                publicationFailure = ex;
+            } finally {
+                if (processLock != null) {
+                    try {
+                        processLock.close();
+                    } catch (IOException ex) {
+                        if (result != null) {
+                            result = result.withWarning(
+                                    "publication lock cleanup failed after commit: "
+                                            + describe(ex));
+                        } else if (publicationFailure != null) {
+                            publicationFailure.addSuppressed(ex);
+                        } else {
+                            publicationFailure = new ReportException(
+                                    ReportErrorCode.OUT_003,
+                                    "cannot release output publication lock",
+                                    ex);
+                        }
+                    }
+                }
+            }
+            if (publicationFailure != null) {
+                throw publicationFailure;
+            }
+            return result;
+        } finally {
+            jvmLock.close();
         }
     }
 
@@ -128,19 +186,17 @@ public final class OutputPublisher {
             moveStrategy.move(
                     stagedWord, targets.getWord(), StandardCopyOption.ATOMIC_MOVE);
             wordPublished = true;
-            IOException cleanupFailure =
-                    cleanupBackups(backupExcel, backupWord);
-            if (cleanupFailure != null) {
-                throw new CommittedCleanupException(cleanupFailure);
-            }
-            return new PublishedOutputs(targets.getExcel(), targets.getWord());
-        } catch (CommittedCleanupException ex) {
-            throw new ReportException(
-                    ReportErrorCode.OUT_003,
-                    "output pair is already committed; backup cleanup failed; "
-                            + "retained backup paths: "
-                            + retainedBackups(backupExcel, backupWord),
-                    ex.getCause());
+            CleanupOutcome cleanup = cleanupArtifacts(
+                    "backup cleanup failed after commit",
+                    backupExcel,
+                    backupWord,
+                    stagedExcel,
+                    stagedWord);
+            return new PublishedOutputs(
+                    targets.getExcel(),
+                    targets.getWord(),
+                    cleanup.warnings,
+                    cleanup.artifactPaths);
         } catch (IOException ex) {
             RollbackOutcome rollback = rollback(
                     targets,
@@ -153,17 +209,26 @@ public final class OutputPublisher {
             if (rollback.failure != null) {
                 ex.addSuppressed(rollback.failure);
             }
-            String retained = retainedBackups(backupExcel, backupWord);
+            CleanupOutcome cleanup = cleanupArtifacts(
+                    "staged cleanup failed before commit",
+                    stagedExcel,
+                    stagedWord);
+            if (cleanup.failure != null) {
+                ex.addSuppressed(cleanup.failure);
+            }
+            String retained = retainedArtifacts(
+                    backupExcel, backupWord, stagedExcel, stagedWord);
             throw new ReportException(
                     ReportErrorCode.OUT_003,
                     "atomic output pair publication failed"
                             + (retained.isEmpty()
                                     ? ""
-                                    : "; recovery backup retained at " + retained),
+                                    : "; recovery backup retained or cleanup artifact at "
+                                            + retained)
+                            + (cleanup.warnings.isEmpty()
+                                    ? ""
+                                    : "; " + cleanup.warnings.get(0)),
                     ex);
-        } finally {
-            deleteQuietly(stagedExcel);
-            deleteQuietly(stagedWord);
         }
     }
 
@@ -315,30 +380,34 @@ public final class OutputPublisher {
         return prior;
     }
 
-    private static void deleteQuietly(Path path) {
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException ignored) {
-            // The publish failure already carries the actionable exception.
-        }
-    }
-
-    private IOException cleanupBackups(Path... backups) {
+    private CleanupOutcome cleanupArtifacts(String warningPrefix, Path... artifacts) {
         IOException failure = null;
-        for (Path backup : backups) {
-            if (!Files.exists(backup)) {
+        List<Path> retained = new ArrayList<Path>();
+        for (Path artifact : artifacts) {
+            if (!Files.exists(artifact)) {
                 continue;
             }
             try {
-                deleteStrategy.delete(backup);
+                deleteStrategy.delete(artifact);
             } catch (IOException ex) {
                 failure = combine(failure, ex);
+                retained.add(artifact.toAbsolutePath().normalize());
+                continue;
+            }
+            if (Files.exists(artifact)) {
+                retained.add(artifact.toAbsolutePath().normalize());
             }
         }
-        return failure;
+        if (retained.isEmpty()) {
+            return CleanupOutcome.empty();
+        }
+        String warning = warningPrefix + ": " + retained
+                + (failure == null ? "" : "; " + describe(failure));
+        return new CleanupOutcome(
+                Collections.singletonList(warning), retained, failure);
     }
 
-    private static String retainedBackups(Path... backups) {
+    private static String retainedArtifacts(Path... backups) {
         StringBuilder retained = new StringBuilder();
         for (Path backup : backups) {
             if (Files.exists(backup)) {
@@ -351,7 +420,7 @@ public final class OutputPublisher {
         return retained.toString();
     }
 
-    private CrossProcessLock acquireProcessLock(String key) throws IOException {
+    static PublicationLock acquireDefaultProcessLock(String key) throws IOException {
         Path lockRoot = Paths.get(
                 System.getProperty("java.io.tmpdir"),
                 "xnreport-publish-locks").toAbsolutePath().normalize();
@@ -419,6 +488,17 @@ public final class OutputPublisher {
         boolean delete(Path path) throws IOException;
     }
 
+    @FunctionalInterface
+    interface LockStrategy {
+        PublicationLock acquire(String key) throws IOException;
+    }
+
+    @FunctionalInterface
+    interface PublicationLock extends AutoCloseable {
+        @Override
+        void close() throws IOException;
+    }
+
     private static final class LockEntry {
         private final ReentrantLock lock = new ReentrantLock();
         private int references;
@@ -451,7 +531,7 @@ public final class OutputPublisher {
         }
     }
 
-    private static final class CrossProcessLock implements AutoCloseable {
+    private static final class CrossProcessLock implements PublicationLock {
         private final FileChannel channel;
         private final FileLock lock;
 
@@ -487,9 +567,45 @@ public final class OutputPublisher {
         }
     }
 
-    private static final class CommittedCleanupException extends IOException {
-        private CommittedCleanupException(IOException cause) {
-            super(cause);
+    private static final class CleanupOutcome {
+        private final List<String> warnings;
+        private final List<Path> artifactPaths;
+        private final IOException failure;
+
+        private CleanupOutcome(
+                List<String> warnings,
+                List<Path> artifactPaths,
+                IOException failure) {
+            this.warnings = warnings;
+            this.artifactPaths = artifactPaths;
+            this.failure = failure;
         }
+
+        private static CleanupOutcome empty() {
+            return new CleanupOutcome(
+                    Collections.<String>emptyList(),
+                    Collections.<Path>emptyList(),
+                    null);
+        }
+    }
+
+    private static String describe(IOException failure) {
+        StringBuilder description = new StringBuilder();
+        appendDescription(description, failure);
+        for (Throwable suppressed : failure.getSuppressed()) {
+            if (suppressed instanceof IOException) {
+                description.append("; ");
+                appendDescription(description, (IOException) suppressed);
+            }
+        }
+        return description.toString();
+    }
+
+    private static void appendDescription(
+            StringBuilder description, IOException failure) {
+        String message = failure.getMessage();
+        description.append(message == null
+                ? failure.getClass().getSimpleName()
+                : message);
     }
 }

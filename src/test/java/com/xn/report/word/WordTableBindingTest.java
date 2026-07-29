@@ -6,13 +6,18 @@ import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.config.definition.WordTableBinding;
+import com.xn.report.config.definition.WordTableColumnDefinition;
 import com.xn.report.dataset.DatasetContext;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.support.TestFixtures;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Collections;
+import org.apache.poi.xwpf.usermodel.IBodyElement;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.junit.jupiter.api.Test;
@@ -119,6 +124,94 @@ class WordTableBindingTest {
         }
     }
 
+    @Test
+    void movesAStyledPrototypeToEachComponentPositionInConfiguredOrder()
+            throws Exception {
+        DatasetResult data = TestFixtures.people(
+                TestFixtures.row("personName", "张三",
+                        "centerName", "开发中心", "avgHours", 12.3));
+        WordTableBinding binding = binding(
+                "peopleBinding", "people",
+                "{{table:people}}", null, "PROTOTYPE");
+        WordDefinition definition = new WordDefinition();
+        definition.setTableBindings(Collections.singletonList(binding));
+        WordSectionDefinition section = section();
+        section.setComponents(Arrays.asList(
+                text("开始"),
+                tableComponent("peopleBinding", null),
+                text("中间"),
+                tableComponent("peopleBinding", null),
+                text("结束")));
+        definition.setSections(Collections.singletonList(section));
+
+        try (XWPFDocument document = templateWithPrototype(
+                "{{table:people}}")) {
+            XWPFTable prototype = document.getTables().get(0);
+            prototype.setWidth("7200");
+            prototype.getRow(0).getCell(0).setColor("D9EAF7");
+            new WordSectionRenderer().render(
+                    document, definition,
+                    WordRenderContext.builder().datasets(
+                            DatasetContext.builder().put(data).build()).build());
+
+            try (XWPFDocument reopened = reopen(document)) {
+                assertThat(reopened.getTables()).hasSize(2);
+                assertThat(reopened.getTables())
+                        .allSatisfy(table -> {
+                            assertThat(table.getWidth()).isEqualTo(7200);
+                            assertThat(table.getRow(0).getCell(0).getColor())
+                                    .isEqualTo("D9EAF7");
+                        });
+                assertThat(dynamicOrder(reopened))
+                        .containsExactly(
+                                "开始", "TABLE", "中间", "TABLE", "结束");
+                assertThat(reopened.getDocument().xmlText())
+                        .doesNotContain("{{table:", "{{row:");
+            }
+        }
+    }
+
+    @Test
+    void generatedBindingDoesNotRetainTemplateRowsAfterReopen()
+            throws Exception {
+        DatasetResult data = DatasetResult.single(
+                "summary", Collections.singletonList(
+                        TestFixtures.row("name", "研发中心", "hours", 12.5)));
+        WordTableBinding binding = binding(
+                "summaryBinding", "summary",
+                "{{table:summary}}", null, "GENERATED");
+        binding.setColumns(Arrays.asList(
+                column("name", "名称"), column("hours", "耗时")));
+        WordDefinition definition = definition(
+                binding, tableComponent("summaryBinding", null));
+
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            document.createParagraph().createRun()
+                    .setText("{{table:summary}}");
+            XWPFTable template = document.createTable(3, 4);
+            template.getRow(0).getCell(0).setText("模板标题");
+            template.getRow(1).getCell(0).setText("遗留模板行一");
+            template.getRow(2).getCell(0).setText("遗留模板行二");
+
+            new WordSectionRenderer().render(
+                    document, definition,
+                    WordRenderContext.builder().datasets(
+                            DatasetContext.builder().put(data).build()).build());
+
+            try (XWPFDocument reopened = reopen(document)) {
+                assertThat(reopened.getTables()).hasSize(1);
+                XWPFTable actual = reopened.getTables().get(0);
+                assertThat(actual.getNumberOfRows()).isEqualTo(2);
+                assertThat(actual.getRows())
+                        .allSatisfy(row -> assertThat(row.getTableCells())
+                                .hasSize(2));
+                assertThat(actual.getText())
+                        .contains("名称", "耗时", "研发中心", "12.5")
+                        .doesNotContain("模板标题", "遗留模板行");
+            }
+        }
+    }
+
     private static void assertPrototypeValue(
             DatasetResult dataset, String expected) throws Exception {
         WordDefinition definition = definition(
@@ -169,6 +262,22 @@ class WordTableBindingTest {
         return component;
     }
 
+    private static WordComponentDefinition text(String value) {
+        WordComponentDefinition component = new WordComponentDefinition();
+        component.setType("FIXED_TEXT");
+        component.setText(value);
+        return component;
+    }
+
+    private static WordTableColumnDefinition column(
+            String field, String header) {
+        WordTableColumnDefinition column =
+                new WordTableColumnDefinition();
+        column.setField(field);
+        column.setHeader(header);
+        return column;
+    }
+
     private static WordTableBinding binding(
             String id,
             String dataset,
@@ -217,5 +326,21 @@ class WordTableBindingTest {
         document.write(output);
         return new XWPFDocument(
                 new ByteArrayInputStream(output.toByteArray()));
+    }
+
+    private static List<String> dynamicOrder(XWPFDocument document) {
+        List<String> order = new ArrayList<String>();
+        for (IBodyElement element : document.getBodyElements()) {
+            if (element instanceof XWPFParagraph) {
+                String text = ((XWPFParagraph) element).getText();
+                if (Arrays.asList("开始", "中间", "结束").contains(text)) {
+                    order.add(text);
+                }
+            } else if (element instanceof XWPFTable
+                    && ((XWPFTable) element).getText().contains("张三")) {
+                order.add("TABLE");
+            }
+        }
+        return order;
     }
 }

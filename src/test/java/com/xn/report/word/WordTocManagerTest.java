@@ -81,10 +81,13 @@ class WordTocManagerTest {
 
             manager.configure(document, 4, true);
 
-            assertThat(document.getDocument().xmlText())
-                    .contains("TOC \\\\o \"1-4\" \\\\h \\\\z \\\\u")
-                    .contains("保留的目录结果")
-                    .doesNotContain("1-2");
+            try (XWPFDocument reopened = roundTrip(document)) {
+                assertThat(manager.configuredInstruction(reopened).trim())
+                        .isEqualTo(WordTocManager.instruction(4).trim());
+                assertThat(reopened.getDocument().xmlText())
+                        .contains("保留的目录结果")
+                        .doesNotContain("1-2");
+            }
         }
     }
 
@@ -106,9 +109,12 @@ class WordTocManagerTest {
 
             manager.configure(document, 2, true);
 
-            assertThat(block.xmlText())
-                    .contains("TOC \\\\o \"1-2\" \\\\h \\\\z \\\\u")
-                    .contains("SDT目录结果");
+            try (XWPFDocument reopened = roundTrip(document)) {
+                assertThat(manager.configuredInstruction(reopened).trim())
+                        .isEqualTo(WordTocManager.instruction(2).trim());
+                assertThat(reopened.getDocument().xmlText())
+                        .contains("SDT目录结果");
+            }
         }
     }
 
@@ -157,5 +163,13 @@ class WordTocManagerTest {
             XWPFParagraph paragraph, STFldCharType.Enum type) {
         CTFldChar field = paragraph.createRun().getCTR().addNewFldChar();
         field.setFldCharType(type);
+    }
+
+    private static XWPFDocument roundTrip(XWPFDocument document)
+            throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        document.write(output);
+        return new XWPFDocument(
+                new ByteArrayInputStream(output.toByteArray()));
     }
 }

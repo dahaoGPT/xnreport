@@ -25,6 +25,11 @@ class WordCoverBinderTest {
 
             binder.bind(document, cover);
 
+            assertThat(document.getParagraphs())
+                    .extracting(paragraph -> paragraph.getStyle())
+                    .containsExactly(
+                            "Title", "Subtitle", "CoverPeriod",
+                            "CoverAuthor", "CoverDate");
             try (XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
                 assertThat(extractor.getText())
                         .contains("研发效能报告")
@@ -49,11 +54,20 @@ class WordCoverBinderTest {
 
     private static XWPFDocument coverTemplate() {
         XWPFDocument document = new XWPFDocument();
-        document.createParagraph().createRun().setText("{{cover:title}}");
-        document.createParagraph().createRun().setText("{{cover:organization}}");
-        document.createParagraph().createRun().setText("{{cover:reportPeriod}}");
-        document.createParagraph().createRun().setText("{{cover:preparedBy}}");
-        document.createParagraph().createRun().setText("{{cover:preparedDate}}");
+        String[] styles = {
+            "Title", "Subtitle", "CoverPeriod", "CoverAuthor", "CoverDate"
+        };
+        String[] tokens = {
+            "{{cover:title}}", "{{cover:organization}}",
+            "{{cover:reportPeriod}}", "{{cover:preparedBy}}",
+            "{{cover:preparedDate}}"
+        };
+        for (int index = 0; index < tokens.length; index++) {
+            org.apache.poi.xwpf.usermodel.XWPFParagraph paragraph =
+                    document.createParagraph();
+            paragraph.setStyle(styles[index]);
+            paragraph.createRun().setText(tokens[index]);
+        }
         return document;
     }
 

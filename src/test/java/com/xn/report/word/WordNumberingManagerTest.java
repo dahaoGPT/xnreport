@@ -1,6 +1,7 @@
 package com.xn.report.word;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xn.report.config.definition.WordNumberingDefinition;
 import com.xn.report.config.definition.WordNumberingLevelDefinition;
@@ -81,6 +82,39 @@ class WordNumberingManagerTest {
                     .isEqualTo("lowerLetter");
             assertThat(second.getLvlText().getVal()).isEqualTo("%1.%2");
             assertThat(paragraph.getNumIlvl()).isEqualTo(BigInteger.valueOf(2));
+        }
+    }
+
+    @Test
+    void rejectsMissingOrIncompatibleExplicitTemplateNumId()
+            throws Exception {
+        try (XWPFDocument missing = new XWPFDocument()) {
+            WordNumberingDefinition definition =
+                    new WordNumberingDefinition();
+            definition.setNumId(Long.valueOf(77L));
+            assertThatThrownBy(() ->
+                    new WordNumberingManager(missing, definition))
+                    .isInstanceOf(WordTemplateException.class)
+                    .hasMessageContaining("77")
+                    .hasMessageContaining("compatible");
+        }
+
+        try (XWPFDocument incompatible = new XWPFDocument()) {
+            WordNumberingManager existing =
+                    new WordNumberingManager(incompatible);
+            WordNumberingDefinition definition =
+                    new WordNumberingDefinition();
+            definition.setNumId(Long.valueOf(
+                    existing.getNumId().longValue()));
+            definition.setLevels(Arrays.asList(
+                    level(1, "upperRoman", "%1"),
+                    level(2, "lowerLetter", "%1.%2"),
+                    level(3, "lowerRoman", "%1.%2.%3"),
+                    level(4, "decimal", "%1.%2.%3.%4")));
+            assertThatThrownBy(() ->
+                    new WordNumberingManager(incompatible, definition))
+                    .isInstanceOf(WordTemplateException.class)
+                    .hasMessageContaining("compatible");
         }
     }
 

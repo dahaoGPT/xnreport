@@ -137,11 +137,6 @@ public final class WordSectionRenderer {
                 return false;
             }
         }
-        for (WordSectionDefinition child : safe(section.getChildren())) {
-            if (!isEmpty(child, context, componentRenderer)) {
-                return false;
-            }
-        }
         return true;
     }
 

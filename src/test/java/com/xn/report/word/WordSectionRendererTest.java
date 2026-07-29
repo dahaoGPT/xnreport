@@ -133,6 +133,32 @@ class WordSectionRendererTest {
     }
 
     @Test
+    void skipOnEmptyParentPrunesNonEmptyChildSubtree() throws Exception {
+        WordSectionDefinition parent =
+                section("parent", "空父章节", 1, "SKIP");
+        WordSectionDefinition child =
+                section("child", "非空子章节", 2, "KEEP");
+        child.setComponents(Collections.singletonList(
+                text("FIXED_TEXT", "子章节内容")));
+        parent.setChildren(Collections.singletonList(child));
+
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            new WordSectionRenderer().render(
+                    document, Collections.singletonList(parent),
+                    WordRenderContext.builder()
+                            .datasets(DatasetContext.builder().build())
+                            .build());
+            try (XWPFDocument reopened = reopen(document);
+                 XWPFWordExtractor extractor =
+                         new XWPFWordExtractor(reopened)) {
+                assertThat(extractor.getText())
+                        .doesNotContain(
+                                "空父章节", "非空子章节", "子章节内容");
+            }
+        }
+    }
+
+    @Test
     void rejectsEmbeddedSectionsAnchorBeforeRendering() throws Exception {
         try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
             XWPFParagraph anchor = document.getParagraphs().stream()

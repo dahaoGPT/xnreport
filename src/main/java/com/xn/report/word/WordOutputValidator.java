@@ -46,17 +46,13 @@ public final class WordOutputValidator {
             validateStyles(document);
             validateToc(document, expectation);
             String text = documentText(document);
-            validateResolved(text);
-            for (String value : expectation.getCoverValues()) {
-                if (!text.contains(value)) {
-                    throw new WordTemplateException(
-                            "Word cover is missing expected value: " + value);
-                }
-            }
+            validateResolved(document, text);
+            validateCoverStructure(
+                    document, expectation.getCoverValues());
             validateExactHeadings(document, expectation.getHeadings());
             validateTables(document, expectation.getTables());
-            validateSequence(
-                    text, expectation.getAttachmentSequence(), "attachment");
+            validateAttachmentStructure(
+                    document, expectation.getAttachments());
             int pictures = validatePictures(document);
             if (pictures != expectation.getPictureInstances()) {
                 throw new WordTemplateException(
@@ -172,7 +168,8 @@ public final class WordOutputValidator {
         return new XWPFWordExtractor(document).getText();
     }
 
-    private static void validateResolved(String text) {
+    private static void validateResolved(
+            XWPFDocument document, String text) {
         for (String token : COVER_TOKENS) {
             if (text.contains(token)) {
                 throw new WordTemplateException(
@@ -182,6 +179,169 @@ public final class WordOutputValidator {
         if (PLACEHOLDER.matcher(text).find()) {
             throw new WordTemplateException(
                     "Word output contains unresolved placeholders");
+        }
+        if (WordPackageTextScanner.contains(document, PLACEHOLDER)) {
+            throw new WordTemplateException(
+                    "Word output contains unresolved placeholders"
+                            + " in a content control or package story");
+        }
+    }
+
+    private static void validateCoverStructure(
+            XWPFDocument document, List<String> expected) {
+        if (expected.isEmpty()) {
+            return;
+        }
+        if (expected.size() != 5) {
+            throw new WordTemplateException(
+                    "Word cover structure requires exactly five values");
+        }
+        List<String> coverBlocks = new ArrayList<String>();
+        boolean boundaryFound = false;
+        for (IBodyElement element : document.getBodyElements()) {
+            if (element instanceof XWPFParagraph
+                    && isCoverBoundary((XWPFParagraph) element)) {
+                boundaryFound = true;
+                break;
+            }
+            if (element instanceof XWPFParagraph) {
+                coverBlocks.add(((XWPFParagraph) element).getText());
+            } else if (element instanceof XWPFTable) {
+                appendTableParagraphs((XWPFTable) element, coverBlocks);
+            }
+        }
+        if (!boundaryFound) {
+            throw new WordTemplateException(
+                    "Word cover structure cannot locate the TOC or"
+                            + " first heading boundary");
+        }
+        int previous = -1;
+        for (int field = 0; field < expected.size(); field++) {
+            int found = -1;
+            for (int index = previous + 1;
+                    index < coverBlocks.size(); index++) {
+                if (coverBlocks.get(index).contains(expected.get(field))) {
+                    found = index;
+                    break;
+                }
+            }
+            if (found < 0) {
+                throw new WordTemplateException(
+                        "Word cover structure is missing, out of order,"
+                                + " or outside the cover area");
+            }
+            previous = found;
+        }
+    }
+
+    private static boolean isCoverBoundary(XWPFParagraph paragraph) {
+        String style = paragraph.getStyle();
+        return (style != null && style.matches("Heading[1-4]"))
+                || paragraph.getCTP().xmlText().matches("(?s).*TOC\\s+.*");
+    }
+
+    private static void appendTableParagraphs(
+            XWPFTable table, List<String> values) {
+        for (XWPFTableRow row : table.getRows()) {
+            for (XWPFTableCell cell : row.getTableCells()) {
+                for (XWPFParagraph paragraph : cell.getParagraphs()) {
+                    values.add(paragraph.getText());
+                }
+            }
+        }
+    }
+
+    private static void validateAttachmentStructure(
+            XWPFDocument document,
+            List<WordOutputExpectation.Attachment> expected) {
+        List<StyledText> actual = new ArrayList<StyledText>();
+        List<XWPFParagraph> paragraphs = document.getParagraphs();
+        int cursor = 0;
+        for (WordOutputExpectation.Attachment attachment : expected) {
+            List<StyledText> wanted = new ArrayList<StyledText>();
+            if (attachment.getTitle() != null) {
+                wanted.add(new StyledText(
+                        "TITLE",
+                        attachment.getTitle()));
+            }
+            if (attachment.getDescription() != null) {
+                wanted.add(new StyledText(
+                        "DESCRIPTION",
+                        attachment.getDescription()));
+            }
+            for (String item : attachment.getItems()) {
+                wanted.add(new StyledText(
+                        "ITEM", item));
+            }
+            int start = findAttachmentStart(
+                    paragraphs, cursor, wanted.get(0));
+            if (start < 0 || start + wanted.size() > paragraphs.size()) {
+                throw new WordTemplateException(
+                        "Word attachment structure or configured order mismatch");
+            }
+            actual.clear();
+            for (int offset = 0; offset < wanted.size(); offset++) {
+                XWPFParagraph paragraph = paragraphs.get(start + offset);
+                String role = offset == 0
+                        && attachment.getTitle() != null
+                        ? "TITLE"
+                        : ("ListBullet".equals(paragraph.getStyle())
+                        ? "ITEM" : "DESCRIPTION");
+                actual.add(new StyledText(role, paragraph.getText()));
+            }
+            if (!actual.equals(wanted)) {
+                throw new WordTemplateException(
+                        "Word attachment structure or configured order mismatch");
+            }
+            cursor = start + wanted.size();
+        }
+    }
+
+    private static int findAttachmentStart(
+            List<XWPFParagraph> paragraphs,
+            int cursor,
+            StyledText first) {
+        for (int index = cursor; index < paragraphs.size(); index++) {
+            XWPFParagraph paragraph = paragraphs.get(index);
+            if (!first.text.equals(paragraph.getText())) {
+                continue;
+            }
+            if ("TITLE".equals(first.style)) {
+                boolean bold = !paragraph.getRuns().isEmpty()
+                        && paragraph.getRuns().get(0).isBold();
+                if (!bold) {
+                    continue;
+                }
+            } else if ("ITEM".equals(first.style)
+                    && !"ListBullet".equals(paragraph.getStyle())) {
+                continue;
+            }
+            return index;
+        }
+        return -1;
+    }
+
+    private static final class StyledText {
+        private final String style;
+        private final String text;
+
+        private StyledText(String style, String text) {
+            this.style = style;
+            this.text = text;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof StyledText)) {
+                return false;
+            }
+            StyledText value = (StyledText) other;
+            return style.equals(value.style) && text.equals(value.text);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * style.hashCode() + text.hashCode();
         }
     }
 
@@ -237,13 +397,14 @@ public final class WordOutputValidator {
     private static void validateTables(
             XWPFDocument document,
             List<WordOutputExpectation.Table> expected) {
+        List<XWPFTable> dynamicTables = dynamicTables(document);
         for (WordOutputExpectation.Table table : expected) {
-            if (table.getIndex() >= document.getTables().size()) {
+            if (table.getIndex() >= dynamicTables.size()) {
                 throw new WordTemplateException(
                         "Word dynamic table index does not exist: "
                                 + table.getIndex());
             }
-            XWPFTable actual = document.getTables().get(table.getIndex());
+            XWPFTable actual = dynamicTables.get(table.getIndex());
             if (actual.getNumberOfRows() != table.getRowCount()) {
                 throw new WordTemplateException(
                         "Word dynamic table row count mismatch at index "
@@ -258,17 +419,21 @@ public final class WordOutputValidator {
         }
     }
 
-    private static void validateSequence(
-            String text, List<String> expected, String kind) {
-        int cursor = -1;
-        for (String value : expected) {
-            int next = text.indexOf(value, cursor + 1);
-            if (next < 0) {
-                throw new WordTemplateException(
-                        "Word " + kind + " sequence is missing: " + value);
+    private static List<XWPFTable> dynamicTables(XWPFDocument document) {
+        List<XWPFTable> values = new ArrayList<XWPFTable>();
+        boolean insideDynamicSections = false;
+        for (IBodyElement element : document.getBodyElements()) {
+            if (element instanceof XWPFParagraph) {
+                String style = ((XWPFParagraph) element).getStyle();
+                if (style != null && style.matches("Heading[1-4]")) {
+                    insideDynamicSections = true;
+                }
+            } else if (insideDynamicSections
+                    && element instanceof XWPFTable) {
+                values.add((XWPFTable) element);
             }
-            cursor = next;
         }
+        return values;
     }
 
     private static int validatePictures(IBody body) throws IOException {

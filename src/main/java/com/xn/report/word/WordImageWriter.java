@@ -107,19 +107,24 @@ public final class WordImageWriter {
 
     private static PrintableArea printableAreaEmu(
             XWPFDocument document, XWPFParagraph insertion) {
-        CTSectPr section = document.getDocument().getBody().isSetSectPr()
-                ? document.getDocument().getBody().getSectPr() : null;
+        CTSectPr section = null;
+        boolean atOrAfterInsertion = false;
         for (IBodyElement element : document.getBodyElements()) {
             if (element == insertion) {
-                break;
+                atOrAfterInsertion = true;
             }
-            if (element instanceof XWPFParagraph) {
+            if (atOrAfterInsertion && element instanceof XWPFParagraph) {
                 XWPFParagraph paragraph = (XWPFParagraph) element;
                 if (paragraph.getCTP().isSetPPr()
                         && paragraph.getCTP().getPPr().isSetSectPr()) {
                     section = paragraph.getCTP().getPPr().getSectPr();
+                    break;
                 }
             }
+        }
+        if (section == null
+                && document.getDocument().getBody().isSetSectPr()) {
+            section = document.getDocument().getBody().getSectPr();
         }
         long pageWidth = DEFAULT_PAGE_WIDTH_DXA;
         long pageHeight = 15840L;

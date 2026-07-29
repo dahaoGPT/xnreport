@@ -39,6 +39,12 @@ public final class WordNumberingManager {
             numbering = document.createNumbering();
         }
         BigInteger reusable = reusableNumId(numbering, effective, levels);
+        if (effective.getNumId() != null && reusable == null) {
+            throw new WordTemplateException(
+                    "Configured Word numId " + effective.getNumId()
+                            + " does not exist or is not compatible with"
+                            + " the configured four-level numbering");
+        }
         this.numId = reusable == null
                 ? createNumbering(numbering, levels) : reusable;
     }

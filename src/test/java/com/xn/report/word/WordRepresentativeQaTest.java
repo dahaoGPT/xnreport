@@ -18,7 +18,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import javax.imageio.ImageIO;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
-import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.junit.jupiter.api.Test;
 
 class WordRepresentativeQaTest {
@@ -100,20 +99,12 @@ class WordRepresentativeQaTest {
                             .chart("approvalTrend", chart)
                             .build());
 
-            for (XWPFParagraph paragraph : document.getParagraphs()) {
-                if (paragraph.getText().contains(
-                        "{{chart:centerEventChart}}")) {
-                    replacer.replace(document,
-                            "{{chart:centerEventChart}}", "");
-                    WordComponentDefinition markerChart =
-                            new WordComponentDefinition();
-                    markerChart.setWidthInches(Double.valueOf(5.4));
-                    markerChart.setAltText("模板图表标记替换示例");
-                    new WordImageWriter().write(
-                            document, paragraph, chart, markerChart);
-                    break;
-                }
-            }
+            WordComponentDefinition markerChart =
+                    new WordComponentDefinition();
+            markerChart.setWidthInches(Double.valueOf(5.4));
+            markerChart.setAltText("模板图表标记替换示例");
+            new WordTemplateChartBinder().bind(
+                    document, "centerEventChart", chart, markerChart);
 
             Path output = directory.resolve("representative.docx");
             try (OutputStream stream = Files.newOutputStream(output)) {

@@ -11,7 +11,7 @@ public final class WordOutputExpectation {
     private final boolean requireUpdateFields;
     private final List<Heading> headings;
     private final List<Table> tables;
-    private final List<String> attachmentSequence;
+    private final List<Attachment> attachments;
     private final int pictureInstances;
 
     private WordOutputExpectation(Builder builder) {
@@ -22,8 +22,8 @@ public final class WordOutputExpectation {
                 new ArrayList<Heading>(builder.headings));
         this.tables = Collections.unmodifiableList(
                 new ArrayList<Table>(builder.tables));
-        this.attachmentSequence =
-                immutable(builder.attachmentSequence);
+        this.attachments = Collections.unmodifiableList(
+                new ArrayList<Attachment>(builder.attachments));
         this.pictureInstances = builder.pictureInstances;
     }
 
@@ -51,8 +51,8 @@ public final class WordOutputExpectation {
         return tables;
     }
 
-    public List<String> getAttachmentSequence() {
-        return attachmentSequence;
+    public List<Attachment> getAttachments() {
+        return attachments;
     }
 
     public int getPictureInstances() {
@@ -107,6 +107,31 @@ public final class WordOutputExpectation {
         }
     }
 
+    public static final class Attachment {
+        private final String title;
+        private final String description;
+        private final List<String> items;
+
+        private Attachment(
+                String title, String description, List<String> items) {
+            this.title = title;
+            this.description = description;
+            this.items = immutable(items);
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public List<String> getItems() {
+            return items;
+        }
+    }
+
     public static final class Builder {
         private final List<String> coverValues =
                 new ArrayList<String>();
@@ -115,8 +140,8 @@ public final class WordOutputExpectation {
         private final List<Heading> headings =
                 new ArrayList<Heading>();
         private final List<Table> tables = new ArrayList<Table>();
-        private final List<String> attachmentSequence =
-                new ArrayList<String>();
+        private final List<Attachment> attachments =
+                new ArrayList<Attachment>();
         private int pictureInstances;
 
         public Builder cover(
@@ -170,15 +195,33 @@ public final class WordOutputExpectation {
         }
 
         public Builder attachmentSequence(List<String> values) {
-            if (values == null) {
+            if (values == null || values.size() < 2) {
                 throw new IllegalArgumentException(
-                        "Attachment sequence is required");
+                        "Attachment sequence requires title and description");
             }
-            attachmentSequence.clear();
-            for (String value : values) {
-                attachmentSequence.add(
-                        required(value, "attachment text"));
+            return attachment(values.get(0), values.get(1),
+                    values.subList(2, values.size()));
+        }
+
+        public Builder attachment(
+                String title,
+                String description,
+                List<String> items) {
+            List<String> safeItems = items == null
+                    ? Collections.<String>emptyList() : items;
+            String safeTitle = optional(title);
+            String safeDescription = optional(description);
+            List<String> checked = new ArrayList<String>();
+            for (String item : safeItems) {
+                checked.add(required(item, "attachment item"));
             }
+            if (safeTitle == null && safeDescription == null
+                    && checked.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Attachment structure must not be empty");
+            }
+            attachments.add(new Attachment(
+                    safeTitle, safeDescription, checked));
             return this;
         }
 
@@ -200,6 +243,10 @@ public final class WordOutputExpectation {
                 throw new IllegalArgumentException(name + " is required");
             }
             return value;
+        }
+
+        private static String optional(String value) {
+            return value == null || value.trim().isEmpty() ? null : value;
         }
     }
 }

@@ -9,7 +9,9 @@ import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.apache.poi.openxml4j.opc.PackagePart;
@@ -18,6 +20,8 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFRelation;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
 
 class WordTemplateFidelityTest {
 
@@ -60,7 +64,8 @@ class WordTemplateFidelityTest {
             assertThat(reopened.getFooterList()).hasSize(1);
             assertThat(reopened.getFooterList().get(0).getText())
                     .contains("模板页脚标记", "2026年7月23日");
-            assertThat(after.themeHash).isEqualTo(before.themeHash);
+            assertThat(after.themeSemantic)
+                    .isEqualTo(before.themeSemantic);
             assertThat(after.numberingXml).isEqualTo(before.numberingXml);
             assertThat(after.pageWidth).isEqualTo(before.pageWidth);
             assertThat(after.pageHeight).isEqualTo(before.pageHeight);
@@ -77,7 +82,7 @@ class WordTemplateFidelityTest {
     }
 
     private static final class TemplateInvariant {
-        private final String themeHash;
+        private final String themeSemantic;
         private final String numberingXml;
         private final BigInteger pageWidth;
         private final BigInteger pageHeight;
@@ -86,14 +91,14 @@ class WordTemplateFidelityTest {
         private final Map<String, Integer> relationshipCounts;
 
         private TemplateInvariant(
-                String themeHash,
+                String themeSemantic,
                 String numberingXml,
                 BigInteger pageWidth,
                 BigInteger pageHeight,
                 String marginsXml,
                 String styleXml,
                 Map<String, Integer> relationshipCounts) {
-            this.themeHash = themeHash;
+            this.themeSemantic = themeSemantic;
             this.numberingXml = numberingXml;
             this.pageWidth = pageWidth;
             this.pageHeight = pageHeight;
@@ -104,7 +109,8 @@ class WordTemplateFidelityTest {
 
         static TemplateInvariant capture(XWPFDocument document)
                 throws Exception {
-            String themeHash = hash(document.getTheme().getPackagePart());
+            String themeSemantic =
+                    semantic(document.getTheme().getPackagePart());
             String numberingXml = document.getNumbering()
                     .getAbstractNums().get(0).getCTAbstractNum().xmlText()
                     + document.getNumbering().getNums().get(0)
@@ -122,7 +128,7 @@ class WordTemplateFidelityTest {
             relationships.put("numbering", count(document,
                     XWPFRelation.NUMBERING.getRelation()));
             return new TemplateInvariant(
-                    themeHash,
+                    themeSemantic,
                     numberingXml,
                     (BigInteger) section.getPgSz().getW(),
                     (BigInteger) section.getPgSz().getH(),
@@ -141,20 +147,52 @@ class WordTemplateFidelityTest {
             return relationships.size();
         }
 
-        private static String hash(PackagePart part) throws Exception {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        private static String semantic(PackagePart part) throws Exception {
             try (InputStream input = part.getInputStream()) {
-                byte[] buffer = new byte[4096];
-                int read;
-                while ((read = input.read(buffer)) >= 0) {
-                    digest.update(buffer, 0, read);
+                javax.xml.parsers.DocumentBuilderFactory factory =
+                        javax.xml.parsers.DocumentBuilderFactory.newInstance();
+                factory.setNamespaceAware(true);
+                Node root = factory.newDocumentBuilder()
+                        .parse(input).getDocumentElement();
+                StringBuilder result = new StringBuilder();
+                appendSemantic(root, result);
+                return result.toString();
+            }
+        }
+
+        private static void appendSemantic(
+                Node node, StringBuilder result) {
+            if (node.getNodeType() == Node.ELEMENT_NODE) {
+                result.append('<').append(node.getNamespaceURI())
+                        .append('|').append(node.getLocalName());
+                NamedNodeMap attributes = node.getAttributes();
+                List<String> values = new ArrayList<String>();
+                for (int index = 0; index < attributes.getLength(); index++) {
+                    Node attribute = attributes.item(index);
+                    if (!"http://www.w3.org/2000/xmlns/"
+                            .equals(attribute.getNamespaceURI())) {
+                        values.add(attribute.getNamespaceURI() + "|"
+                                + attribute.getLocalName() + "="
+                                + attribute.getNodeValue());
+                    }
                 }
+                Collections.sort(values);
+                for (String value : values) {
+                    result.append('|').append(value);
+                }
+                result.append('>');
+            } else if (node.getNodeType() == Node.TEXT_NODE
+                    && !node.getNodeValue().trim().isEmpty()) {
+                result.append(node.getNodeValue().trim());
             }
-            StringBuilder hex = new StringBuilder();
-            for (byte value : digest.digest()) {
-                hex.append(String.format("%02x", value & 0xff));
+            for (Node child = node.getFirstChild();
+                    child != null; child = child.getNextSibling()) {
+                appendSemantic(child, result);
             }
-            return hex.toString();
+            if (node.getNodeType() == Node.ELEMENT_NODE) {
+                result.append("</").append(node.getNamespaceURI())
+                        .append('|').append(node.getLocalName()).append('>');
+            }
         }
     }
 }

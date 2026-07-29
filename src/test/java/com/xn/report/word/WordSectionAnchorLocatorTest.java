@@ -66,6 +66,22 @@ class WordSectionAnchorLocatorTest {
         }
     }
 
+    @Test
+    void rejectsDuplicateAnchorHiddenInsideContentControl()
+            throws Exception {
+        try (XWPFDocument document = new XWPFDocument()) {
+            document.createParagraph().createRun().setText("{{sections}}");
+            org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSdtBlock
+                    block = document.getDocument().getBody().addNewSdt();
+            org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP
+                    content = block.addNewSdtContent().addNewP();
+            new XWPFParagraph(content, document)
+                    .createRun().setText("{{sections}}");
+
+            assertInvalid(document);
+        }
+    }
+
     private void assertInvalid(XWPFDocument document) {
         assertThatThrownBy(() -> locator.locate(document))
                 .isInstanceOf(WordTemplateException.class)

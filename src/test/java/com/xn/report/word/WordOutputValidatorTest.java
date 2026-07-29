@@ -64,6 +64,30 @@ class WordOutputValidatorTest {
     }
 
     @Test
+    void rejectsUnresolvedPlaceholderInsideContentControl()
+            throws Exception {
+        Path output = tempDir.resolve("invalid-sdt.docx");
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            prepareEmptyOutput(document);
+            org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSdtBlock
+                    block = document.getDocument().getBody().addNewSdt();
+            org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP
+                    content = block.addNewSdtContent().addNewP();
+            new org.apache.poi.xwpf.usermodel.XWPFParagraph(
+                    content, document).createRun()
+                    .setText("{{value:hidden}}");
+            try (OutputStream stream = Files.newOutputStream(output)) {
+                document.write(stream);
+            }
+        }
+
+        assertThatThrownBy(() -> new WordOutputValidator().validate(
+                output, WordOutputExpectation.builder().build()))
+                .isInstanceOf(WordTemplateException.class)
+                .hasMessageContaining("unresolved");
+    }
+
+    @Test
     void validatesCompleteImmutableOutputExpectation() throws Exception {
         Path image = tempDir.resolve("chart.png");
         ImageIO.write(new BufferedImage(
@@ -74,11 +98,16 @@ class WordOutputValidatorTest {
                         TestFixtures.row("name", "张三", "hours", 12.5)));
         Path output = tempDir.resolve("complete.docx");
         try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
-            document.createParagraph().createRun().setText("研发效能报告");
-            document.createParagraph().createRun().setText("软件开发二中心");
-            document.createParagraph().createRun().setText("2026年6月");
-            document.createParagraph().createRun().setText("效能小组");
-            document.createParagraph().createRun().setText("2026年7月23日");
+            addCoverTokens(document);
+            com.xn.report.config.definition.WordCoverDefinition cover =
+                    new com.xn.report.config.definition.WordCoverDefinition();
+            cover.setTitle("研发效能报告");
+            cover.setOrganization("软件开发二中心");
+            cover.setReportPeriod("2026年6月");
+            cover.setPreparedBy("效能小组");
+            cover.setPreparedDate("2026年7月23日");
+            new WordCoverBinder(new WordRunTextReplacer())
+                    .bind(document, cover);
             new WordTocManager().configure(document, 3, true);
 
             WordSectionDefinition first = section("first", "交付速率", 1);
@@ -126,14 +155,72 @@ class WordOutputValidatorTest {
                         .heading(4, "人员明细")
                         .table(0, 2,
                                 Arrays.asList("name", "hours", "张三", "12.5"))
-                        .attachmentSequence(Arrays.asList(
+                        .attachment(
                                 "附件信息", "附件说明",
-                                "人员明细.xlsx", "规则说明.pdf"))
+                                Arrays.asList(
+                                        "人员明细.xlsx", "规则说明.pdf"))
                         .pictureInstances(1)
                         .build();
 
         assertThatCode(() -> new WordOutputValidator().validate(
                 output, expectation)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsCoverValuesScatteredOutsideBoundCoverStructure()
+            throws Exception {
+        Path output = tempDir.resolve("fake-cover.docx");
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            prepareEmptyOutput(document);
+            document.createParagraph().createRun().setText("研发效能报告");
+            document.createParagraph().createRun().setText("研发中心");
+            document.createParagraph().createRun().setText("2026年6月");
+            document.createParagraph().createRun().setText("效能小组");
+            document.createParagraph().createRun().setText("2026年7月23日");
+            try (OutputStream stream = Files.newOutputStream(output)) {
+                document.write(stream);
+            }
+        }
+        WordOutputExpectation expectation =
+                WordOutputExpectation.builder()
+                        .cover("研发效能报告", "研发中心", "2026年6月",
+                                "效能小组", "2026年7月23日")
+                        .build();
+
+        assertThatThrownBy(() ->
+                new WordOutputValidator().validate(output, expectation))
+                .isInstanceOf(WordTemplateException.class)
+                .hasMessageContaining("cover")
+                .hasMessageContaining("structure");
+    }
+
+    @Test
+    void rejectsAttachmentTextOutsideAttachmentComponentParagraphs()
+            throws Exception {
+        Path output = tempDir.resolve("fake-attachment.docx");
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            prepareEmptyOutput(document);
+            for (String text : Arrays.asList(
+                    "附件信息", "附件说明",
+                    "人员明细.xlsx", "规则说明.pdf")) {
+                document.createParagraph().createRun().setText(text);
+            }
+            try (OutputStream stream = Files.newOutputStream(output)) {
+                document.write(stream);
+            }
+        }
+        WordOutputExpectation expectation =
+                WordOutputExpectation.builder()
+                        .attachment("附件信息", "附件说明",
+                                Arrays.asList(
+                                        "人员明细.xlsx", "规则说明.pdf"))
+                        .build();
+
+        assertThatThrownBy(() ->
+                new WordOutputValidator().validate(output, expectation))
+                .isInstanceOf(WordTemplateException.class)
+                .hasMessageContaining("attachment")
+                .hasMessageContaining("structure");
     }
 
     private static WordSectionDefinition section(
@@ -144,5 +231,42 @@ class WordOutputValidatorTest {
         section.setLevel(level);
         section.setEmptyStrategy("KEEP");
         return section;
+    }
+
+    private static void addCoverTokens(XWPFDocument document) {
+        String[] tokens = {
+            WordCoverBinder.REPORT_TITLE,
+            WordCoverBinder.ORGANIZATION,
+            WordCoverBinder.REPORT_PERIOD,
+            WordCoverBinder.PREPARED_BY,
+            WordCoverBinder.PREPARED_DATE
+        };
+        org.apache.xmlbeans.XmlObject anchor =
+                ((org.apache.poi.xwpf.usermodel.XWPFParagraph)
+                        document.getBodyElements().get(0)).getCTP();
+        for (String token : tokens) {
+            org.apache.xmlbeans.XmlCursor cursor = anchor.newCursor();
+            try {
+                if (WordCoverBinder.REPORT_PERIOD.equals(token)) {
+                    org.apache.poi.xwpf.usermodel.XWPFTable table =
+                            document.insertNewTbl(cursor);
+                    table.getRow(0).getCell(0).setText("时间");
+                    table.getRow(0).addNewTableCell().setText(token);
+                } else {
+                    document.insertNewParagraph(cursor)
+                            .createRun().setText(token);
+                }
+            } finally {
+                cursor.dispose();
+            }
+        }
+    }
+
+    private static void prepareEmptyOutput(XWPFDocument document) {
+        document.getParagraphs().stream()
+                .filter(paragraph -> paragraph.getText()
+                        .contains("{{sections}}"))
+                .findFirst().get().getRuns().get(0).setText("正文", 0);
+        new WordTocManager().configure(document, 3, true);
     }
 }

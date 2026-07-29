@@ -32,7 +32,7 @@ public final class WordSectionAnchorLocator {
         if (document == null) {
             throw new IllegalArgumentException("Word document is required");
         }
-        if (replacer.count(document, TOKEN) != 1) {
+        if (WordPackageTextScanner.count(document, TOKEN) != 1) {
             throw new WordTemplateException(INVALID_MESSAGE);
         }
         for (IBodyElement element : document.getBodyElements()) {

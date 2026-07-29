@@ -45,17 +45,18 @@ class WordImageWriterSectionTest {
             finalSection(document, 12240, 15840, 1440, 1440);
             WordImageWriter writer = new WordImageWriter();
 
+            XWPFParagraph first = document.createParagraph();
             sectionBreak(document, 10080, 15840, 1440, 1440,
                     STPageOrientation.PORTRAIT);
-            write(writer, document, chart, "LEFT");
 
+            XWPFParagraph second = document.createParagraph();
             sectionBreak(document, 15840, 12240, 720, 720,
                     STPageOrientation.LANDSCAPE);
-            write(writer, document, chart, "CENTER");
 
-            sectionBreak(document, 12240, 15840, 2160, 2160,
-                    STPageOrientation.PORTRAIT);
-            write(writer, document, chart, "RIGHT");
+            XWPFParagraph third = document.createParagraph();
+            write(writer, document, first, chart, "LEFT");
+            write(writer, document, second, chart, "CENTER");
+            write(writer, document, third, chart, "RIGHT");
 
             try (OutputStream stream = Files.newOutputStream(output)) {
                 document.write(stream);
@@ -75,7 +76,7 @@ class WordImageWriterSectionTest {
                     .containsExactly(
                             inches(5.0d),
                             inches(10.0d),
-                            inches(5.5d));
+                            inches(6.5d));
             assertThat(drawings).extracting(WordImageWriterSectionTest::ratio)
                     .allSatisfy(value -> assertThat(value)
                             .isCloseTo(2.0d,
@@ -112,12 +113,13 @@ class WordImageWriterSectionTest {
     private static void write(
             WordImageWriter writer,
             XWPFDocument document,
+            XWPFParagraph paragraph,
             RenderedChart chart,
             String alignment) {
         WordComponentDefinition component = new WordComponentDefinition();
         component.setWidthInches(Double.valueOf(20.0d));
         component.setAlignment(alignment);
-        writer.write(document, document.createParagraph(), chart, component);
+        writer.write(document, paragraph, chart, component);
     }
 
     private static void sectionBreak(

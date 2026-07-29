@@ -46,7 +46,6 @@ public final class WordTableWriter {
         prototypeCopy.set(prototype.getCtRow());
         List<DatasetRow> rows = rows(dataset);
         markHeader(table);
-        applyGeometry(table, null);
         if (rows.isEmpty()) {
             clearRowForMessage(prototype,
                     emptyMessage == null ? "暂无数据" : emptyMessage);
@@ -72,6 +71,10 @@ public final class WordTableWriter {
             String emptyMessage) {
         List<WordTableColumnDefinition> columns = columns(
                 dataset, configuredColumns);
+        while (table.getNumberOfRows() > 0) {
+            table.removeRow(0);
+        }
+        normalizeGrid(table, columns.size());
         ensureDimensions(table, 1, columns.size());
         for (int index = 0; index < columns.size(); index++) {
             setCell(table.getRow(0).getCell(index),
@@ -83,6 +86,7 @@ public final class WordTableWriter {
         List<DatasetRow> rows = rows(dataset);
         if (rows.isEmpty()) {
             XWPFTableRow row = table.createRow();
+            normalizeCells(row, columns.size());
             setCell(row.getCell(0),
                     emptyMessage == null ? "暂无数据" : emptyMessage);
             for (int index = 1; index < columns.size(); index++) {
@@ -92,6 +96,7 @@ public final class WordTableWriter {
         }
         for (DatasetRow source : rows) {
             XWPFTableRow row = table.createRow();
+            normalizeCells(row, columns.size());
             for (int index = 0; index < columns.size(); index++) {
                 WordTableColumnDefinition column = columns.get(index);
                 setCell(row.getCell(index),
@@ -231,6 +236,32 @@ public final class WordTableWriter {
         XWPFTableRow first = table.getRow(0);
         while (first.getTableCells().size() < columns) {
             first.addNewTableCell();
+        }
+        normalizeCells(first, columns);
+    }
+
+    private static void normalizeCells(
+            XWPFTableRow row, int columns) {
+        while (row.getTableCells().size() > columns) {
+            row.removeCell(row.getTableCells().size() - 1);
+        }
+        while (row.getTableCells().size() < columns) {
+            row.addNewTableCell();
+        }
+    }
+
+    private static void normalizeGrid(
+            XWPFTable table, int columns) {
+        org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTblGrid grid =
+                table.getCTTbl().getTblGrid();
+        if (grid == null) {
+            grid = table.getCTTbl().addNewTblGrid();
+        }
+        while (grid.sizeOfGridColArray() > columns) {
+            grid.removeGridCol(grid.sizeOfGridColArray() - 1);
+        }
+        while (grid.sizeOfGridColArray() < columns) {
+            grid.addNewGridCol();
         }
     }
 

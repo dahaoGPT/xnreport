@@ -13,6 +13,7 @@ import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTbl;
 
 /**
  * Renders one configured component without changing the surrounding section
@@ -25,6 +26,7 @@ public final class WordComponentRenderer {
     private final WordImageWriter imageWriter;
     private final WordAttachmentWriter attachmentWriter;
     private final Map<String, WordTableBinding> tableBindings;
+    private final Map<String, CTTbl> bindingTemplates;
 
     public WordComponentRenderer() {
         this(new WordTableWriter(), new WordImageWriter(),
@@ -47,6 +49,7 @@ public final class WordComponentRenderer {
         this.attachmentWriter = attachmentWriter;
         this.tableBindings =
                 new LinkedHashMap<String, WordTableBinding>();
+        this.bindingTemplates = new LinkedHashMap<String, CTTbl>();
         for (WordTableBinding binding : bindings == null
                 ? Collections.<WordTableBinding>emptyList() : bindings) {
             if (binding != null && binding.getId() != null) {
@@ -80,7 +83,7 @@ public final class WordComponentRenderer {
             WordTableBinding binding =
                     tableBindings.get(component.getTableId());
             if (binding != null) {
-                renderBinding(document, binding, context);
+                renderBinding(document, inserter, binding, context);
                 return;
             }
             if (hasText(component.getTableId())) {
@@ -128,6 +131,7 @@ public final class WordComponentRenderer {
 
     private void renderBinding(
             XWPFDocument document,
+            WordBodyInserter inserter,
             WordTableBinding binding,
             WordRenderContext context) {
         if (!context.datasets().contains(binding.getDataset())) {
@@ -136,23 +140,34 @@ public final class WordComponentRenderer {
                             + binding.getDataset());
         }
         DatasetResult dataset = context.datasets().get(binding.getDataset());
+        CTTbl template = bindingTemplates.get(binding.getId());
         String marker = hasText(binding.getMarker())
                 ? binding.getMarker()
                 : "{{table:" + binding.getTableId() + "}}";
-        LocatedTable located = locateTable(document, marker,
-                "PROTOTYPE".equals(binding.getStrategy()));
+        if (template == null) {
+            LocatedTable located = locateTable(document, marker,
+                    "PROTOTYPE".equals(binding.getStrategy()));
+            template = CTTbl.Factory.newInstance();
+            template.set(located.table.getCTTbl());
+            bindingTemplates.put(binding.getId(), template);
+            removeLocated(document, located);
+        }
         if (datasetEmpty(dataset)
                 && "SKIP".equals(binding.getEmptyStrategy())) {
-            removeLocated(document, located);
             return;
         }
-        removeMarker(document, located, marker);
+        XWPFTable table = inserter.table();
         if ("PROTOTYPE".equals(binding.getStrategy())) {
+            CTTbl workingXml = CTTbl.Factory.newInstance();
+            workingXml.set(template);
+            XWPFTable working = new XWPFTable(workingXml, document);
+            removeMarkerFromTable(working, marker);
             tableWriter.bindPrototype(
-                    located.table, dataset, binding.getEmptyMessage());
+                    working, dataset, binding.getEmptyMessage());
+            table.getCTTbl().set(working.getCTTbl());
         } else if ("GENERATED".equals(binding.getStrategy())) {
             tableWriter.fillGenerated(
-                    located.table, dataset, binding.getColumns(),
+                    table, dataset, binding.getColumns(),
                     binding.getEmptyMessage());
         } else {
             throw new WordTemplateException(
@@ -211,21 +226,15 @@ public final class WordComponentRenderer {
         return candidate;
     }
 
-    private static void removeMarker(
-            XWPFDocument document, LocatedTable located, String marker) {
-        if (located.markerParagraph != null) {
-            int position =
-                    document.getPosOfParagraph(located.markerParagraph);
-            document.removeBodyElement(position);
-        } else {
-            WordRunTextReplacer replacer = new WordRunTextReplacer();
-            for (org.apache.poi.xwpf.usermodel.XWPFTableRow row
-                    : located.table.getRows()) {
-                for (org.apache.poi.xwpf.usermodel.XWPFTableCell cell
-                        : row.getTableCells()) {
-                    replacer.replaceInBody(
-                            cell, Collections.singletonMap(marker, ""));
-                }
+    private static void removeMarkerFromTable(
+            XWPFTable table, String marker) {
+        WordRunTextReplacer replacer = new WordRunTextReplacer();
+        for (org.apache.poi.xwpf.usermodel.XWPFTableRow row
+                : table.getRows()) {
+            for (org.apache.poi.xwpf.usermodel.XWPFTableCell cell
+                    : row.getTableCells()) {
+                replacer.replaceInBody(
+                        cell, Collections.singletonMap(marker, ""));
             }
         }
     }

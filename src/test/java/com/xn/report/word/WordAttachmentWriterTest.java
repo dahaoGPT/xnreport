@@ -20,6 +20,10 @@ class WordAttachmentWriterTest {
 
         try (XWPFDocument document = new XWPFDocument()) {
             new WordAttachmentWriter().append(document, component);
+            assertThat(document.getParagraphs())
+                    .extracting(paragraph -> paragraph.getStyle())
+                    .containsExactly(
+                            null, null, "ListBullet", "ListBullet");
             try (XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
                 String text = extractor.getText();
                 assertThat(text.indexOf("附件信息"))

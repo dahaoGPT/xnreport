@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.util.Collections;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.TableRowAlign;
 import org.junit.jupiter.api.Test;
 
 class WordTableWriterTest {
@@ -63,6 +64,43 @@ class WordTableWriterTest {
     }
 
     @Test
+    void preservesPrototypeGeometryAndAlignmentAfterSerialization()
+            throws Exception {
+        try (XWPFDocument document = ReportTemplateFixtureBuilder.build()) {
+            XWPFTable table = document.getTables().get(0);
+            table.setTableAlignment(TableRowAlign.RIGHT);
+            table.setWidth("7200");
+            int[] widths = {1200, 2400, 3600};
+            for (org.apache.poi.xwpf.usermodel.XWPFTableRow row
+                    : table.getRows()) {
+                for (int index = 0; index < widths.length; index++) {
+                    row.getCell(index).setWidth(String.valueOf(widths[index]));
+                }
+            }
+
+            writer.bindPrototype(table, TestFixtures.people(
+                    TestFixtures.row("personName", "张三",
+                            "centerName", "开发中心", "avgHours", 12.3),
+                    TestFixtures.row("personName", "李四",
+                            "centerName", "研发中心", "avgHours", 8.0)),
+                    "暂无数据");
+
+            try (XWPFDocument reopened = reopen(document)) {
+                XWPFTable actual = reopened.getTables().get(0);
+                assertThat(actual.getTableAlignment())
+                        .isEqualTo(TableRowAlign.RIGHT);
+                assertThat(actual.getWidth()).isEqualTo(7200);
+                for (org.apache.poi.xwpf.usermodel.XWPFTableRow row
+                        : actual.getRows()) {
+                    assertThat(row.getTableCells())
+                            .extracting(cell -> cell.getWidth())
+                            .containsExactly(1200, 2400, 3600);
+                }
+            }
+        }
+    }
+
+    @Test
     void replacesPrototypeWithConfiguredMessageForEmptyDataset() throws Exception {
         try (XWPFDocument document = ReportTemplateFixtureBuilder.build()) {
             XWPFTable table = document.getTables().get(0);
@@ -109,5 +147,13 @@ class WordTableWriterTest {
             assertThat(singleTable.getRow(0).getCtRow().getTrPr()
                     .sizeOfTblHeaderArray()).isEqualTo(1);
         }
+    }
+
+    private static XWPFDocument reopen(XWPFDocument document)
+            throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        document.write(output);
+        return new XWPFDocument(
+                new ByteArrayInputStream(output.toByteArray()));
     }
 }

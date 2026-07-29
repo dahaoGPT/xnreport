@@ -231,6 +231,149 @@ class GeneratedNativeChartWriterTest {
     }
 
     @Test
+    void createsEditableBubbleSeriesOnPrimaryAndSecondaryAxes()
+            throws Exception {
+        byte[] bytes;
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            XSSFSheet sheet = workbook.createSheet("Data");
+            sheet.createRow(0).createCell(0).setCellValue("x");
+            sheet.getRow(0).createCell(1).setCellValue("primaryY");
+            sheet.getRow(0).createCell(2).setCellValue("primarySize");
+            sheet.getRow(0).createCell(3).setCellValue("secondaryY");
+            sheet.getRow(0).createCell(4).setCellValue("secondarySize");
+            for (int index = 0; index < 2; index++) {
+                sheet.createRow(index + 1).createCell(0)
+                        .setCellValue(index + 1);
+                sheet.getRow(index + 1).createCell(1)
+                        .setCellValue(10 + index);
+                sheet.getRow(index + 1).createCell(2)
+                        .setCellValue(3 + index);
+                sheet.getRow(index + 1).createCell(3)
+                        .setCellValue(20 + index);
+                sheet.getRow(index + 1).createCell(4)
+                        .setCellValue(5 + index);
+            }
+            Map<String, Integer> columns =
+                    new LinkedHashMap<String, Integer>();
+            columns.put("x", 0);
+            columns.put("primaryY", 1);
+            columns.put("primarySize", 2);
+            columns.put("secondaryY", 3);
+            columns.put("secondarySize", 4);
+            ChartFormulaRange range = new ChartFormulaRange(
+                    "Data", 0, 1, 2, columns,
+                    Arrays.asList(1, 3),
+                    Arrays.asList(2, 4));
+
+            ChartDefinition definition = new ChartDefinition();
+            definition.setId("bubble");
+            definition.setDataset("d");
+            definition.setCategoryField("x");
+            definition.setExcelSheet("Data");
+            com.xn.report.config.definition.ChartSeriesDefinition primary =
+                    bubbleDefinition(
+                            "primaryY", "primarySize",
+                            "Primary", ChartAxis.PRIMARY);
+            com.xn.report.config.definition.ChartSeriesDefinition secondary =
+                    bubbleDefinition(
+                            "secondaryY", "secondarySize",
+                            "Secondary", ChartAxis.SECONDARY);
+            definition.setSeries(Arrays.asList(primary, secondary));
+            ChartSeriesModel primaryModel = bubbleModel(
+                    "primaryY", "Primary", ChartAxis.PRIMARY,
+                    Arrays.asList(
+                            new BigDecimal("10"),
+                            new BigDecimal("11")),
+                    Arrays.asList(
+                            new BigDecimal("3"),
+                            new BigDecimal("4")));
+            ChartSeriesModel secondaryModel = bubbleModel(
+                    "secondaryY", "Secondary", ChartAxis.SECONDARY,
+                    Arrays.asList(
+                            new BigDecimal("20"),
+                            new BigDecimal("21")),
+                    Arrays.asList(
+                            new BigDecimal("5"),
+                            new BigDecimal("6")));
+            ChartModel model = new ChartModel(
+                    "bubble", "Bubble", "d", null,
+                    Arrays.asList("1", "2"),
+                    Arrays.asList(primaryModel, secondaryModel),
+                    LegendPosition.BOTTOM, null, null, null, null,
+                    ChartDataLabelMode.NONE,
+                    Collections.<String>emptyList(),
+                    800, 500, ChartEmptyDataPolicy.OUTPUT_MESSAGE,
+                    "empty");
+
+            new GeneratedNativeChartWriter().write(
+                    workbook, definition, model, range);
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            workbook.write(output);
+            bytes = output.toByteArray();
+        }
+
+        try (XSSFWorkbook reopened = new XSSFWorkbook(
+                new ByteArrayInputStream(bytes))) {
+            assertThat(reopened.getNumberOfSheets()).isEqualTo(1);
+            assertThat(reopened.getSheetVisibility(0))
+                    .isEqualTo(SheetVisibility.VISIBLE);
+            org.openxmlformats.schemas.drawingml.x2006.chart.CTPlotArea plot =
+                    reopened.getSheet("Data").getDrawingPatriarch()
+                            .getCharts().get(0).getCTChart().getPlotArea();
+            assertThat(plot.getBubbleChartList()).hasSize(2);
+            assertThat(plot.getValAxList()).hasSize(4);
+            String xml = plot.xmlText();
+            assertThat(xml).contains(
+                    "'Data'!$A$2:$A$3",
+                    "'Data'!$B$2:$B$3",
+                    "'Data'!$C$2:$C$3",
+                    "'Data'!$D$2:$D$3",
+                    "'Data'!$E$2:$E$3",
+                    "Data!$B$1",
+                    "Data!$D$1");
+            assertThat(xml).contains("bubbleSize", "ptCount");
+            java.util.Set<Long> firstAxes =
+                    new java.util.LinkedHashSet<Long>();
+            plot.getBubbleChartList().get(0).getAxIdList()
+                    .forEach(axis -> firstAxes.add(axis.getVal()));
+            java.util.Set<Long> secondAxes =
+                    new java.util.LinkedHashSet<Long>();
+            plot.getBubbleChartList().get(1).getAxIdList()
+                    .forEach(axis -> secondAxes.add(axis.getVal()));
+            assertThat(firstAxes).hasSize(2);
+            assertThat(secondAxes).hasSize(2);
+            assertThat(firstAxes).doesNotContainAnyElementsOf(secondAxes);
+        }
+    }
+
+    private static com.xn.report.config.definition.ChartSeriesDefinition
+            bubbleDefinition(
+                    String field, String sizeField,
+                    String name, ChartAxis axis) {
+        com.xn.report.config.definition.ChartSeriesDefinition series =
+                new com.xn.report.config.definition.ChartSeriesDefinition();
+        series.setField(field);
+        series.setSizeField(sizeField);
+        series.setName(name);
+        series.setType(ChartType.BUBBLE);
+        series.setAxis(axis);
+        return series;
+    }
+
+    private static ChartSeriesModel bubbleModel(
+            String field, String name, ChartAxis axis,
+            java.util.List<BigDecimal> values,
+            java.util.List<BigDecimal> sizes) {
+        return new ChartSeriesModel(
+                field, name, ChartType.BUBBLE, axis,
+                null, "#4472C4", ChartLineStyle.SOLID,
+                BigDecimal.valueOf(2), false,
+                ChartDataLabelMode.NONE, null,
+                ChartNullHandling.GAP, 0,
+                values, sizes);
+    }
+
+    @Test
     void rejectsGeneratedStockInsteadOfSilentlyChangingItsType() {
         ChartDefinition definition = TestFixtures.comboChartDefinition();
         definition.getSeries().get(0).setType(ChartType.STOCK);

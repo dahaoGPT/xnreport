@@ -13,11 +13,85 @@ import java.util.List;
 import java.util.stream.Stream;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class ExcelChartDataAreaWriterTest {
+
+    @Test
+    void writesTheSpecifiedChineseChartDataMarker() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            XSSFSheet sheet = workbook.createSheet("Data");
+            sheet.createRow(0).createCell(0).setCellValue("detail");
+            DatasetDefinition dataset = TestFixtures.dataset("sort");
+            dataset.setSheetName("Data");
+            DatasetResult result = DatasetResult.list(
+                    "sort", Collections.singletonList(
+                            TestFixtures.row(
+                                    "category", "A", "value", 1)));
+            ChartDefinition definition =
+                    definition(ChartCategorySort.SOURCE,
+                            Collections.<String>emptyList());
+            ChartModel model = new ChartModelBuilder().build(
+                    definition, result);
+
+            ChartFormulaRange range =
+                    new ExcelChartDataAreaWriter().write(
+                            workbook, dataset, result,
+                            definition, model);
+
+            assertThat(sheet.getRow(range.getHeaderRow() - 1)
+                    .getCell(range.column("category"))
+                    .getStringCellValue())
+                    .isEqualTo("图表数据：sortChart");
+        }
+    }
+
+    @Test
+    void appendsTheGroupKeyToTheSpecifiedMarkerWithAColon()
+            throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            XSSFSheet sheet = workbook.createSheet("Data");
+            DatasetDefinition dataset = TestFixtures.dataset("sort");
+            dataset.setSheetName("Data");
+            DatasetResult result = DatasetResult.list(
+                    "sort", Collections.singletonList(
+                            TestFixtures.row(
+                                    "category", "A", "value", 1)));
+            ChartDefinition definition =
+                    definition(ChartCategorySort.SOURCE,
+                            Collections.<String>emptyList());
+            ChartModel base = new ChartModelBuilder().build(
+                    definition, result);
+            ChartModel grouped = new ChartModel(
+                    base.getChartId(), base.getTitle(),
+                    base.getDatasetId(), "华北",
+                    base.getCategories(), base.getSeries(),
+                    base.getLegendPosition(),
+                    base.getPrimaryAxisMin(),
+                    base.getPrimaryAxisMax(),
+                    base.getSecondaryAxisMin(),
+                    base.getSecondaryAxisMax(),
+                    base.getDataLabelMode(),
+                    base.getDataLabels(),
+                    base.getWidthPixels(),
+                    base.getHeightPixels(),
+                    base.getEmptyDataPolicy(),
+                    base.getEmptyMessage());
+
+            ChartFormulaRange range =
+                    new ExcelChartDataAreaWriter().write(
+                            workbook, dataset, result,
+                            definition, grouped);
+
+            assertThat(sheet.getRow(range.getHeaderRow() - 1)
+                    .getCell(range.column("category"))
+                    .getStringCellValue())
+                    .isEqualTo("图表数据：sortChart:华北");
+        }
+    }
 
     @ParameterizedTest
     @MethodSource("sortCases")

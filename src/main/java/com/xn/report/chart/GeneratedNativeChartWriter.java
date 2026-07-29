@@ -21,6 +21,7 @@ import org.apache.poi.xddf.usermodel.chart.Grouping;
 import org.apache.poi.xddf.usermodel.chart.MarkerStyle;
 import org.apache.poi.xddf.usermodel.chart.XDDFAreaChartData;
 import org.apache.poi.xddf.usermodel.chart.XDDFBarChartData;
+import org.apache.poi.xddf.usermodel.chart.XDDFBubbleChartData;
 import org.apache.poi.xddf.usermodel.chart.XDDFCategoryAxis;
 import org.apache.poi.xddf.usermodel.chart.XDDFCategoryDataSource;
 import org.apache.poi.xddf.usermodel.chart.XDDFChartAxis;
@@ -64,9 +65,9 @@ public final class GeneratedNativeChartWriter {
         require(definition, "definition");
         require(model, "model");
         require(range, "range");
-        if (containsTemplateOnlyType(model)) {
+        if (containsStock(model)) {
             throw new UnsupportedChartTypeException(
-                    "Chart type STOCK/BUBBLE requires "
+                    "Chart type STOCK requires "
                             + "TEMPLATE_NATIVE with Apache POI 5.2");
         }
         if (model.getSeries().size() != definition.getSeries().size()) {
@@ -96,19 +97,20 @@ public final class GeneratedNativeChartWriter {
         chart.setPlotOnlyVisibleCells(false);
         chart.displayBlanksAs(blankMode(model));
 
-        boolean scatterOnly = isScatterOnly(model);
-        if (hasScatter(model) && !scatterOnly) {
+        boolean numericXOnly = isNumericXOnly(model);
+        if (hasNumericX(model) && !numericXOnly) {
             throw new UnsupportedChartTypeException(
-                    "A generated SCATTER chart cannot share category axes "
+                    "Generated SCATTER/BUBBLE charts cannot share "
+                            + "category axes "
                             + "with other chart types; use TEMPLATE_NATIVE");
         }
         boolean needsAxes = needsAxes(model);
         AxisPair primary = needsAxes
                 ? createAxes(
-                        chart, ChartAxis.PRIMARY, scatterOnly) : null;
+                        chart, ChartAxis.PRIMARY, numericXOnly) : null;
         AxisPair secondary = usesAxis(model, ChartAxis.SECONDARY)
                 ? createAxes(
-                        chart, ChartAxis.SECONDARY, scatterOnly) : null;
+                        chart, ChartAxis.SECONDARY, numericXOnly) : null;
 
         Map<SeriesGroup, List<ChartSeriesModel>> groups =
                 groups(model.getSeries());
@@ -130,6 +132,11 @@ public final class GeneratedNativeChartWriter {
                         valuesSource(series, range, ordinal);
                 XDDFChartData.Series created =
                         data.addSeries(categories, values);
+                if (created instanceof XDDFBubbleChartData.Series) {
+                    ((XDDFBubbleChartData.Series) created)
+                            .setBubbleSizes(
+                                    sizeSource(series, range, ordinal));
+                }
                 created.setTitle(series.getName(),
                         new CellReference(
                                 range.getSheetName(),
@@ -296,6 +303,16 @@ public final class GeneratedNativeChartWriter {
 
     private static XDDFChartData createData(
             XSSFChart chart, ChartType type, AxisPair axes) {
+        if (type == ChartType.BUBBLE) {
+            org.openxmlformats.schemas.drawingml.x2006.chart.CTBubbleChart
+                    bubble = chart.getCTChart().getPlotArea()
+                            .addNewBubbleChart();
+            XDDFBubbleChartData data =
+                    new XDDFBubbleChartData(
+                            chart, bubble, axes.category, axes.value);
+            data.setVaryColors(Boolean.FALSE);
+            return data;
+        }
         ChartTypes poiType;
         switch (type) {
             case COLUMN:
@@ -366,7 +383,8 @@ public final class GeneratedNativeChartWriter {
             String categoryField,
             ChartFormulaRange range,
             ChartType type) {
-        if (type == ChartType.SCATTER) {
+        if (type == ChartType.SCATTER
+                || type == ChartType.BUBBLE) {
             Double[] values = new Double[model.getCategories().size()];
             for (int index = 0; index < values.length; index++) {
                 try {
@@ -418,6 +436,32 @@ public final class GeneratedNativeChartWriter {
             source.setFormatCode(series.getFormat());
         }
         return source;
+    }
+
+    private static XDDFNumericalDataSource<Double> sizeSource(
+            ChartSeriesModel series,
+            ChartFormulaRange range,
+            int ordinal) {
+        if (series.getSizes().size() != series.getValues().size()) {
+            throw new IllegalArgumentException(
+                    "BUBBLE series values and sizes must have "
+                            + "the same point count: " + series.getName());
+        }
+        Double[] sizes = new Double[series.getSizes().size()];
+        for (int index = 0; index < sizes.length; index++) {
+            BigDecimal size = series.getSizes().get(index);
+            if (size == null
+                    || size.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException(
+                        "BUBBLE size values must be greater than zero: "
+                                + series.getName());
+            }
+            sizes[index] = Double.valueOf(size.doubleValue());
+        }
+        return XDDFDataSourcesFactory.fromArray(
+                sizes,
+                range.sizeFormula(ordinal, series.getField()),
+                range.sizeColumn(ordinal, series.getField()));
     }
 
     private static void configureSeries(
@@ -479,6 +523,9 @@ public final class GeneratedNativeChartWriter {
         } else if (series instanceof XDDFRadarChartData.Series) {
             labels = ((XDDFRadarChartData.Series) series)
                     .getCTRadarSer().addNewDLbls();
+        } else if (series instanceof XDDFBubbleChartData.Series) {
+            labels = ((XDDFBubbleChartData.Series) series)
+                    .getCTBubbleSer().addNewDLbls();
         } else {
             throw new UnsupportedChartTypeException(
                     "Data labels are unsupported for generated series "
@@ -609,10 +656,19 @@ public final class GeneratedNativeChartWriter {
         return false;
     }
 
-    private static boolean containsTemplateOnlyType(
+    private static boolean containsStock(
             ChartModel model) {
         for (ChartSeriesModel series : model.getSeries()) {
-            if (series.getType() == ChartType.STOCK
+            if (series.getType() == ChartType.STOCK) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasNumericX(ChartModel model) {
+        for (ChartSeriesModel series : model.getSeries()) {
+            if (series.getType() == ChartType.SCATTER
                     || series.getType() == ChartType.BUBBLE) {
                 return true;
             }
@@ -620,21 +676,13 @@ public final class GeneratedNativeChartWriter {
         return false;
     }
 
-    private static boolean hasScatter(ChartModel model) {
-        for (ChartSeriesModel series : model.getSeries()) {
-            if (series.getType() == ChartType.SCATTER) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isScatterOnly(ChartModel model) {
+    private static boolean isNumericXOnly(ChartModel model) {
         if (model.getSeries().isEmpty()) {
             return false;
         }
         for (ChartSeriesModel series : model.getSeries()) {
-            if (series.getType() != ChartType.SCATTER) {
+            if (series.getType() != ChartType.SCATTER
+                    && series.getType() != ChartType.BUBBLE) {
                 return false;
             }
         }

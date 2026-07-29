@@ -21,7 +21,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
  */
 public final class ExcelChartDataAreaWriter {
 
-    private static final String MARKER_PREFIX = "Chart data: ";
+    private static final String MARKER_PREFIX = "图表数据：";
 
     public ChartFormulaRange write(
             XSSFWorkbook workbook,
@@ -233,7 +233,7 @@ public final class ExcelChartDataAreaWriter {
             ChartDefinition definition, ChartModel model) {
         return MARKER_PREFIX + definition.getId()
                 + (model.getGroupKey() == null
-                ? "" : " [" + model.getGroupKey() + "]");
+                ? "" : ":" + model.getGroupKey());
     }
 
     private static int firstFreeColumn(XSSFSheet sheet) {

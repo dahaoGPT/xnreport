@@ -65,7 +65,7 @@ class ExcelWorkbookWriterChartTest {
             assertThat(xml).contains("'中心-每月'!$F$3:$F$5");
             assertThat(workbook.getSheet("中心-每月")
                     .getRow(0).getCell(5).getStringCellValue())
-                    .startsWith("Chart data:");
+                    .startsWith("图表数据：");
         }
     }
 
@@ -438,7 +438,7 @@ class ExcelWorkbookWriterChartTest {
         int categoryColumn = categoryArea.getFirstCell().getCol();
         assertThat(sheet.getRow(headerRow - 1)
                 .getCell(categoryColumn).getStringCellValue())
-                .startsWith("Chart data:");
+                .startsWith("图表数据：");
         assertThat(sheet.getRow(headerRow)
                 .getCell(categoryColumn + 1).getStringCellValue())
                 .isEqualTo(seriesHeaders.get(0));

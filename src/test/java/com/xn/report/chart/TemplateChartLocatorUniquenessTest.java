@@ -163,7 +163,7 @@ class TemplateChartLocatorUniquenessTest {
             for (Cell cell : row) {
                 if (cell.getCellType() == CellType.STRING
                         && cell.getStringCellValue()
-                                .startsWith("Chart data:")) {
+                                .startsWith("图表数据：")) {
                     return true;
                 }
             }

@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import javax.xml.namespace.QName;
+import org.apache.poi.xddf.usermodel.chart.AxisPosition;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormatter;
@@ -94,7 +95,7 @@ public final class TemplateNativeChartUpdater {
                             + desired.size());
         }
         bindSeries(
-                physicalSeries, desired, definition,
+                chart, physicalSeries, desired, definition,
                 range, dataSheet);
         workbook.setForceFormulaRecalculation(true);
         return chart;
@@ -133,19 +134,33 @@ public final class TemplateNativeChartUpdater {
     }
 
     private static void bindSeries(
+            XSSFChart chart,
             XmlObject[] physical,
             List<DesiredSeries> desired,
             ChartDefinition definition,
             ChartFormulaRange range,
             XSSFSheet dataSheet) {
         Set<Integer> used = new HashSet<Integer>();
+        List<PhysicalBinding> bindings =
+                new ArrayList<PhysicalBinding>();
         for (XmlObject series : physical) {
             int sourceIndex = compatibleConfigured(
-                    series, definition, used);
+                    chart, series, definition, used);
             int desiredIndex = desiredIndex(
                     desired, sourceIndex);
-            DesiredSeries binding = desired.get(desiredIndex);
             used.add(Integer.valueOf(sourceIndex));
+            bindings.add(new PhysicalBinding(
+                    series, desiredIndex));
+        }
+        if (used.size() != definition.getSeries().size()) {
+            throw new IllegalArgumentException(
+                    "Template chart does not uniquely represent every "
+                            + "configured series");
+        }
+        for (PhysicalBinding physicalBinding : bindings) {
+            XmlObject series = physicalBinding.series;
+            int desiredIndex = physicalBinding.desiredIndex;
+            DesiredSeries binding = desired.get(desiredIndex);
             setUnsignedValue(
                     series, "./c:idx", desiredIndex);
             setUnsignedValue(
@@ -348,24 +363,256 @@ public final class TemplateNativeChartUpdater {
     }
 
     private static int compatibleConfigured(
+            XSSFChart chart,
             XmlObject physical,
             ChartDefinition definition,
             Set<Integer> used) {
-        String plotType = physical.getDomNode().getParentNode()
-                .getLocalName();
+        ChartType plotType = physicalType(physical);
+        ChartAxis plotAxis = physicalAxis(chart, physical, plotType);
+        List<Integer> candidates = new ArrayList<Integer>();
         for (int index = 0;
                 index < definition.getSeries().size(); index++) {
+            ChartSeriesDefinition configured =
+                    definition.getSeries().get(index);
+            ChartAxis configuredAxis = configured.getAxis() == null
+                    ? ChartAxis.PRIMARY : configured.getAxis();
             if (!used.contains(Integer.valueOf(index))
-                    && compatible(
-                            plotType,
-                            definition.getSeries().get(index)
-                                    .getType())) {
-                return index;
+                    && configured.getType() == plotType
+                    && configuredAxis == plotAxis) {
+                candidates.add(Integer.valueOf(index));
             }
         }
+        if (candidates.size() == 1) {
+            return candidates.get(0).intValue();
+        }
+        String title = physicalTitle(physical);
+        if (title != null) {
+            Integer matched = null;
+            for (Integer candidate : candidates) {
+                ChartSeriesDefinition configured =
+                        definition.getSeries().get(
+                                candidate.intValue());
+                if (title.equals(configured.getName())
+                        || title.equals(configured.getField())) {
+                    if (matched != null) {
+                        throw ambiguousTemplateSeries(
+                                plotType, plotAxis, title);
+                    }
+                    matched = candidate;
+                }
+            }
+            if (matched != null) {
+                return matched.intValue();
+            }
+        }
+        int originalIndex = unsignedValue(physical, "./c:idx");
+        if (candidates.contains(Integer.valueOf(originalIndex))) {
+            return originalIndex;
+        }
+        if (candidates.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Template plot " + plotType + " on " + plotAxis
+                            + " axis has no compatible configured series");
+        }
+        throw ambiguousTemplateSeries(plotType, plotAxis, title);
+    }
+
+    private static IllegalArgumentException ambiguousTemplateSeries(
+            ChartType type, ChartAxis axis, String title) {
+        return new IllegalArgumentException(
+                "Template plot " + type + " on " + axis
+                        + " axis is ambiguous"
+                        + (title == null ? ""
+                        : " for series title " + title)
+                        + "; use unique series titles or preserve "
+                        + "configured source indexes");
+    }
+
+    private static ChartType physicalType(XmlObject series) {
+        XmlObject plot = parent(series);
+        String plotType = plot.getDomNode().getLocalName();
+        if ("barChart".equals(plotType)) {
+            String direction = attributeValue(
+                    plot, "./c:barDir", "val");
+            String grouping = attributeValue(
+                    plot, "./c:grouping", "val");
+            if ("col".equals(direction)) {
+                if ("stacked".equals(grouping)) {
+                    return ChartType.STACKED_COLUMN;
+                }
+                if ("percentStacked".equals(grouping)) {
+                    return ChartType.PERCENT_STACKED_COLUMN;
+                }
+                if ("clustered".equals(grouping)) {
+                    return ChartType.COLUMN;
+                }
+            } else if ("bar".equals(direction)) {
+                if ("stacked".equals(grouping)) {
+                    return ChartType.STACKED_BAR;
+                }
+                if ("clustered".equals(grouping)) {
+                    return ChartType.BAR;
+                }
+            }
+            throw new IllegalArgumentException(
+                    "Unsupported template bar contract: direction="
+                            + direction + ", grouping=" + grouping);
+        }
+        if ("lineChart".equals(plotType)) {
+            return ChartType.LINE;
+        }
+        if ("areaChart".equals(plotType)) {
+            String grouping = attributeValue(
+                    plot, "./c:grouping", "val");
+            if ("stacked".equals(grouping)) {
+                return ChartType.STACKED_AREA;
+            }
+            if ("standard".equals(grouping)) {
+                return ChartType.AREA;
+            }
+            throw new IllegalArgumentException(
+                    "Unsupported template area grouping: " + grouping);
+        }
+        if ("pieChart".equals(plotType)) {
+            return ChartType.PIE;
+        }
+        if ("doughnutChart".equals(plotType)) {
+            return ChartType.DOUGHNUT;
+        }
+        if ("scatterChart".equals(plotType)) {
+            return ChartType.SCATTER;
+        }
+        if ("radarChart".equals(plotType)) {
+            return ChartType.RADAR;
+        }
+        if ("bubbleChart".equals(plotType)) {
+            return ChartType.BUBBLE;
+        }
+        if ("stockChart".equals(plotType)) {
+            return ChartType.STOCK;
+        }
         throw new IllegalArgumentException(
-                "Template plot type " + plotType
-                        + " has no compatible ChartModel series");
+                "Unsupported template plot type " + plotType);
+    }
+
+    private static ChartAxis physicalAxis(
+            XSSFChart chart, XmlObject series, ChartType type) {
+        if (type.isPieLike()) {
+            return ChartAxis.PRIMARY;
+        }
+        Set<Long> axisIds = new HashSet<Long>();
+        for (XmlObject node
+                : parent(series).selectPath(NS + "./c:axId")) {
+            axisIds.add(Long.valueOf(
+                    Long.parseLong(requiredAttribute(node, "val"))));
+        }
+        ChartAxis result = null;
+        for (org.openxmlformats.schemas.drawingml.x2006.chart.CTValAx axis
+                : chart.getCTChart().getPlotArea().getValAxList()) {
+            if (!axisIds.contains(Long.valueOf(
+                    axis.getAxId().getVal()))) {
+                continue;
+            }
+            AxisPosition position = axisPosition(
+                    axis.getAxPos().getVal().toString());
+            if (position != AxisPosition.LEFT
+                    && position != AxisPosition.RIGHT) {
+                continue;
+            }
+            ChartAxis current = position == AxisPosition.RIGHT
+                    ? ChartAxis.SECONDARY : ChartAxis.PRIMARY;
+            if (result != null && result != current) {
+                throw new IllegalArgumentException(
+                        "Template plot references both primary and "
+                                + "secondary value axes");
+            }
+            result = current;
+        }
+        if (result == null) {
+            throw new IllegalArgumentException(
+                    "Template plot " + type
+                            + " has no unambiguous LEFT/RIGHT value axis");
+        }
+        return result;
+    }
+
+    private static AxisPosition axisPosition(String value) {
+        if ("l".equals(value)) {
+            return AxisPosition.LEFT;
+        }
+        if ("r".equals(value)) {
+            return AxisPosition.RIGHT;
+        }
+        if ("b".equals(value)) {
+            return AxisPosition.BOTTOM;
+        }
+        if ("t".equals(value)) {
+            return AxisPosition.TOP;
+        }
+        throw new IllegalArgumentException(
+                "Unsupported template axis position: " + value);
+    }
+
+    private static String physicalTitle(XmlObject series) {
+        XmlObject[] literal = series.selectPath(
+                NS + "./c:tx/c:v");
+        if (literal.length == 1) {
+            return textValue(literal[0]);
+        }
+        XmlObject[] cached = series.selectPath(
+                NS + "./c:tx/c:strRef/c:strCache/c:pt/c:v");
+        if (cached.length > 0) {
+            return textValue(cached[0]);
+        }
+        return null;
+    }
+
+    private static String textValue(XmlObject value) {
+        try (XmlCursor cursor = value.newCursor()) {
+            return cursor.getTextValue();
+        }
+    }
+
+    private static XmlObject parent(XmlObject value) {
+        try (XmlCursor cursor = value.newCursor()) {
+            if (!cursor.toParent()) {
+                throw new IllegalArgumentException(
+                        "Template series has no plot parent");
+            }
+            return cursor.getObject();
+        }
+    }
+
+    private static String attributeValue(
+            XmlObject parent, String path, String name) {
+        XmlObject[] values = parent.selectPath(NS + path);
+        if (values.length != 1) {
+            throw new IllegalArgumentException(
+                    "Template plot is missing " + path);
+        }
+        return requiredAttribute(values[0], name);
+    }
+
+    private static String requiredAttribute(
+            XmlObject value, String name) {
+        try (XmlCursor cursor = value.newCursor()) {
+            String result = cursor.getAttributeText(new QName(name));
+            if (result == null) {
+                throw new IllegalArgumentException(
+                        "Template chart node is missing @" + name);
+            }
+            return result;
+        }
+    }
+
+    private static int unsignedValue(
+            XmlObject parent, String path) {
+        XmlObject[] values = parent.selectPath(NS + path);
+        if (values.length != 1) {
+            throw new IllegalArgumentException(
+                    "Template series is missing " + path);
+        }
+        return Integer.parseInt(requiredAttribute(values[0], "val"));
     }
 
     private static int desiredIndex(
@@ -379,43 +626,6 @@ public final class TemplateNativeChartUpdater {
         throw new IllegalArgumentException(
                 "Template source series is absent from ChartModel: "
                         + sourceIndex);
-    }
-
-    private static boolean compatible(
-            String plotType, ChartType type) {
-        if ("barChart".equals(plotType)) {
-            return type == ChartType.COLUMN
-                    || type == ChartType.STACKED_COLUMN
-                    || type == ChartType.PERCENT_STACKED_COLUMN
-                    || type == ChartType.BAR
-                    || type == ChartType.STACKED_BAR;
-        }
-        if ("lineChart".equals(plotType)) {
-            return type == ChartType.LINE;
-        }
-        if ("areaChart".equals(plotType)) {
-            return type == ChartType.AREA
-                    || type == ChartType.STACKED_AREA;
-        }
-        if ("pieChart".equals(plotType)) {
-            return type == ChartType.PIE;
-        }
-        if ("doughnutChart".equals(plotType)) {
-            return type == ChartType.DOUGHNUT;
-        }
-        if ("scatterChart".equals(plotType)) {
-            return type == ChartType.SCATTER;
-        }
-        if ("radarChart".equals(plotType)) {
-            return type == ChartType.RADAR;
-        }
-        if ("bubbleChart".equals(plotType)) {
-            return type == ChartType.BUBBLE;
-        }
-        if ("stockChart".equals(plotType)) {
-            return type == ChartType.STOCK;
-        }
-        return false;
     }
 
     private static LocatorValue locatorValue(
@@ -480,6 +690,18 @@ public final class TemplateNativeChartUpdater {
                 int sourceIndex) {
             this.configured = configured;
             this.sourceIndex = sourceIndex;
+        }
+    }
+
+    private static final class PhysicalBinding {
+        private final XmlObject series;
+        private final int desiredIndex;
+
+        private PhysicalBinding(
+                XmlObject series,
+                int desiredIndex) {
+            this.series = series;
+            this.desiredIndex = desiredIndex;
         }
     }
 

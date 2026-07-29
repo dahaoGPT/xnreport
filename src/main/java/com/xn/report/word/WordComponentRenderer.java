@@ -2,8 +2,14 @@ package com.xn.report.word;
 
 import com.xn.report.chart.RenderedChart;
 import com.xn.report.config.definition.WordComponentDefinition;
+import com.xn.report.config.definition.WordTableBinding;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.text.NarrativeResult;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
@@ -18,19 +24,35 @@ public final class WordComponentRenderer {
     private final WordTableWriter tableWriter;
     private final WordImageWriter imageWriter;
     private final WordAttachmentWriter attachmentWriter;
+    private final Map<String, WordTableBinding> tableBindings;
 
     public WordComponentRenderer() {
         this(new WordTableWriter(), new WordImageWriter(),
-                new WordAttachmentWriter());
+                new WordAttachmentWriter(),
+                Collections.<WordTableBinding>emptyList());
+    }
+
+    public WordComponentRenderer(List<WordTableBinding> bindings) {
+        this(new WordTableWriter(), new WordImageWriter(),
+                new WordAttachmentWriter(), bindings);
     }
 
     WordComponentRenderer(
             WordTableWriter tableWriter,
             WordImageWriter imageWriter,
-            WordAttachmentWriter attachmentWriter) {
+            WordAttachmentWriter attachmentWriter,
+            List<WordTableBinding> bindings) {
         this.tableWriter = tableWriter;
         this.imageWriter = imageWriter;
         this.attachmentWriter = attachmentWriter;
+        this.tableBindings =
+                new LinkedHashMap<String, WordTableBinding>();
+        for (WordTableBinding binding : bindings == null
+                ? Collections.<WordTableBinding>emptyList() : bindings) {
+            if (binding != null && binding.getId() != null) {
+                this.tableBindings.put(binding.getId(), binding);
+            }
+        }
     }
 
     void render(
@@ -55,7 +77,18 @@ public final class WordComponentRenderer {
             return;
         }
         if ("TABLE".equals(type)) {
-            DatasetResult dataset = dataset(component, context);
+            WordTableBinding binding =
+                    tableBindings.get(component.getTableId());
+            if (binding != null) {
+                renderBinding(document, binding, context);
+                return;
+            }
+            if (hasText(component.getTableId())) {
+                throw new WordTemplateException(
+                        "Word table references missing binding: "
+                                + component.getTableId());
+            }
+            DatasetResult dataset = datasetFor(component, context);
             XWPFTable table = inserter.table();
             tableWriter.fillGenerated(
                     table, dataset, component.getColumns(),
@@ -81,15 +114,157 @@ public final class WordComponentRenderer {
                 "Unsupported Word component type: " + type);
     }
 
-    static DatasetResult dataset(
+    DatasetResult datasetFor(
             WordComponentDefinition component, WordRenderContext context) {
-        String datasetId = hasText(component.getDataset())
-                ? component.getDataset() : component.getTableId();
+        WordTableBinding binding = tableBindings.get(component.getTableId());
+        String datasetId = binding == null
+                ? component.getDataset() : binding.getDataset();
         if (!hasText(datasetId) || !context.datasets().contains(datasetId)) {
             throw new WordTemplateException(
                     "Word table references missing dataset: " + datasetId);
         }
         return context.datasets().get(datasetId);
+    }
+
+    private void renderBinding(
+            XWPFDocument document,
+            WordTableBinding binding,
+            WordRenderContext context) {
+        if (!context.datasets().contains(binding.getDataset())) {
+            throw new WordTemplateException(
+                    "Word table binding references missing dataset: "
+                            + binding.getDataset());
+        }
+        DatasetResult dataset = context.datasets().get(binding.getDataset());
+        String marker = hasText(binding.getMarker())
+                ? binding.getMarker()
+                : "{{table:" + binding.getTableId() + "}}";
+        LocatedTable located = locateTable(document, marker,
+                "PROTOTYPE".equals(binding.getStrategy()));
+        if (datasetEmpty(dataset)
+                && "SKIP".equals(binding.getEmptyStrategy())) {
+            removeLocated(document, located);
+            return;
+        }
+        removeMarker(document, located, marker);
+        if ("PROTOTYPE".equals(binding.getStrategy())) {
+            tableWriter.bindPrototype(
+                    located.table, dataset, binding.getEmptyMessage());
+        } else if ("GENERATED".equals(binding.getStrategy())) {
+            tableWriter.fillGenerated(
+                    located.table, dataset, binding.getColumns(),
+                    binding.getEmptyMessage());
+        } else {
+            throw new WordTemplateException(
+                    "Unsupported Word table binding strategy: "
+                            + binding.getStrategy());
+        }
+    }
+
+    private static LocatedTable locateTable(
+            XWPFDocument document,
+            String marker,
+            boolean prototype) {
+        LocatedTable found = null;
+        List<IBodyElement> elements = document.getBodyElements();
+        for (int index = 0; index < elements.size(); index++) {
+            IBodyElement element = elements.get(index);
+            if (element instanceof XWPFParagraph
+                    && marker.equals(((XWPFParagraph) element)
+                    .getText().trim())) {
+                XWPFTable table = null;
+                if (index + 1 < elements.size()
+                        && elements.get(index + 1) instanceof XWPFTable) {
+                    table = (XWPFTable) elements.get(index + 1);
+                } else if (!prototype) {
+                    WordBodyInserter inserter = new WordBodyInserter(
+                            document, (XWPFParagraph) element);
+                    table = inserter.table();
+                }
+                if (table == null) {
+                    throw new WordTemplateException(
+                            "Word table marker is not followed by a table: "
+                                    + marker);
+                }
+                found = unique(found,
+                        new LocatedTable(table, (XWPFParagraph) element),
+                        marker);
+            } else if (element instanceof XWPFTable
+                    && ((XWPFTable) element).getText().contains(marker)) {
+                found = unique(found,
+                        new LocatedTable((XWPFTable) element, null), marker);
+            }
+        }
+        if (found == null) {
+            throw new WordTemplateException(
+                    "Word template is missing table marker " + marker);
+        }
+        return found;
+    }
+
+    private static LocatedTable unique(
+            LocatedTable current, LocatedTable candidate, String marker) {
+        if (current != null && current.table != candidate.table) {
+            throw new WordTemplateException(
+                    "Word template contains multiple table markers " + marker);
+        }
+        return candidate;
+    }
+
+    private static void removeMarker(
+            XWPFDocument document, LocatedTable located, String marker) {
+        if (located.markerParagraph != null) {
+            int position =
+                    document.getPosOfParagraph(located.markerParagraph);
+            document.removeBodyElement(position);
+        } else {
+            WordRunTextReplacer replacer = new WordRunTextReplacer();
+            for (org.apache.poi.xwpf.usermodel.XWPFTableRow row
+                    : located.table.getRows()) {
+                for (org.apache.poi.xwpf.usermodel.XWPFTableCell cell
+                        : row.getTableCells()) {
+                    replacer.replaceInBody(
+                            cell, Collections.singletonMap(marker, ""));
+                }
+            }
+        }
+    }
+
+    private static void removeLocated(
+            XWPFDocument document, LocatedTable located) {
+        if (located.markerParagraph != null) {
+            int marker =
+                    document.getPosOfParagraph(located.markerParagraph);
+            document.removeBodyElement(marker);
+        }
+        int table = document.getPosOfTable(located.table);
+        if (table >= 0) {
+            document.removeBodyElement(table);
+        }
+    }
+
+    private static boolean datasetEmpty(DatasetResult result) {
+        switch (result.type()) {
+            case LIST:
+                return result.list().isEmpty();
+            case SINGLE:
+                return result.single() == null;
+            case SCALAR:
+                return result.scalar() == null;
+            default:
+                return true;
+        }
+    }
+
+    private static final class LocatedTable {
+        private final XWPFTable table;
+        private final XWPFParagraph markerParagraph;
+
+        private LocatedTable(
+                XWPFTable table, XWPFParagraph markerParagraph) {
+            this.table = table;
+            this.markerParagraph = markerParagraph;
+        }
     }
 
     private static void addText(

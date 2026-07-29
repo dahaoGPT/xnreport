@@ -1,29 +1,27 @@
 package com.xn.report.word;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
-import org.apache.poi.xwpf.usermodel.IBody;
-import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
-import org.apache.poi.xwpf.usermodel.XWPFParagraph;
-import org.apache.poi.xwpf.usermodel.XWPFRun;
-import org.apache.poi.xwpf.usermodel.XWPFTable;
-import org.apache.poi.xwpf.usermodel.XWPFTableCell;
-import org.apache.poi.xwpf.usermodel.XWPFTableRow;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFldChar;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSimpleField;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTText;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.STFldCharType;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 
+/**
+ * Locates a real Word TOC field in document order. Complex fields are parsed
+ * as a stream, so their begin/instruction/separate/end nodes may be split
+ * across runs, paragraphs, or structured document tags.
+ */
 public final class WordTocManager {
+
+    private static final String WORD_NS =
+            "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
     public void validate(XWPFDocument document) {
         requireDocument(document);
-        if (locate(document) == null) {
-            throw new WordTemplateException(
-                    "Word template must contain a real TOC field");
-        }
+        locateExactlyOne(document);
     }
 
     public void configure(
@@ -33,12 +31,7 @@ public final class WordTocManager {
             throw new IllegalArgumentException(
                     "TOC max level must be between 1 and 4");
         }
-        TocField field = locate(document);
-        if (field == null) {
-            throw new WordTemplateException(
-                    "Word template must contain a real TOC field");
-        }
-        field.setInstruction(instruction(maxLevel));
+        locateExactlyOne(document).setInstruction(instruction(maxLevel));
         if (updateOnOpen) {
             document.getSettings().setUpdateFields();
         }
@@ -48,61 +41,30 @@ public final class WordTocManager {
         return " TOC \\\\o \"1-" + maxLevel + "\" \\\\h \\\\z \\\\u ";
     }
 
-    private TocField locate(XWPFDocument document) {
-        for (XWPFParagraph paragraph : paragraphs(document)) {
-            for (CTSimpleField field : paragraph.getCTP().getFldSimpleList()) {
-                if (isToc(field.getInstr())) {
-                    return new SimpleTocField(field);
-                }
-            }
-            CTText instructionText = null;
-            boolean begin = false;
-            boolean separate = false;
-            boolean end = false;
-            for (XWPFRun run : paragraph.getRuns()) {
-                for (CTText text : run.getCTR().getInstrTextList()) {
-                    if (isToc(text.getStringValue())) {
-                        instructionText = text;
-                    }
-                }
-                for (CTFldChar fieldChar : run.getCTR().getFldCharList()) {
-                    STFldCharType.Enum type = fieldChar.getFldCharType();
-                    begin |= type == STFldCharType.BEGIN;
-                    separate |= type == STFldCharType.SEPARATE;
-                    end |= type == STFldCharType.END;
-                }
-            }
-            if (instructionText != null && begin && separate && end) {
-                return new ComplexTocField(instructionText);
-            }
+    String configuredInstruction(XWPFDocument document) {
+        requireDocument(document);
+        return locateExactlyOne(document).getInstruction();
+    }
+
+    private TocField locateExactlyOne(XWPFDocument document) {
+        FieldScan scan = new FieldScan();
+        scan.visit(document.getDocument().getBody().getDomNode());
+        scan.finish();
+        if (scan.malformed) {
+            throw new WordTemplateException(
+                    "Word template contains a malformed TOC field");
         }
-        return null;
-    }
-
-    private static List<XWPFParagraph> paragraphs(IBody body) {
-        List<XWPFParagraph> result = new ArrayList<XWPFParagraph>();
-        collectParagraphs(body, result);
-        return result;
-    }
-
-    private static void collectParagraphs(
-            IBody body, List<XWPFParagraph> result) {
-        for (IBodyElement element : body.getBodyElements()) {
-            if (element instanceof XWPFParagraph) {
-                result.add((XWPFParagraph) element);
-            } else if (element instanceof XWPFTable) {
-                for (XWPFTableRow row : ((XWPFTable) element).getRows()) {
-                    for (XWPFTableCell cell : row.getTableCells()) {
-                        collectParagraphs(cell, result);
-                    }
-                }
-            }
+        if (scan.tocFields.size() != 1) {
+            throw new WordTemplateException(
+                    "Word template must contain exactly one real TOC field; found "
+                            + scan.tocFields.size());
         }
+        return scan.tocFields.get(0);
     }
 
-    private static boolean isToc(String instruction) {
-        return instruction != null
-                && instruction.trim().toUpperCase(Locale.ROOT).startsWith("TOC");
+    private static boolean isToc(String value) {
+        return value != null
+                && value.trim().toUpperCase(Locale.ROOT).startsWith("TOC");
     }
 
     private static void requireDocument(XWPFDocument document) {
@@ -113,31 +75,172 @@ public final class WordTocManager {
 
     private interface TocField {
         void setInstruction(String instruction);
+
+        String getInstruction();
     }
 
     private static final class SimpleTocField implements TocField {
-        private final CTSimpleField field;
+        private final Element field;
 
-        private SimpleTocField(CTSimpleField field) {
+        private SimpleTocField(Element field) {
             this.field = field;
         }
 
         @Override
         public void setInstruction(String instruction) {
-            field.setInstr(instruction);
+            field.setAttributeNS(WORD_NS, "w:instr", instruction);
+        }
+
+        @Override
+        public String getInstruction() {
+            return field.getAttributeNS(WORD_NS, "instr");
         }
     }
 
     private static final class ComplexTocField implements TocField {
-        private final CTText text;
+        private final List<Element> instructionNodes;
 
-        private ComplexTocField(CTText text) {
-            this.text = text;
+        private ComplexTocField(List<Element> instructionNodes) {
+            this.instructionNodes =
+                    new ArrayList<Element>(instructionNodes);
         }
 
         @Override
         public void setInstruction(String instruction) {
-            text.setStringValue(instruction);
+            setElementText(instructionNodes.get(0), instruction);
+            for (int index = 1; index < instructionNodes.size(); index++) {
+                setElementText(instructionNodes.get(index), "");
+            }
+        }
+
+        @Override
+        public String getInstruction() {
+            StringBuilder value = new StringBuilder();
+            for (Element node : instructionNodes) {
+                value.append(elementText(node));
+            }
+            return value.toString();
+        }
+    }
+
+    private static final class ComplexField {
+        private final List<Element> instructionNodes =
+                new ArrayList<Element>();
+        private final StringBuilder instruction = new StringBuilder();
+        private boolean separated;
+
+        private void addInstruction(Element node) {
+            if (!separated) {
+                instructionNodes.add(node);
+                instruction.append(elementText(node));
+            }
+        }
+    }
+
+    private static final class FieldScan {
+        private final Deque<ComplexField> stack =
+                new ArrayDeque<ComplexField>();
+        private final List<TocField> tocFields =
+                new ArrayList<TocField>();
+        private boolean malformed;
+
+        private void visit(Node node) {
+            if (node.getNodeType() == Node.ELEMENT_NODE) {
+                Element element = (Element) node;
+                String local = element.getLocalName();
+                if ("fldSimple".equals(local)) {
+                    String value = element.getAttributeNS(WORD_NS, "instr");
+                    if (isToc(value)) {
+                        tocFields.add(new SimpleTocField(element));
+                    }
+                    return;
+                }
+                if ("fldChar".equals(local)) {
+                    fieldChar(element.getAttributeNS(
+                            WORD_NS, "fldCharType"));
+                } else if ("instrText".equals(local)) {
+                    instruction(element);
+                }
+            }
+            for (Node child = node.getFirstChild();
+                    child != null; child = child.getNextSibling()) {
+                visit(child);
+            }
+        }
+
+        private void fieldChar(String type) {
+            if ("begin".equals(type)) {
+                stack.push(new ComplexField());
+                return;
+            }
+            if ("separate".equals(type)) {
+                if (stack.isEmpty()) {
+                    malformed = true;
+                } else {
+                    stack.peek().separated = true;
+                }
+                return;
+            }
+            if ("end".equals(type)) {
+                if (stack.isEmpty()) {
+                    malformed = true;
+                    return;
+                }
+                ComplexField completed = stack.pop();
+                if (isToc(completed.instruction.toString())) {
+                    if (!completed.separated
+                            || completed.instructionNodes.isEmpty()) {
+                        malformed = true;
+                    } else {
+                        tocFields.add(new ComplexTocField(
+                                completed.instructionNodes));
+                    }
+                }
+            }
+        }
+
+        private void instruction(Element element) {
+            if (stack.isEmpty()) {
+                if (isToc(elementText(element))) {
+                    malformed = true;
+                }
+                return;
+            }
+            stack.peek().addInstruction(element);
+        }
+
+        private void finish() {
+            while (!stack.isEmpty()) {
+                ComplexField field = stack.pop();
+                if (isToc(field.instruction.toString())) {
+                    malformed = true;
+                }
+            }
+        }
+    }
+
+    private static String elementText(Element element) {
+        StringBuilder value = new StringBuilder();
+        for (Node child = element.getFirstChild();
+                child != null; child = child.getNextSibling()) {
+            if (child.getNodeType() == Node.TEXT_NODE
+                    || child.getNodeType() == Node.CDATA_SECTION_NODE) {
+                value.append(child.getNodeValue());
+            }
+        }
+        return value.toString();
+    }
+
+    private static void setElementText(Element element, String value) {
+        Node text = element.getFirstChild();
+        if (text == null) {
+            element.appendChild(
+                    element.getOwnerDocument().createTextNode(value));
+            return;
+        }
+        text.setNodeValue(value);
+        while (text.getNextSibling() != null) {
+            element.removeChild(text.getNextSibling());
         }
     }
 }

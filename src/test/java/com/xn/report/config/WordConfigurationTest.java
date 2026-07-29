@@ -149,6 +149,28 @@ class WordConfigurationTest {
                 "CFG-WORD-IMAGE-WIDTH");
     }
 
+    @Test
+    void schemaAcceptsWordTableBindingContract() throws Exception {
+        String document = reportWithCover(
+                "\"title\":\"研发效能报告\","
+                        + "\"organization\":\"研发中心\","
+                        + "\"reportPeriod\":\"2026年6月\","
+                        + "\"preparedBy\":\"效能小组\","
+                        + "\"preparedDate\":\"2026年7月23日\"")
+                .replace("\"sections\":[]",
+                        "\"tableBindings\":[{"
+                                + "\"id\":\"people\",\"dataset\":\"source\","
+                                + "\"marker\":\"{{table:people}}\","
+                                + "\"strategy\":\"PROTOTYPE\","
+                                + "\"emptyStrategy\":\"SHOW_EMPTY\","
+                                + "\"emptyMessage\":\"暂无明细\","
+                                + "\"columns\":[{\"field\":\"name\","
+                                + "\"header\":\"姓名\"}]}],"
+                                + "\"sections\":[]");
+
+        assertThat(schema().validate(mapper.readTree(document))).isEmpty();
+    }
+
     private JsonSchemaContract schema() throws Exception {
         try (InputStream input = getClass().getResourceAsStream(
                 "/schema/report-definition.schema.json")) {

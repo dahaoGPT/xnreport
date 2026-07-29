@@ -2,6 +2,7 @@ package com.xn.report.word;
 
 import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
+import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.text.NarrativeResult;
 import java.util.Collections;
@@ -11,22 +12,50 @@ import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 
 public final class WordSectionRenderer {
 
-    private final WordComponentRenderer componentRenderer =
-            new WordComponentRenderer();
+    private final WordSectionAnchorLocator sectionAnchorLocator;
+
+    public WordSectionRenderer() {
+        this(new WordSectionAnchorLocator());
+    }
+
+    WordSectionRenderer(WordSectionAnchorLocator sectionAnchorLocator) {
+        this.sectionAnchorLocator = sectionAnchorLocator;
+    }
 
     public void render(
             XWPFDocument document,
             List<WordSectionDefinition> sections,
             WordRenderContext context) {
+        render(document, sections, context, new WordComponentRenderer());
+    }
+
+    public void render(
+            XWPFDocument document,
+            WordDefinition definition,
+            WordRenderContext context) {
+        if (definition == null) {
+            throw new IllegalArgumentException(
+                    "Word definition is required");
+        }
+        render(document, definition.getSections(), context,
+                new WordComponentRenderer(definition.getTableBindings()));
+    }
+
+    private void render(
+            XWPFDocument document,
+            List<WordSectionDefinition> sections,
+            WordRenderContext context,
+            WordComponentRenderer componentRenderer) {
         if (document == null || context == null) {
             throw new IllegalArgumentException(
                     "Word document and render context are required");
         }
-        XWPFParagraph anchor = findAnchor(document);
+        XWPFParagraph anchor = sectionAnchorLocator.locate(document);
         WordBodyInserter inserter = new WordBodyInserter(document, anchor);
         WordNumberingManager numbering = new WordNumberingManager(document);
         for (WordSectionDefinition section : safe(sections)) {
-            renderSection(document, inserter, numbering, section, context);
+            renderSection(document, inserter, numbering, section, context,
+                    componentRenderer);
         }
         int position = document.getPosOfParagraph(anchor);
         if (position < 0 || !document.removeBodyElement(position)) {
@@ -40,8 +69,9 @@ public final class WordSectionRenderer {
             WordBodyInserter inserter,
             WordNumberingManager numbering,
             WordSectionDefinition section,
-            WordRenderContext context) {
-        boolean empty = isEmpty(section, context);
+            WordRenderContext context,
+            WordComponentRenderer componentRenderer) {
+        boolean empty = isEmpty(section, context, componentRenderer);
         String strategy = section.getEmptyStrategy() == null
                 ? "KEEP" : section.getEmptyStrategy();
         if (empty && "SKIP".equals(strategy)) {
@@ -63,18 +93,21 @@ public final class WordSectionRenderer {
             }
         }
         for (WordSectionDefinition child : safe(section.getChildren())) {
-            renderSection(document, inserter, numbering, child, context);
+            renderSection(document, inserter, numbering, child, context,
+                    componentRenderer);
         }
     }
 
     private boolean isEmpty(
-            WordSectionDefinition section, WordRenderContext context) {
+            WordSectionDefinition section,
+            WordRenderContext context,
+            WordComponentRenderer componentRenderer) {
         for (WordComponentDefinition component :
                 safeComponents(section.getComponents())) {
             String type = component.getType();
             if ("TABLE".equals(type)) {
                 DatasetResult result =
-                        WordComponentRenderer.dataset(component, context);
+                        componentRenderer.datasetFor(component, context);
                 if (!datasetEmpty(result)) {
                     return false;
                 }
@@ -100,7 +133,7 @@ public final class WordSectionRenderer {
             }
         }
         for (WordSectionDefinition child : safe(section.getChildren())) {
-            if (!isEmpty(child, context)) {
+            if (!isEmpty(child, context, componentRenderer)) {
                 return false;
             }
         }
@@ -118,24 +151,6 @@ public final class WordSectionRenderer {
             default:
                 return true;
         }
-    }
-
-    private static XWPFParagraph findAnchor(XWPFDocument document) {
-        XWPFParagraph found = null;
-        for (XWPFParagraph paragraph : document.getParagraphs()) {
-            if (paragraph.getText().contains("{{sections}}")) {
-                if (found != null) {
-                    throw new WordTemplateException(
-                            "Word template contains multiple {{sections}} anchors");
-                }
-                found = paragraph;
-            }
-        }
-        if (found == null) {
-            throw new WordTemplateException(
-                    "Word template is missing {{sections}} anchor");
-        }
-        return found;
     }
 
     private static List<WordSectionDefinition> safe(

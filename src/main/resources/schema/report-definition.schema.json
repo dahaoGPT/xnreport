@@ -1958,6 +1958,12 @@
         "toc": {
           "$ref": "#/definitions/wordToc"
         },
+        "tableBindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/wordTableBinding"
+          }
+        },
         "sections": {
           "type": "array",
           "items": {
@@ -2173,6 +2179,74 @@
           "minimum": 1
         }
       }
+    },
+    "wordTableBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "dataset"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
+        },
+        "dataset": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
+        },
+        "marker": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
+        },
+        "tableId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
+        },
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "PROTOTYPE",
+            "GENERATED"
+          ]
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/wordTableColumn"
+          }
+        },
+        "emptyStrategy": {
+          "type": "string",
+          "enum": [
+            "KEEP",
+            "SHOW_EMPTY",
+            "SKIP"
+          ]
+        },
+        "emptyMessage": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "marker"
+          ]
+        },
+        {
+          "required": [
+            "tableId"
+          ]
+        }
+      ]
     },
     "policies": {
       "type": "object",

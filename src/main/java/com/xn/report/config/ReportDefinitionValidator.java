@@ -19,6 +19,7 @@ import com.xn.report.config.definition.WordCoverDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.config.definition.WordTableColumnDefinition;
+import com.xn.report.config.definition.WordTableBinding;
 import com.xn.report.config.definition.ExcelDefinition;
 import com.xn.report.config.definition.ExcelTableBinding;
 import com.xn.report.config.definition.ExcelValueBinding;
@@ -2452,14 +2453,99 @@ public final class ReportDefinitionValidator {
                     "Enabled TOC must update fields when Word opens the document");
         }
         Set<String> sectionIds = new LinkedHashSet<String>();
+        Set<String> tableBindingIds = validateWordTableBindings(
+                word.getTableBindings(), datasetIds, result);
         Set<WordSectionDefinition> visited = Collections.newSetFromMap(
                 new IdentityHashMap<WordSectionDefinition, Boolean>());
         List<WordSectionDefinition> sections = safeList(word.getSections());
         for (int index = 0; index < sections.size(); index++) {
             validateSection(sections.get(index), null, 1,
                     "$.word.sections[" + index + "]",
-                    sectionIds, datasetIds, narrativeIds, chartIds,
+                    sectionIds, tableBindingIds, datasetIds,
+                    narrativeIds, chartIds,
                     visited, result);
+        }
+    }
+
+    private Set<String> validateWordTableBindings(
+            List<WordTableBinding> bindings,
+            Set<String> datasetIds,
+            ValidationResult result) {
+        Set<String> ids = new LinkedHashSet<String>();
+        List<WordTableBinding> safe = safeList(bindings);
+        for (int index = 0; index < safe.size(); index++) {
+            WordTableBinding binding = safe.get(index);
+            String path = "$.word.tableBindings[" + index + "]";
+            if (binding == null) {
+                result.add("CFG-WORD-TABLE-BINDING", path,
+                        "Word table binding must not be null");
+                continue;
+            }
+            if (!hasText(binding.getId())) {
+                result.add("CFG-WORD-TABLE-BINDING", path + ".id",
+                        "Word table binding id is required");
+            } else if (!ids.add(binding.getId())) {
+                result.add("CFG-DUPLICATE-WORD-TABLE-BINDING",
+                        path + ".id",
+                        "Duplicate Word table binding id: "
+                                + binding.getId());
+            }
+            if (!hasText(binding.getDataset())
+                    || !datasetIds.contains(binding.getDataset())) {
+                result.add("CFG-WORD-TABLE-BINDING", path + ".dataset",
+                        "Word table binding references an unknown dataset: "
+                                + binding.getDataset());
+            }
+            if (hasText(binding.getMarker())
+                    == hasText(binding.getTableId())) {
+                result.add("CFG-WORD-TABLE-BINDING", path,
+                        "Word table binding requires exactly one marker or tableId");
+            }
+            if (!"PROTOTYPE".equals(binding.getStrategy())
+                    && !"GENERATED".equals(binding.getStrategy())) {
+                result.add("CFG-WORD-TABLE-BINDING", path + ".strategy",
+                        "Word table binding strategy must be PROTOTYPE or GENERATED");
+            }
+            if (!EMPTY_STRATEGIES.contains(binding.getEmptyStrategy())) {
+                result.add("CFG-WORD-TABLE-BINDING",
+                        path + ".emptyStrategy",
+                        "Word table emptyStrategy must be KEEP, SHOW_EMPTY, or SKIP");
+            }
+            if (!hasText(binding.getEmptyMessage())) {
+                result.add("CFG-WORD-TABLE-BINDING",
+                        path + ".emptyMessage",
+                        "Word table emptyMessage must not be blank");
+            }
+            validateWordTableColumns(
+                    binding.getColumns(), path + ".columns", result);
+        }
+        return ids;
+    }
+
+    private void validateWordTableColumns(
+            List<WordTableColumnDefinition> configured,
+            String path,
+            ValidationResult result) {
+        List<WordTableColumnDefinition> columns = safeList(configured);
+        for (int index = 0; index < columns.size(); index++) {
+            WordTableColumnDefinition column = columns.get(index);
+            String columnPath = path + "[" + index + "]";
+            if (column == null) {
+                result.add("CFG-WORD-TABLE-COLUMN", columnPath,
+                        "Word table column must not be null");
+                continue;
+            }
+            if (!hasText(column.getField())) {
+                result.add("CFG-WORD-TABLE-COLUMN",
+                        columnPath + ".field",
+                        "Word table column field is required");
+            }
+            if (column.getWidthDxa() != null
+                    && column.getWidthDxa().intValue() <= 0) {
+                result.add("CFG-WORD-TABLE-COLUMN",
+                        columnPath + ".widthDxa",
+                        "Word table column widthDxa must be positive");
+            }
         }
     }
 
@@ -2488,6 +2574,7 @@ public final class ReportDefinitionValidator {
             int depth,
             String path,
             Set<String> sectionIds,
+            Set<String> tableBindingIds,
             Set<String> datasetIds,
             Set<String> narrativeIds,
             Set<String> chartIds,
@@ -2544,13 +2631,15 @@ public final class ReportDefinitionValidator {
         for (int index = 0; index < components.size(); index++) {
             validateComponent(components.get(index),
                     path + ".components[" + index + "]",
-                    datasetIds, narrativeIds, chartIds, result);
+                    tableBindingIds, datasetIds,
+                    narrativeIds, chartIds, result);
         }
         List<WordSectionDefinition> children = safeList(section.getChildren());
         for (int index = 0; index < children.size(); index++) {
             validateSection(children.get(index), level, depth + 1,
                     path + ".children[" + index + "]",
-                    sectionIds, datasetIds, narrativeIds, chartIds,
+                    sectionIds, tableBindingIds, datasetIds,
+                    narrativeIds, chartIds,
                     visited, result);
         }
     }
@@ -2558,6 +2647,7 @@ public final class ReportDefinitionValidator {
     private void validateComponent(
             WordComponentDefinition component,
             String path,
+            Set<String> tableBindingIds,
             Set<String> datasetIds,
             Set<String> narrativeIds,
             Set<String> chartIds,
@@ -2588,43 +2678,29 @@ public final class ReportDefinitionValidator {
                     "CHART references an unknown chart: "
                             + component.getChartId());
         } else if ("TABLE".equals(type)) {
-            if (hasText(component.getDataset())
-                    && !datasetIds.contains(component.getDataset())) {
+            if (hasText(component.getTableId())
+                    && !tableBindingIds.contains(component.getTableId())) {
                 result.add("CFG-COMPONENT-REFERENCE",
-                        path + ".dataset",
-                        "TABLE references an unknown dataset: "
+                        path + ".tableId",
+                        "TABLE references an unknown Word table binding: "
+                                + component.getTableId());
+            } else if (!hasText(component.getTableId())
+                    && (!hasText(component.getDataset())
+                    || !datasetIds.contains(component.getDataset()))) {
+                result.add("CFG-COMPONENT-REFERENCE", path + ".dataset",
+                        "Generated TABLE references an unknown dataset: "
                                 + component.getDataset());
-            } else if (!hasText(component.getDataset())
-                    && !hasText(component.getTableId())) {
-                result.add("CFG-COMPONENT-REFERENCE", path + ".tableId",
-                        "TABLE requires a dataset or non-blank tableId");
+            } else if (hasText(component.getTableId())
+                    && hasText(component.getDataset())) {
+                result.add("CFG-COMPONENT-REFERENCE", path,
+                        "TABLE must reference a binding or an explicit dataset, not both");
             }
             if (!hasText(component.getEmptyMessage())) {
                 result.add("CFG-EMPTY-MESSAGE", path + ".emptyMessage",
                         "Word table emptyMessage must not be blank");
             }
-            List<WordTableColumnDefinition> columns =
-                    safeList(component.getColumns());
-            for (int index = 0; index < columns.size(); index++) {
-                WordTableColumnDefinition column = columns.get(index);
-                String columnPath = path + ".columns[" + index + "]";
-                if (column == null) {
-                    result.add("CFG-WORD-TABLE-COLUMN", columnPath,
-                            "Word table column must not be null");
-                    continue;
-                }
-                if (!hasText(column.getField())) {
-                    result.add("CFG-WORD-TABLE-COLUMN",
-                            columnPath + ".field",
-                            "Word table column field is required");
-                }
-                if (column.getWidthDxa() != null
-                        && column.getWidthDxa().intValue() <= 0) {
-                    result.add("CFG-WORD-TABLE-COLUMN",
-                            columnPath + ".widthDxa",
-                            "Word table column widthDxa must be positive");
-                }
-            }
+            validateWordTableColumns(
+                    component.getColumns(), path + ".columns", result);
         }
         if ("CHART".equals(type) && component.getWidthInches() != null
                 && component.getWidthInches().doubleValue() <= 0.0d) {

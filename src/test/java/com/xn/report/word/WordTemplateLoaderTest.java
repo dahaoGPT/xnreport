@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFStyle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -66,6 +67,24 @@ class WordTemplateLoaderTest {
         assertThatThrownBy(() -> new WordTemplateLoader().load(template))
                 .isInstanceOf(WordTemplateException.class)
                 .hasMessageContaining("Heading 1");
+    }
+
+    @Test
+    void rejectsSectionsAnchorInsideTableBeforeGeneration() throws Exception {
+        try (XWPFDocument document = validTemplate()) {
+            XWPFParagraph anchor = document.getParagraphs().stream()
+                    .filter(paragraph ->
+                            "{{sections}}".equals(paragraph.getText()))
+                    .findFirst().get();
+            document.removeBodyElement(document.getPosOfParagraph(anchor));
+            document.createTable(1, 1).getRow(0).getCell(0)
+                    .setText("{{sections}}");
+
+            assertThatThrownBy(() -> new WordTemplateLoader()
+                    .validate(document))
+                    .isInstanceOf(WordTemplateException.class)
+                    .hasMessageContaining("standalone top-level body");
+        }
     }
 
     static XWPFDocument validTemplate() {

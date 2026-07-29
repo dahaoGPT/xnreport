@@ -20,6 +20,7 @@ import com.xn.report.config.definition.TransformOperator;
 import com.xn.report.config.definition.TransformType;
 import com.xn.report.config.definition.TrendDefinition;
 import com.xn.report.config.definition.WordComponentDefinition;
+import com.xn.report.config.definition.WordTableBinding;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.support.JsonSchemaContract;
 import com.xn.report.support.TestFixtures;
@@ -150,6 +151,13 @@ class ReportDefinitionValidatorTest {
         definition.setCharts(Collections.singletonList(trend));
         NarrativeDefinition narrative = narrative("summary", "RULE_GENERATED");
         definition.setNarratives(Arrays.asList(narrative));
+        WordTableBinding detailsBinding = new WordTableBinding();
+        detailsBinding.setId("details");
+        detailsBinding.setDataset("source");
+        detailsBinding.setMarker("{{table:details}}");
+        detailsBinding.setStrategy("PROTOTYPE");
+        definition.getWord().setTableBindings(
+                Collections.singletonList(detailsBinding));
 
         WordSectionDefinition parent = section("overview", 1, "KEEP");
         parent.setComponents(Arrays.asList(
@@ -203,6 +211,36 @@ class ReportDefinitionValidatorTest {
                 "CFG-EMPTY-STRATEGY",
                 "CFG-TOC-LEVEL",
                 "TEXT-001");
+    }
+
+    @Test
+    void validatesWordTableBindingsAndComponentReferences() {
+        ReportDefinition definition =
+                TestFixtures.report(TestFixtures.dataset("source"));
+        WordTableBinding first = new WordTableBinding();
+        first.setId("details");
+        first.setDataset("missing");
+        first.setMarker("{{table:details}}");
+        first.setStrategy("UNKNOWN");
+        first.setEmptyStrategy("UNKNOWN");
+        WordTableBinding duplicate = new WordTableBinding();
+        duplicate.setId("details");
+        duplicate.setDataset("source");
+        duplicate.setMarker("{{table:duplicate}}");
+        duplicate.setTableId("both");
+        definition.getWord().setTableBindings(
+                Arrays.asList(first, duplicate));
+        WordSectionDefinition section = section("details", 1, "KEEP");
+        section.setComponents(Arrays.asList(
+                component("TABLE", null, null, null, "missingBinding")));
+        definition.getWord().setSections(Collections.singletonList(section));
+
+        ValidationResult result = validator.validate(definition);
+
+        assertThat(result.codes()).contains(
+                "CFG-DUPLICATE-WORD-TABLE-BINDING",
+                "CFG-WORD-TABLE-BINDING",
+                "CFG-COMPONENT-REFERENCE");
     }
 
     @Test

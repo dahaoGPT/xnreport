@@ -10,8 +10,8 @@ import org.apache.poi.xwpf.usermodel.XWPFStyles;
 
 public final class WordTemplateLoader {
 
-    private final WordRunTextReplacer replacer;
     private final WordTocManager tocManager;
+    private final WordSectionAnchorLocator sectionAnchorLocator;
 
     public WordTemplateLoader() {
         this(new WordRunTextReplacer(), new WordTocManager());
@@ -19,8 +19,8 @@ public final class WordTemplateLoader {
 
     WordTemplateLoader(
             WordRunTextReplacer replacer, WordTocManager tocManager) {
-        this.replacer = replacer;
         this.tocManager = tocManager;
+        this.sectionAnchorLocator = new WordSectionAnchorLocator(replacer);
     }
 
     public XWPFDocument load(Path template) {
@@ -57,10 +57,7 @@ public final class WordTemplateLoader {
             }
         }
         tocManager.validate(document);
-        if (replacer.count(document, "{{sections}}") != 1) {
-            throw new WordTemplateException(
-                    "Word template must contain exactly one {{sections}} anchor");
-        }
+        sectionAnchorLocator.locate(document);
     }
 
     private static Path requireTemplate(Path template) {

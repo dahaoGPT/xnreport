@@ -1,6 +1,7 @@
 package com.xn.report.word;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
@@ -13,6 +14,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.junit.jupiter.api.Test;
 
 class WordSectionRendererTest {
@@ -94,6 +96,26 @@ class WordSectionRendererTest {
                         .contains("暂无审批数据")
                         .doesNotContain("跳过章节");
             }
+        }
+    }
+
+    @Test
+    void rejectsEmbeddedSectionsAnchorBeforeRendering() throws Exception {
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            XWPFParagraph anchor = document.getParagraphs().stream()
+                    .filter(paragraph ->
+                            "{{sections}}".equals(paragraph.getText()))
+                    .findFirst().get();
+            anchor.createRun().setText(" suffix");
+
+            assertThatThrownBy(() -> new WordSectionRenderer().render(
+                    document, Collections.<WordSectionDefinition>emptyList(),
+                    WordRenderContext.builder()
+                            .datasets(DatasetContext.builder().build())
+                            .build()))
+                    .isInstanceOf(WordTemplateException.class)
+                    .hasMessageContaining("standalone top-level body");
+            assertThat(anchor.getText()).isEqualTo("{{sections}} suffix");
         }
     }
 

@@ -7,6 +7,8 @@ public class WordDefinition {
 
     private WordCoverDefinition cover = new WordCoverDefinition();
     private WordTocDefinition toc = new WordTocDefinition();
+    private List<WordTableBinding> tableBindings =
+            new ArrayList<WordTableBinding>();
     private List<WordSectionDefinition> sections = new ArrayList<WordSectionDefinition>();
 
     public WordCoverDefinition getCover() {
@@ -27,6 +29,15 @@ public class WordDefinition {
 
     public List<WordSectionDefinition> getSections() {
         return sections;
+    }
+
+    public List<WordTableBinding> getTableBindings() {
+        return tableBindings;
+    }
+
+    public void setTableBindings(List<WordTableBinding> tableBindings) {
+        this.tableBindings = tableBindings == null
+                ? new ArrayList<WordTableBinding>() : tableBindings;
     }
 
     public void setSections(List<WordSectionDefinition> sections) {

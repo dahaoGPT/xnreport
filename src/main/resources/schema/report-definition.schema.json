@@ -1517,6 +1517,9 @@
         },
         "required": {
           "type": "boolean"
+        },
+        "defaultValue": {
+          "description": "Explicit typed default; null remains distinguishable from omission."
         }
       }
     },

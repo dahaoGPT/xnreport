@@ -6,13 +6,17 @@ import com.xn.report.error.ReportErrorCode;
 import com.xn.report.error.ReportException;
 import com.xn.report.config.definition.PolicyDefinition;
 import com.xn.report.policy.EmptyDataPolicy;
+import com.xn.report.policy.MissingFieldPolicy;
+import com.xn.report.policy.NullValuePolicy;
 import com.xn.report.policy.PolicyExecutionBridge;
 import com.xn.report.policy.PolicyResolver;
+import com.xn.report.policy.TypeMismatchPolicy;
 import com.xn.report.sql.SqlQueryResult;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -20,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Iterator;
 
 public final class DatasetResultValidator {
 
@@ -87,13 +92,17 @@ public final class DatasetResultValidator {
             }
         }
         validateShape(datasetId, resultType, schema, rows);
-        validateFields(
+        ProcessedData processed = validateFields(
                 datasetId,
+                definition.getPolicies(),
                 definition.getExpectedFields(),
                 schema,
                 rows,
                 validateMetadataTypes);
-        return buildResult(datasetId, resultType, schema, rows);
+        validateShape(
+                datasetId, resultType, processed.schema, processed.rows);
+        return buildResult(
+                datasetId, resultType, processed.schema, processed.rows);
     }
 
     private static void validateShape(
@@ -119,15 +128,20 @@ public final class DatasetResultValidator {
         }
     }
 
-    private static void validateFields(
+    private ProcessedData validateFields(
             String datasetId,
+            PolicyDefinition datasetPolicies,
             Map<String, FieldDefinition> expectedFields,
             DatasetSchema schema,
             List<DatasetRow> rows,
             boolean validateMetadataTypes) {
         if (expectedFields == null || expectedFields.isEmpty()) {
-            return;
+            return new ProcessedData(schema, rows);
         }
+        LinkedHashMap<String, Class<?>> outputSchema =
+                new LinkedHashMap<String, Class<?>>(schema.asMap());
+        List<LinkedHashMap<String, Object>> outputRows =
+                mutableRows(rows);
         for (Map.Entry<String, FieldDefinition> expected
                 : expectedFields.entrySet()) {
             String fieldName = requireText(expected.getKey(), "expected field");
@@ -136,36 +150,127 @@ public final class DatasetResultValidator {
                     "field definition for " + fieldName);
             Class<?> expectedType = resolveType(fieldName, field.getType());
             if (validateMetadataTypes && !schema.containsField(fieldName)) {
-                throw error(
-                        ReportErrorCode.DATA_002,
+                MissingFieldPolicy policy = policyBridge.onMissingField(
+                        null,
+                        null,
+                        datasetPolicies,
+                        reportPolicies,
+                        "dataset",
                         datasetId,
-                        "Dataset " + datasetId + " is missing expected alias "
-                                + fieldName);
+                        "missing metadata field " + fieldName);
+                if (policy == MissingFieldPolicy.FAIL) {
+                    throw error(
+                            ReportErrorCode.DATA_002,
+                            datasetId,
+                            "Dataset " + datasetId
+                                    + " is missing expected alias " + fieldName);
+                }
+                if (policy == MissingFieldPolicy.WARN_AND_SKIP) {
+                    replaceSchemaField(
+                            outputSchema, fieldName, expectedType);
+                    return new ProcessedData(
+                            schemaFrom(outputSchema),
+                            Collections.<DatasetRow>emptyList());
+                }
+                Object defaultValue = typedDefault(
+                        datasetId, fieldName, field, expectedType,
+                        ReportErrorCode.DATA_002);
+                outputSchema.put(fieldName, expectedType);
+                for (Map<String, Object> row : outputRows) {
+                    row.put(fieldName, defaultValue);
+                }
             }
             Class<?> actualType = schema.containsField(fieldName)
                     ? schema.typeOf(fieldName) : Object.class;
             if (validateMetadataTypes
+                    && schema.containsField(fieldName)
                     && !schemaMatches(expectedType, actualType)) {
-                throw error(
-                        ReportErrorCode.DATA_003,
+                TypeMismatchPolicy policy = policyBridge.onTypeMismatch(
+                        null,
+                        null,
+                        datasetPolicies,
+                        reportPolicies,
+                        "dataset",
                         datasetId,
-                        "Field " + fieldName + " in dataset " + datasetId
-                                + " expected " + normalizedType(field.getType())
-                                + " but JDBC metadata declared "
-                                + actualType.getSimpleName());
-            }
-            for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
-                DatasetRow row = rows.get(rowIndex);
-                if (!row.containsField(fieldName)) {
-                    throw error(
-                            ReportErrorCode.DATA_002,
+                        "metadata type mismatch for " + fieldName);
+                if (policy == TypeMismatchPolicy.FAIL
+                        || (policy == TypeMismatchPolicy.SAFE_CONVERT
+                        && !supportsConversion(actualType, expectedType))) {
+                    throw typeError(
                             datasetId,
-                            "Dataset " + datasetId + " is missing expected alias "
-                                    + fieldName + " at row " + rowIndex);
+                            fieldName,
+                            field.getType(),
+                            actualType.getSimpleName());
                 }
-                Object value = row.get(fieldName);
+                if (policy == TypeMismatchPolicy.WARN_AND_SKIP) {
+                    replaceSchemaField(
+                            outputSchema, fieldName, expectedType);
+                    return new ProcessedData(
+                            schemaFrom(outputSchema),
+                            Collections.<DatasetRow>emptyList());
+                }
+                replaceSchemaField(outputSchema, fieldName, expectedType);
+            }
+            int rowIndex = -1;
+            for (Iterator<LinkedHashMap<String, Object>> iterator =
+                    outputRows.iterator(); iterator.hasNext();) {
+                rowIndex++;
+                LinkedHashMap<String, Object> row = iterator.next();
+                String actualField = findField(row, fieldName);
+                if (actualField == null) {
+                    MissingFieldPolicy policy = policyBridge.onMissingField(
+                            null,
+                            null,
+                            datasetPolicies,
+                            reportPolicies,
+                            "dataset-row",
+                            datasetId,
+                            "missing field " + fieldName + " at row " + rowIndex);
+                    if (policy == MissingFieldPolicy.WARN_AND_SKIP) {
+                        iterator.remove();
+                        continue;
+                    }
+                    if (policy == MissingFieldPolicy.USE_DEFAULT) {
+                        row.put(
+                                fieldName,
+                                typedDefault(
+                                        datasetId,
+                                        fieldName,
+                                        field,
+                                        expectedType,
+                                        ReportErrorCode.DATA_002));
+                        actualField = fieldName;
+                    } else {
+                        throw error(
+                                ReportErrorCode.DATA_002,
+                                datasetId,
+                                "Dataset " + datasetId
+                                        + " is missing expected alias " + fieldName
+                                        + " at row " + rowIndex);
+                    }
+                }
+                Object value = row.get(actualField);
                 if (value == null) {
-                    if (field.isRequired()) {
+                    NullValuePolicy policy = policyBridge.onNullValue(
+                            null,
+                            null,
+                            datasetPolicies,
+                            reportPolicies,
+                            "dataset-row",
+                            datasetId,
+                            "null field " + fieldName + " at row " + rowIndex);
+                    if (policy == NullValuePolicy.USE_DEFAULT) {
+                        row.put(
+                                actualField,
+                                typedDefault(
+                                        datasetId,
+                                        fieldName,
+                                        field,
+                                        expectedType,
+                                        ReportErrorCode.DATA_002));
+                        continue;
+                    }
+                    if (policy == NullValuePolicy.FAIL || field.isRequired()) {
                         throw error(
                                 ReportErrorCode.DATA_002,
                                 datasetId,
@@ -175,15 +280,45 @@ public final class DatasetResultValidator {
                     continue;
                 }
                 if (!matches(expectedType, value)) {
-                    throw error(
-                            ReportErrorCode.DATA_003,
+                    TypeMismatchPolicy policy = policyBridge.onTypeMismatch(
+                            null,
+                            null,
+                            datasetPolicies,
+                            reportPolicies,
+                            "dataset-row",
                             datasetId,
-                            "Field " + fieldName + " in dataset " + datasetId
-                                    + " expected " + normalizedType(field.getType())
-                                    + " but was " + value.getClass().getSimpleName());
+                            "type mismatch for " + fieldName
+                                    + " at row " + rowIndex);
+                    if (policy == TypeMismatchPolicy.WARN_AND_SKIP) {
+                        iterator.remove();
+                        continue;
+                    }
+                    if (policy == TypeMismatchPolicy.SAFE_CONVERT) {
+                        row.put(
+                                actualField,
+                                safeConvert(
+                                        datasetId,
+                                        fieldName,
+                                        field.getType(),
+                                        value,
+                                        expectedType));
+                        replaceSchemaField(
+                                outputSchema, fieldName, expectedType);
+                        continue;
+                    }
+                    throw typeError(
+                            datasetId,
+                            fieldName,
+                            field.getType(),
+                            value.getClass().getSimpleName());
                 }
             }
+            replaceSchemaField(outputSchema, fieldName, expectedType);
         }
+        return new ProcessedData(
+                schemaFrom(outputSchema),
+                rowsUnchanged(rows, outputRows)
+                        ? rows : immutableRows(outputRows));
     }
 
     private static boolean matches(Class<?> expectedType, Object value) {
@@ -195,6 +330,205 @@ public final class DatasetResultValidator {
         return expectedType == Long.class
                 ? actualType == Long.class
                 : expectedType.equals(actualType);
+    }
+
+    private Object typedDefault(
+            String datasetId,
+            String fieldName,
+            FieldDefinition field,
+            Class<?> expectedType,
+            ReportErrorCode errorCode) {
+        if (!field.hasDefaultValue() || field.getDefaultValue() == null) {
+            throw error(
+                    errorCode,
+                    datasetId,
+                    "Field " + fieldName
+                            + " requires an explicit non-null defaultValue");
+        }
+        Object value = field.getDefaultValue();
+        if (matches(expectedType, value)) {
+            return value;
+        }
+        try {
+            return convert(value, expectedType);
+        } catch (RuntimeException ex) {
+            throw error(
+                    errorCode,
+                    datasetId,
+                    "defaultValue for field " + fieldName
+                            + " is not safely convertible to "
+                            + normalizedType(field.getType()));
+        }
+    }
+
+    private static Object safeConvert(
+            String datasetId,
+            String fieldName,
+            String configuredType,
+            Object value,
+            Class<?> expectedType) {
+        try {
+            return convert(value, expectedType);
+        } catch (RuntimeException ex) {
+            throw typeError(
+                    datasetId,
+                    fieldName,
+                    configuredType,
+                    value.getClass().getSimpleName());
+        }
+    }
+
+    private static Object convert(Object value, Class<?> expectedType) {
+        if (expectedType.isInstance(value)) {
+            return value;
+        }
+        if (expectedType == BigDecimal.class
+                && (value instanceof Number || value instanceof String)) {
+            return new BigDecimal(String.valueOf(value));
+        }
+        if (expectedType == Long.class
+                && (value instanceof Number || value instanceof String)) {
+            return new BigDecimal(String.valueOf(value)).longValueExact();
+        }
+        if (expectedType == Boolean.class && value instanceof String) {
+            String text = ((String) value).trim();
+            if ("true".equalsIgnoreCase(text)) {
+                return Boolean.TRUE;
+            }
+            if ("false".equalsIgnoreCase(text)) {
+                return Boolean.FALSE;
+            }
+            throw new IllegalArgumentException("not a boolean");
+        }
+        if (expectedType == LocalDate.class && value instanceof String) {
+            return LocalDate.parse(((String) value).trim());
+        }
+        if (expectedType == LocalTime.class && value instanceof String) {
+            return LocalTime.parse(((String) value).trim());
+        }
+        if (expectedType == LocalDateTime.class) {
+            if (value instanceof String) {
+                return LocalDateTime.parse(((String) value).trim());
+            }
+            if (value instanceof Timestamp) {
+                return ((Timestamp) value).toLocalDateTime();
+            }
+        }
+        throw new IllegalArgumentException(
+                "unsupported safe conversion from "
+                        + value.getClass().getName()
+                        + " to " + expectedType.getName());
+    }
+
+    private static boolean supportsConversion(
+            Class<?> actualType, Class<?> expectedType) {
+        if (expectedType.isAssignableFrom(actualType)) {
+            return true;
+        }
+        if (expectedType == BigDecimal.class || expectedType == Long.class) {
+            return Number.class.isAssignableFrom(actualType)
+                    || actualType == String.class;
+        }
+        if (expectedType == Boolean.class
+                || expectedType == LocalDate.class
+                || expectedType == LocalTime.class) {
+            return actualType == String.class;
+        }
+        if (expectedType == LocalDateTime.class) {
+            return actualType == String.class
+                    || Timestamp.class.isAssignableFrom(actualType);
+        }
+        return false;
+    }
+
+    private static ReportException typeError(
+            String datasetId,
+            String fieldName,
+            String configuredType,
+            String actualType) {
+        return error(
+                ReportErrorCode.DATA_003,
+                datasetId,
+                "Field " + fieldName + " in dataset " + datasetId
+                        + " expected " + normalizedType(configuredType)
+                        + " but was " + actualType);
+    }
+
+    private static List<LinkedHashMap<String, Object>> mutableRows(
+            List<DatasetRow> rows) {
+        List<LinkedHashMap<String, Object>> mutable =
+                new ArrayList<LinkedHashMap<String, Object>>(rows.size());
+        for (DatasetRow row : rows) {
+            mutable.add(new LinkedHashMap<String, Object>(row.asMap()));
+        }
+        return mutable;
+    }
+
+    private static List<DatasetRow> immutableRows(
+            List<LinkedHashMap<String, Object>> rows) {
+        List<DatasetRow> immutable = new ArrayList<DatasetRow>(rows.size());
+        for (Map<String, Object> row : rows) {
+            Object[] pairs = new Object[row.size() * 2];
+            int index = 0;
+            for (Map.Entry<String, Object> entry : row.entrySet()) {
+                pairs[index++] = entry.getKey();
+                pairs[index++] = entry.getValue();
+            }
+            immutable.add(DatasetRow.of(pairs));
+        }
+        return Collections.unmodifiableList(immutable);
+    }
+
+    private static boolean rowsUnchanged(
+            List<DatasetRow> original,
+            List<LinkedHashMap<String, Object>> processed) {
+        if (original.size() != processed.size()) {
+            return false;
+        }
+        for (int index = 0; index < original.size(); index++) {
+            if (!original.get(index).asMap().equals(processed.get(index))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static DatasetSchema schemaFrom(
+            LinkedHashMap<String, Class<?>> fields) {
+        Object[] pairs = new Object[fields.size() * 2];
+        int index = 0;
+        for (Map.Entry<String, Class<?>> field : fields.entrySet()) {
+            pairs[index++] = field.getKey();
+            pairs[index++] = field.getValue();
+        }
+        return DatasetSchema.of(pairs);
+    }
+
+    private static String findField(Map<String, Object> row, String field) {
+        for (String candidate : row.keySet()) {
+            if (candidate.equalsIgnoreCase(field)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static void replaceSchemaField(
+            LinkedHashMap<String, Class<?>> schema,
+            String field,
+            Class<?> type) {
+        String existing = null;
+        for (String candidate : schema.keySet()) {
+            if (candidate.equalsIgnoreCase(field)) {
+                existing = candidate;
+                break;
+            }
+        }
+        if (existing == null) {
+            schema.put(field, type);
+        } else {
+            schema.put(existing, type);
+        }
     }
 
     private static Class<?> resolveType(String fieldName, String type) {
@@ -271,5 +605,16 @@ public final class DatasetResultValidator {
         types.put("BYTES", byte[].class);
         types.put("BINARY", byte[].class);
         return Collections.unmodifiableMap(types);
+    }
+
+    private static final class ProcessedData {
+        private final DatasetSchema schema;
+        private final List<DatasetRow> rows;
+
+        private ProcessedData(
+                DatasetSchema schema, List<DatasetRow> rows) {
+            this.schema = schema;
+            this.rows = rows;
+        }
     }
 }

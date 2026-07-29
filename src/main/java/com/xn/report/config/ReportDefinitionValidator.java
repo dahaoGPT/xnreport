@@ -17,6 +17,8 @@ import com.xn.report.config.definition.TrendDefinition;
 import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordCoverDefinition;
 import com.xn.report.config.definition.WordDefinition;
+import com.xn.report.config.definition.WordNumberingDefinition;
+import com.xn.report.config.definition.WordNumberingLevelDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.config.definition.WordTableColumnDefinition;
 import com.xn.report.config.definition.WordTableBinding;
@@ -53,13 +55,21 @@ public final class ReportDefinitionValidator {
 
     private static final Pattern DATASET_ID =
             Pattern.compile("^[A-Za-z][A-Za-z0-9_-]*$");
+    private static final Pattern MANUAL_SECTION_NUMBERING =
+            Pattern.compile("^(?:[一二三四五六七八九十百]+[、.]"
+                    + "|\\d+(?:\\.\\d+)*[.、]"
+                    + "|[（(]\\d+[）)]|[①-⑳])\\s*");
     private static final Set<String> COMPONENT_TYPES =
             unmodifiableSet("SCENARIO", "KEY_FACTORS", "FIXED_TEXT", "RULE_TEXT",
                     "CHART", "TABLE", "UNIT", "ATTACHMENT");
     private static final Set<String> TEXT_COMPONENT_TYPES =
-            unmodifiableSet("SCENARIO", "KEY_FACTORS", "FIXED_TEXT", "UNIT", "ATTACHMENT");
+            unmodifiableSet("SCENARIO", "KEY_FACTORS", "FIXED_TEXT", "UNIT");
     private static final Set<String> EMPTY_STRATEGIES =
             unmodifiableSet("KEEP", "SHOW_EMPTY", "SKIP");
+    private static final Set<String> WORD_NUMBER_FORMATS =
+            unmodifiableSet("decimal", "lowerLetter", "upperLetter",
+                    "lowerRoman", "upperRoman", "chineseCounting",
+                    "decimalEnclosedCircle");
     private static final PlaceholderParser PLACEHOLDER_PARSER =
             new PlaceholderParser();
     private static final FormatterRegistry FORMATTERS =
@@ -2452,6 +2462,7 @@ public final class ReportDefinitionValidator {
             result.add("CFG-TOC-UPDATE", "$.word.toc.updateOnOpen",
                     "Enabled TOC must update fields when Word opens the document");
         }
+        validateWordNumbering(word.getNumbering(), result);
         Set<String> sectionIds = new LinkedHashSet<String>();
         Set<String> tableBindingIds = validateWordTableBindings(
                 word.getTableBindings(), datasetIds, result);
@@ -2464,6 +2475,57 @@ public final class ReportDefinitionValidator {
                     sectionIds, tableBindingIds, datasetIds,
                     narrativeIds, chartIds,
                     visited, result);
+        }
+    }
+
+    private void validateWordNumbering(
+            WordNumberingDefinition numbering, ValidationResult result) {
+        if (numbering == null) {
+            result.add("CFG-WORD-NUMBERING", "$.word.numbering",
+                    "Word numbering definition is required");
+            return;
+        }
+        if (numbering.getNumId() != null
+                && numbering.getNumId().longValue() <= 0L) {
+            result.add("CFG-WORD-NUMBERING-ID", "$.word.numbering.numId",
+                    "Word numbering numId must be positive");
+        }
+        List<WordNumberingLevelDefinition> levels =
+                safeList(numbering.getLevels());
+        if (levels.size() != 4) {
+            result.add("CFG-WORD-NUMBERING-LEVEL",
+                    "$.word.numbering.levels",
+                    "Word numbering requires exactly four levels");
+        }
+        Set<Integer> configuredLevels = new LinkedHashSet<Integer>();
+        for (int index = 0; index < levels.size(); index++) {
+            WordNumberingLevelDefinition level = levels.get(index);
+            String path = "$.word.numbering.levels[" + index + "]";
+            if (level == null) {
+                result.add("CFG-WORD-NUMBERING-LEVEL", path,
+                        "Word numbering level must not be null");
+                continue;
+            }
+            if (level.getLevel() < 1 || level.getLevel() > 4
+                    || !configuredLevels.add(
+                    Integer.valueOf(level.getLevel()))) {
+                result.add("CFG-WORD-NUMBERING-LEVEL", path + ".level",
+                        "Word numbering levels must uniquely contain 1 through 4");
+            }
+            if (!hasText(level.getNumFmt())
+                    || !WORD_NUMBER_FORMATS.contains(level.getNumFmt())) {
+                result.add("CFG-WORD-NUMBERING-FORMAT", path + ".numFmt",
+                        "Word numbering numFmt is unknown");
+            }
+            if (!hasText(level.getLvlText())) {
+                result.add("CFG-WORD-NUMBERING-TEXT", path + ".lvlText",
+                        "Word numbering lvlText must not be blank");
+            }
+        }
+        if (configuredLevels.size() != 4) {
+            result.add("CFG-WORD-NUMBERING-LEVEL",
+                    "$.word.numbering.levels",
+                    "Word numbering levels must uniquely contain 1 through 4");
         }
     }
 
@@ -2607,6 +2669,10 @@ public final class ReportDefinitionValidator {
                     "Word section title must not exceed "
                             + MAX_SECTION_TITLE_UTF16_LENGTH
                             + " Java UTF-16 code units");
+        } else if (MANUAL_SECTION_NUMBERING.matcher(
+                section.getTitle()).find()) {
+            result.add("CFG-SECTION-TITLE-NUMBERING", path + ".title",
+                    "Word section title must not include a manual numbering prefix");
         }
         int level = section.getLevel();
         if (level < 1 || level > 4) {
@@ -2708,10 +2774,9 @@ public final class ReportDefinitionValidator {
                     "Word chart widthInches must be positive");
         }
         if ("ATTACHMENT".equals(type)
-                && !hasText(component.getText())
                 && !hasText(component.getTitle())
                 && !hasText(component.getDescription())
-                && safeList(component.getItems()).isEmpty()) {
+                && !hasAnyText(component.getItems())) {
             result.add("CFG-COMPONENT-REFERENCE", path,
                     "ATTACHMENT requires a title, description, or item");
         }
@@ -2737,6 +2802,15 @@ public final class ReportDefinitionValidator {
 
     private static boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private static boolean hasAnyText(List<String> values) {
+        for (String value : safeList(values)) {
+            if (hasText(value)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static <T> List<T> safeList(List<T> values) {

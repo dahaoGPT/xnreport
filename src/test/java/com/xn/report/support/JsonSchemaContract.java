@@ -35,7 +35,9 @@ public final class JsonSchemaContract {
                     "x-java-chartPointLimits",
                     "x-java-chartExcelMode",
                     "x-java-chartSeriesPropertyMatrix",
-                    "x-java-wordTocUpdate")));
+                    "x-java-wordTocUpdate",
+                    "x-java-wordAttachmentContent",
+                    "x-java-wordNumberingLevels")));
 
     private final JsonNode rootSchema;
 
@@ -292,6 +294,34 @@ public final class JsonSchemaContract {
             errors.add(path
                     + ".updateOnOpen must be true when the TOC is enabled");
         }
+        if (schema.path("x-java-wordAttachmentContent").asBoolean(false)
+                && "ATTACHMENT".equals(instance.path("type").asText())) {
+            boolean content = nonBlank(instance.path("title"))
+                    || nonBlank(instance.path("description"));
+            for (JsonNode item : instance.path("items")) {
+                content |= nonBlank(item);
+            }
+            if (!content) {
+                errors.add(path
+                        + " ATTACHMENT requires a title, description, or item");
+            }
+        }
+        if (schema.path("x-java-wordNumberingLevels").asBoolean(false)
+                && instance.path("levels").isArray()) {
+            Set<Integer> levels = new LinkedHashSet<Integer>();
+            for (JsonNode level : instance.path("levels")) {
+                levels.add(Integer.valueOf(level.path("level").asInt()));
+            }
+            if (!levels.equals(new LinkedHashSet<Integer>(
+                    Arrays.asList(1, 2, 3, 4)))) {
+                errors.add(path
+                        + ".levels must uniquely contain levels 1 through 4");
+            }
+        }
+    }
+
+    private static boolean nonBlank(JsonNode value) {
+        return value.isTextual() && !value.asText().trim().isEmpty();
     }
 
     private static String enumName(String value) {

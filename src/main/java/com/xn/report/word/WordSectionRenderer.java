@@ -1,6 +1,7 @@
 package com.xn.report.word;
 
 import com.xn.report.config.definition.WordComponentDefinition;
+import com.xn.report.config.definition.WordNumberingDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.dataset.DatasetResult;
@@ -26,7 +27,8 @@ public final class WordSectionRenderer {
             XWPFDocument document,
             List<WordSectionDefinition> sections,
             WordRenderContext context) {
-        render(document, sections, context, new WordComponentRenderer());
+        render(document, sections, context, new WordComponentRenderer(),
+                new WordNumberingDefinition());
     }
 
     public void render(
@@ -38,21 +40,24 @@ public final class WordSectionRenderer {
                     "Word definition is required");
         }
         render(document, definition.getSections(), context,
-                new WordComponentRenderer(definition.getTableBindings()));
+                new WordComponentRenderer(definition.getTableBindings()),
+                definition.getNumbering());
     }
 
     private void render(
             XWPFDocument document,
             List<WordSectionDefinition> sections,
             WordRenderContext context,
-            WordComponentRenderer componentRenderer) {
+            WordComponentRenderer componentRenderer,
+            WordNumberingDefinition numberingDefinition) {
         if (document == null || context == null) {
             throw new IllegalArgumentException(
                     "Word document and render context are required");
         }
         XWPFParagraph anchor = sectionAnchorLocator.locate(document);
         WordBodyInserter inserter = new WordBodyInserter(document, anchor);
-        WordNumberingManager numbering = new WordNumberingManager(document);
+        WordNumberingManager numbering =
+                new WordNumberingManager(document, numberingDefinition);
         for (WordSectionDefinition section : safe(sections)) {
             renderSection(document, inserter, numbering, section, context,
                     componentRenderer);

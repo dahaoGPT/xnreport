@@ -20,6 +20,8 @@ import com.xn.report.config.definition.TransformOperator;
 import com.xn.report.config.definition.TransformType;
 import com.xn.report.config.definition.TrendDefinition;
 import com.xn.report.config.definition.WordComponentDefinition;
+import com.xn.report.config.definition.WordNumberingDefinition;
+import com.xn.report.config.definition.WordNumberingLevelDefinition;
 import com.xn.report.config.definition.WordTableBinding;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.support.JsonSchemaContract;
@@ -168,7 +170,7 @@ class ReportDefinitionValidatorTest {
                 component("CHART", null, "trend", null, null),
                 component("TABLE", null, null, null, "details"),
                 component("UNIT", "hours", null, null, null),
-                component("ATTACHMENT", "appendix", null, null, null)));
+                attachmentWithTitle("appendix")));
         WordSectionDefinition child = section("details", 2, "SHOW_EMPTY");
         WordSectionDefinition grandchild = section("appendix", 4, "SKIP");
         child.setChildren(Arrays.asList(grandchild));
@@ -181,6 +183,83 @@ class ReportDefinitionValidatorTest {
         assertThat(result.isValid()).isTrue();
         assertThat(result.codes()).isEmpty();
         assertThatCode(result::throwIfInvalid).doesNotThrowAnyException();
+    }
+
+    @Test
+    void acceptsAttachmentTitleDescriptionOrItemsWithoutGenericText() {
+        ReportDefinition definition =
+                TestFixtures.report(TestFixtures.dataset("source"));
+        WordSectionDefinition section = section("attachments", 1, "KEEP");
+        WordComponentDefinition title = attachmentWithTitle("附件");
+        WordComponentDefinition description =
+                new WordComponentDefinition();
+        description.setType("ATTACHMENT");
+        description.setDescription("附件说明");
+        WordComponentDefinition items = new WordComponentDefinition();
+        items.setType("ATTACHMENT");
+        items.setItems(Collections.singletonList("明细.xlsx"));
+        section.setComponents(Arrays.asList(title, description, items));
+        definition.getWord().setSections(Collections.singletonList(section));
+
+        ValidationResult result = validator.validate(definition);
+
+        assertThat(result.codes()).doesNotContain("CFG-COMPONENT-REFERENCE");
+    }
+
+    @Test
+    void rejectsAttachmentWithOnlyGenericTextOrNoMetadata() {
+        ReportDefinition definition =
+                TestFixtures.report(TestFixtures.dataset("source"));
+        WordSectionDefinition section = section("attachments", 1, "KEEP");
+        WordComponentDefinition textOnly =
+                component("ATTACHMENT", "legacy", null, null, null);
+        WordComponentDefinition empty = new WordComponentDefinition();
+        empty.setType("ATTACHMENT");
+        section.setComponents(Arrays.asList(textOnly, empty));
+        definition.getWord().setSections(Collections.singletonList(section));
+
+        ValidationResult result = validator.validate(definition);
+
+        assertThat(pathsForCode(result, "CFG-COMPONENT-REFERENCE"))
+                .containsExactly(
+                        "$.word.sections[0].components[0]",
+                        "$.word.sections[0].components[1]");
+    }
+
+    @Test
+    void rejectsSectionTitleWithManualNumberingPrefix() {
+        ReportDefinition definition =
+                TestFixtures.report(TestFixtures.dataset("source"));
+        WordSectionDefinition section = section("manual", 1, "KEEP");
+        section.setTitle("一、交付速率");
+        definition.getWord().setSections(Collections.singletonList(section));
+
+        ValidationResult result = validator.validate(definition);
+
+        assertThat(pathsForCode(result, "CFG-SECTION-TITLE-NUMBERING"))
+                .containsExactly("$.word.sections[0].title");
+    }
+
+    @Test
+    void validatesFourUniqueKnownWordNumberingLevels() {
+        ReportDefinition definition =
+                TestFixtures.report(TestFixtures.dataset("source"));
+        WordNumberingDefinition numbering = new WordNumberingDefinition();
+        WordNumberingLevelDefinition duplicate =
+                numbering.getLevels().get(3);
+        duplicate.setLevel(3);
+        duplicate.setNumFmt("unknown");
+        duplicate.setLvlText(" ");
+        numbering.setNumId(Long.valueOf(0));
+        definition.getWord().setNumbering(numbering);
+
+        ValidationResult result = validator.validate(definition);
+
+        assertThat(result.codes()).contains(
+                "CFG-WORD-NUMBERING-ID",
+                "CFG-WORD-NUMBERING-LEVEL",
+                "CFG-WORD-NUMBERING-FORMAT",
+                "CFG-WORD-NUMBERING-TEXT");
     }
 
     @Test
@@ -931,6 +1010,13 @@ class ReportDefinitionValidatorTest {
         component.setChartId(chartId);
         component.setNarrativeId(narrativeId);
         component.setTableId(tableId);
+        return component;
+    }
+
+    private static WordComponentDefinition attachmentWithTitle(String title) {
+        WordComponentDefinition component = new WordComponentDefinition();
+        component.setType("ATTACHMENT");
+        component.setTitle(title);
         return component;
     }
 

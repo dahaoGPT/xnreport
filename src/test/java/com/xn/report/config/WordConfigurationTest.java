@@ -95,6 +95,84 @@ class WordConfigurationTest {
     }
 
     @Test
+    void schemaAcceptsFourLevelNumberingAndRejectsIncompleteNumbering()
+            throws Exception {
+        String base = reportWithCover(
+                "\"title\":\"研发效能报告\","
+                        + "\"organization\":\"研发中心\","
+                        + "\"reportPeriod\":\"2026年6月\","
+                        + "\"preparedBy\":\"效能小组\","
+                        + "\"preparedDate\":\"2026年7月23日\"");
+        String valid = base.replace("\"sections\":[]",
+                "\"numbering\":{\"numId\":7,\"levels\":["
+                        + "{\"level\":1,\"numFmt\":\"decimal\","
+                        + "\"lvlText\":\"第%1章\"},"
+                        + "{\"level\":2,\"numFmt\":\"lowerLetter\","
+                        + "\"lvlText\":\"%1.%2\"},"
+                        + "{\"level\":3,\"numFmt\":\"lowerRoman\","
+                        + "\"lvlText\":\"（%3）\"},"
+                        + "{\"level\":4,\"numFmt\":\"decimalEnclosedCircle\","
+                        + "\"lvlText\":\"%4\"}]},\"sections\":[]");
+        String invalid = valid.replace(
+                ",{\"level\":4,\"numFmt\":\"decimalEnclosedCircle\","
+                        + "\"lvlText\":\"%4\"}", "");
+
+        assertThat(schema().validate(mapper.readTree(valid))).isEmpty();
+        assertThat(schema().validate(mapper.readTree(invalid))).isNotEmpty();
+    }
+
+    @Test
+    void schemaAcceptsAttachmentMetadataWithoutTextAndRejectsEmptyAttachment()
+            throws Exception {
+        String base = reportWithCover(
+                "\"title\":\"研发效能报告\","
+                        + "\"organization\":\"研发中心\","
+                        + "\"reportPeriod\":\"2026年6月\","
+                        + "\"preparedBy\":\"效能小组\","
+                        + "\"preparedDate\":\"2026年7月23日\"");
+        String sectionPrefix = "\"sections\":[{\"id\":\"appendix\","
+                + "\"title\":\"附件\",\"level\":1,\"components\":[";
+        String suffix = "]}]";
+
+        assertThat(schema().validate(mapper.readTree(base.replace(
+                "\"sections\":[]", sectionPrefix
+                        + "{\"type\":\"ATTACHMENT\",\"title\":\"附件信息\"}"
+                        + suffix)))).isEmpty();
+        assertThat(schema().validate(mapper.readTree(base.replace(
+                "\"sections\":[]", sectionPrefix
+                        + "{\"type\":\"ATTACHMENT\","
+                        + "\"description\":\"说明\"}" + suffix)))).isEmpty();
+        assertThat(schema().validate(mapper.readTree(base.replace(
+                "\"sections\":[]", sectionPrefix
+                        + "{\"type\":\"ATTACHMENT\","
+                        + "\"items\":[\"明细.xlsx\"]}" + suffix)))).isEmpty();
+        assertThat(schema().validate(mapper.readTree(base.replace(
+                "\"sections\":[]", sectionPrefix
+                        + "{\"type\":\"ATTACHMENT\"}" + suffix)))).isNotEmpty();
+        assertThat(schema().validate(mapper.readTree(base.replace(
+                "\"sections\":[]", sectionPrefix
+                        + "{\"type\":\"ATTACHMENT\",\"text\":\"旧文本\"}"
+                        + suffix)))).isNotEmpty();
+    }
+
+    @Test
+    void schemaRejectsManualNumberingPrefixInSectionTitle()
+            throws Exception {
+        String document = reportWithCover(
+                "\"title\":\"研发效能报告\","
+                        + "\"organization\":\"研发中心\","
+                        + "\"reportPeriod\":\"2026年6月\","
+                        + "\"preparedBy\":\"效能小组\","
+                        + "\"preparedDate\":\"2026年7月23日\"")
+                .replace("\"sections\":[]",
+                        "\"sections\":[{\"id\":\"delivery\","
+                                + "\"title\":\"一、交付速率\","
+                                + "\"level\":1}]");
+
+        assertThat(schema().validate(mapper.readTree(document))).isNotEmpty();
+    }
+
+    @Test
     void schemaRejectsInvalidWordComponentDetails() throws Exception {
         String document = reportWithCover(
                 "\"title\":\"研发效能报告\","

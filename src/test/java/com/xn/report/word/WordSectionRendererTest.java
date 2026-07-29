@@ -4,12 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xn.report.config.definition.WordComponentDefinition;
+import com.xn.report.config.definition.WordDefinition;
+import com.xn.report.config.definition.WordNumberingDefinition;
+import com.xn.report.config.definition.WordNumberingLevelDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.dataset.DatasetContext;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.support.TestFixtures;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.Collections;
 import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
@@ -25,7 +29,7 @@ class WordSectionRendererTest {
         try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
             document.createParagraph().createRun().setText("模板尾部");
             WordSectionDefinition parent = section(
-                    "delivery", "一、交付速率", 1, "KEEP");
+                    "delivery", "交付速率", 1, "KEEP");
             parent.setComponents(Arrays.asList(
                     text("SCENARIO", "场景说明"),
                     text("KEY_FACTORS", "构成要素"),
@@ -68,6 +72,35 @@ class WordSectionRendererTest {
             } finally {
                 reopened.close();
             }
+        }
+    }
+
+    @Test
+    void usesConfiguredNumberingWithoutDuplicatingPrefixInHeadingText()
+            throws Exception {
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            WordDefinition definition = new WordDefinition();
+            WordNumberingDefinition numbering = new WordNumberingDefinition();
+            WordNumberingLevelDefinition first =
+                    numbering.getLevels().get(0);
+            first.setNumFmt("decimal");
+            first.setLvlText("第%1章");
+            definition.setNumbering(numbering);
+            definition.setSections(Collections.singletonList(
+                    section("delivery", "交付速率", 1, "KEEP")));
+
+            new WordSectionRenderer().render(document, definition,
+                    WordRenderContext.builder()
+                            .datasets(DatasetContext.builder().build())
+                            .build());
+
+            XWPFParagraph heading = document.getParagraphs().stream()
+                    .filter(paragraph -> "Heading1".equals(
+                            paragraph.getStyle()))
+                    .findFirst().get();
+            assertThat(heading.getText()).isEqualTo("交付速率");
+            assertThat(heading.getText()).doesNotStartWith("第1章");
+            assertThat(heading.getNumIlvl()).isEqualTo(BigInteger.ZERO);
         }
     }
 

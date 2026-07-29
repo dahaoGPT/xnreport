@@ -7,6 +7,7 @@ public class WordDefinition {
 
     private WordCoverDefinition cover = new WordCoverDefinition();
     private WordTocDefinition toc = new WordTocDefinition();
+    private WordNumberingDefinition numbering = new WordNumberingDefinition();
     private List<WordTableBinding> tableBindings =
             new ArrayList<WordTableBinding>();
     private List<WordSectionDefinition> sections = new ArrayList<WordSectionDefinition>();
@@ -25,6 +26,15 @@ public class WordDefinition {
 
     public void setToc(WordTocDefinition toc) {
         this.toc = toc == null ? new WordTocDefinition() : toc;
+    }
+
+    public WordNumberingDefinition getNumbering() {
+        return numbering;
+    }
+
+    public void setNumbering(WordNumberingDefinition numbering) {
+        this.numbering = numbering == null
+                ? new WordNumberingDefinition() : numbering;
     }
 
     public List<WordSectionDefinition> getSections() {

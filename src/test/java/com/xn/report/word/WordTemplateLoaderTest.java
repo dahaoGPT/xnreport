@@ -1,0 +1,67 @@
+package com.xn.report.word;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
+import org.apache.poi.xwpf.usermodel.XWPFStyle;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTStyle;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STStyleType;
+
+class WordTemplateLoaderTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void loadsValidTemplateAndPreservesUntouchedContent() throws Exception {
+        Path template = tempDir.resolve("template.docx");
+        try (XWPFDocument document = validTemplate()) {
+            document.createParagraph().createRun().setText("template footer marker");
+            try (java.io.OutputStream output = Files.newOutputStream(template)) {
+                document.write(output);
+            }
+        }
+
+        try (XWPFDocument loaded = new WordTemplateLoader().load(template)) {
+            try (XWPFWordExtractor extractor = new XWPFWordExtractor(loaded)) {
+                assertThat(extractor.getText()).contains("template footer marker");
+            }
+        }
+    }
+
+    @Test
+    void rejectsTemplateWithoutRequiredHeadingStyle() throws Exception {
+        Path template = tempDir.resolve("invalid.docx");
+        try (XWPFDocument document = new XWPFDocument();
+             java.io.OutputStream output = Files.newOutputStream(template)) {
+            document.createParagraph().createRun().setText("{{sections}}");
+            WordTocManagerTest.addComplexToc(document);
+            document.write(output);
+        }
+
+        assertThatThrownBy(() -> new WordTemplateLoader().load(template))
+                .isInstanceOf(WordTemplateException.class)
+                .hasMessageContaining("Heading 1");
+    }
+
+    static XWPFDocument validTemplate() {
+        XWPFDocument document = new XWPFDocument();
+        for (int level = 1; level <= 4; level++) {
+            String styleId = "Heading" + level;
+            CTStyle ctStyle = CTStyle.Factory.newInstance();
+            ctStyle.setStyleId(styleId);
+            ctStyle.setType(STStyleType.PARAGRAPH);
+            ctStyle.addNewName().setVal("Heading " + level);
+            document.createStyles().addStyle(new XWPFStyle(ctStyle));
+        }
+        WordTocManagerTest.addComplexToc(document);
+        document.createParagraph().createRun().setText("{{sections}}");
+        return document;
+    }
+}

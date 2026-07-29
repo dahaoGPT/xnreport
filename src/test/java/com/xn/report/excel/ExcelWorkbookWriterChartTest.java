@@ -70,6 +70,58 @@ class ExcelWorkbookWriterChartTest {
     }
 
     @Test
+    void validatesBubbleAndNonBubbleSharingOneValueFieldBySourceIdentity()
+            throws Exception {
+        Path template = temporary.resolve(
+                "bubble-source-template.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook();
+                OutputStream output = Files.newOutputStream(template)) {
+            workbook.createSheet("Cover");
+            workbook.write(output);
+        }
+        DatasetDefinition dataset =
+                TestFixtures.dataset("sharedValue");
+        dataset.setSheetName("Data Sheet");
+        DatasetResult result = DatasetResult.list(
+                "sharedValue", Arrays.asList(
+                        TestFixtures.row(
+                                "x", 1, "value", 10, "size", 2),
+                        TestFixtures.row(
+                                "x", 2, "value", 20, "size", 3)));
+        ChartSeriesDefinition bubble =
+                new ChartSeriesDefinition();
+        bubble.setField("value");
+        bubble.setName("Bubble");
+        bubble.setType(ChartType.BUBBLE);
+        bubble.setSizeField("size");
+        bubble.setLegendOrder(1);
+        ChartSeriesDefinition scatter =
+                new ChartSeriesDefinition();
+        scatter.setField("value");
+        scatter.setName("Scatter");
+        scatter.setType(ChartType.SCATTER);
+        scatter.setMarker(Boolean.TRUE);
+        scatter.setLegendOrder(0);
+        ChartDefinition chart = new ChartDefinition();
+        chart.setId("sharedValue");
+        chart.setDataset("sharedValue");
+        chart.setExcelSheet("Data Sheet");
+        chart.setCategoryField("x");
+        chart.setCategorySort(ChartCategorySort.SOURCE);
+        chart.setSeries(Arrays.asList(bubble, scatter));
+        ReportDefinition report = TestFixtures.report(dataset);
+        report.setCharts(Collections.singletonList(chart));
+        Path output = temporary.resolve("bubble-source.xlsx");
+
+        new ExcelWorkbookWriter().write(
+                template, output, report,
+                DatasetContext.builder().put(result).build(),
+                Collections.<String, Object>emptyMap());
+
+        assertThat(output).exists();
+    }
+
+    @Test
     void outputValidationRejectsChartFormulaOutsideItsDatasetSheet()
             throws Exception {
         Path template = temporary.resolve("validation-template.xlsx");

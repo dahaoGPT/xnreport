@@ -1,6 +1,8 @@
 package com.xn.report.chart;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.xn.report.config.definition.ChartDefinition;
 import com.xn.report.config.definition.ChartSeriesDefinition;
@@ -19,6 +21,65 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class ExcelChartDataAreaWriterTest {
+
+    @Test
+    void rejectsCompleteDataAreaColumnOverflowBeforeMutation()
+            throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            XSSFSheet sheet = workbook.createSheet("Data");
+            sheet.createRow(10).createCell(16380)
+                    .setCellValue("existing");
+            DatasetDefinition dataset = TestFixtures.dataset("sort");
+            dataset.setSheetName("Data");
+            DatasetResult result = DatasetResult.list(
+                    "sort", Collections.singletonList(
+                            TestFixtures.row(
+                                    "category", "A",
+                                    "value", 1,
+                                    "value2", 2)));
+            ChartDefinition definition =
+                    definition(ChartCategorySort.SOURCE,
+                            Collections.<String>emptyList());
+            ChartSeriesDefinition second =
+                    new ChartSeriesDefinition();
+            second.setField("value2");
+            second.setName("Value 2");
+            second.setType(ChartType.LINE);
+            definition.setSeries(Arrays.asList(
+                    definition.getSeries().get(0), second));
+            ChartModel model = new ChartModelBuilder().build(
+                    definition, result);
+            int styles = workbook.getNumCellStyles();
+
+            assertThatThrownBy(() ->
+                    new ExcelChartDataAreaWriter().write(
+                            workbook, dataset, result,
+                            definition, model))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("columns");
+            assertThat((Object) sheet.getRow(0)).isNull();
+            assertThat((Object) sheet.getRow(1)).isNull();
+            assertThat(workbook.getNumCellStyles()).isEqualTo(styles);
+        }
+    }
+
+    @Test
+    void rejectsDataAreaRowAndColumnIntegerOverflow() {
+        assertThatCode(() ->
+                ExcelChartBounds.validateDataArea(
+                        16382L, 2L, 1048575L, 1L))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() ->
+                ExcelChartBounds.validateDataArea(
+                        0L, 2L, 2L, Integer.MAX_VALUE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("rows");
+        assertThatThrownBy(() ->
+                ExcelChartBounds.validateDataArea(
+                        Long.MAX_VALUE, 2L, 2L, 1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("columns");
+    }
 
     @Test
     void writesTheSpecifiedChineseChartDataMarker() throws Exception {

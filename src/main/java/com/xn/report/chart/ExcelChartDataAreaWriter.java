@@ -3,7 +3,6 @@ package com.xn.report.chart;
 import com.xn.report.config.definition.ChartDefinition;
 import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.dataset.DatasetResult;
-import com.xn.report.dataset.DatasetRow;
 import com.xn.report.excel.ExcelValueBinder;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
@@ -44,6 +43,18 @@ public final class ExcelChartDataAreaWriter {
         int markerRow = 0;
         int headerRow = 1;
         int firstDataRow = 2;
+        long columnCount = 1L + model.getSeries().size();
+        for (ChartSeriesModel series : model.getSeries()) {
+            if (!series.getSizes().isEmpty()) {
+                columnCount++;
+            }
+        }
+        ExcelChartBounds.validateDataArea(
+                startColumn, columnCount, firstDataRow,
+                model.getCategories().size());
+        ChartSourceCategoryIndex categoryIndex =
+                ChartSourceCategoryIndex.build(
+                        definition, result, model.getGroupKey());
         ExcelValueBinder binder = new ExcelValueBinder(workbook);
         CellStyle titleStyle = titleStyle(workbook);
         CellStyle headerStyle = headerStyle(workbook);
@@ -64,7 +75,9 @@ public final class ExcelChartDataAreaWriter {
         categoryHeader.setCellStyle(headerStyle);
         columns.put(definition.getCategoryField(), column);
 
-        for (ChartSeriesModel series : model.getSeries()) {
+        for (int ordinal = 0;
+                ordinal < model.getSeries().size(); ordinal++) {
+            ChartSeriesModel series = model.getSeries().get(ordinal);
             column++;
             Cell header = cell(sheet, headerRow, column);
             header.setCellValue(series.getName());
@@ -76,7 +89,9 @@ public final class ExcelChartDataAreaWriter {
             if (!series.getSizes().isEmpty()) {
                 column++;
                 String sizeField =
-                        sizeField(definition, series.getField());
+                        ChartSeriesConfigurationResolver.resolve(
+                                definition, series, ordinal)
+                                .getSizeField();
                 Cell sizeHeader = cell(
                         sheet, headerRow, column);
                 sizeHeader.setCellValue(series.getName() + " size");
@@ -92,8 +107,7 @@ public final class ExcelChartDataAreaWriter {
 
         for (int index = 0;
                 index < model.getCategories().size(); index++) {
-            Object category = sourceCategory(
-                    definition, result, model,
+            Object category = categoryIndex.source(
                     model.getCategories().get(index));
             binder.bind(cell(
                     sheet, firstDataRow + index,
@@ -165,7 +179,9 @@ public final class ExcelChartDataAreaWriter {
         List<Integer> sizeColumns =
                 new ArrayList<Integer>();
         columns.put(definition.getCategoryField(), column++);
-        for (ChartSeriesModel series : model.getSeries()) {
+        for (int ordinal = 0;
+                ordinal < model.getSeries().size(); ordinal++) {
+            ChartSeriesModel series = model.getSeries().get(ordinal);
             seriesColumns.add(Integer.valueOf(column));
             if (!columns.containsKey(series.getField())) {
                 columns.put(series.getField(), column);
@@ -173,7 +189,9 @@ public final class ExcelChartDataAreaWriter {
             column++;
             if (!series.getSizes().isEmpty()) {
                 String sizeField =
-                        sizeField(definition, series.getField());
+                        ChartSeriesConfigurationResolver.resolve(
+                                definition, series, ordinal)
+                                .getSizeField();
                 sizeColumns.add(Integer.valueOf(column));
                 if (!columns.containsKey(sizeField)) {
                     columns.put(sizeField, column);
@@ -189,46 +207,6 @@ public final class ExcelChartDataAreaWriter {
                 seriesColumns, sizeColumns);
     }
 
-    private static String sizeField(
-            ChartDefinition definition, String seriesField) {
-        for (com.xn.report.config.definition.ChartSeriesDefinition series
-                : definition.getSeries()) {
-            if (seriesField.equalsIgnoreCase(series.getField())
-                    && series.getSizeField() != null) {
-                return series.getSizeField();
-            }
-        }
-        return seriesField + "__size";
-    }
-
-    private static Object sourceCategory(
-            ChartDefinition definition,
-            DatasetResult result,
-            ChartModel model,
-            String categoryLabel) {
-        if (result.type()
-                != com.xn.report.dataset.DatasetType.LIST) {
-            return categoryLabel;
-        }
-        for (DatasetRow row : result.list()) {
-            if (definition.getGroupByField() != null
-                    && !display(row.getOrNull(
-                            definition.getGroupByField()))
-                            .equals(model.getGroupKey())) {
-                continue;
-            }
-            Object raw = row.getOrNull(definition.getCategoryField());
-            if (display(raw).equals(categoryLabel)) {
-                return raw == null ? categoryLabel : raw;
-            }
-        }
-        return categoryLabel;
-    }
-
-    private static String display(Object value) {
-        return value == null ? "<null>" : String.valueOf(value);
-    }
-
     private static String marker(
             ChartDefinition definition, ChartModel model) {
         return MARKER_PREFIX + definition.getId()
@@ -237,7 +215,7 @@ public final class ExcelChartDataAreaWriter {
     }
 
     private static int firstFreeColumn(XSSFSheet sheet) {
-        int rightmost = -1;
+        long rightmost = -1L;
         for (Row row : sheet) {
             if (row.getLastCellNum() > 0) {
                 rightmost = Math.max(
@@ -246,13 +224,14 @@ public final class ExcelChartDataAreaWriter {
         }
         for (org.apache.poi.ss.util.CellRangeAddress merged
                 : sheet.getMergedRegions()) {
-            rightmost = Math.max(rightmost, merged.getLastColumn());
+            rightmost = Math.max(
+                    rightmost, (long) merged.getLastColumn());
         }
         for (org.apache.poi.xssf.usermodel.XSSFTable table
                 : sheet.getTables()) {
             rightmost = Math.max(
                     rightmost,
-                    table.getArea().getLastCell().getCol());
+                    (long) table.getArea().getLastCell().getCol());
         }
         if (sheet.getDrawingPatriarch() != null) {
             for (org.openxmlformats.schemas.drawingml.x2006
@@ -260,17 +239,17 @@ public final class ExcelChartDataAreaWriter {
                     : sheet.getDrawingPatriarch().getCTDrawing()
                             .getTwoCellAnchorList()) {
                 rightmost = Math.max(
-                        rightmost, anchor.getTo().getCol());
+                        rightmost, (long) anchor.getTo().getCol());
             }
         }
-        int first = rightmost < 0 ? 0 : rightmost + 2;
+        long first = rightmost < 0L ? 0L : rightmost + 2L;
         if (first >= org.apache.poi.ss.SpreadsheetVersion.EXCEL2007
                 .getMaxColumns()) {
             throw new IllegalArgumentException(
                     "No columns remain for chart data area on sheet "
                             + sheet.getSheetName());
         }
-        return first;
+        return (int) first;
     }
 
     private static Cell cell(

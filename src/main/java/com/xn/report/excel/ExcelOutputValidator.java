@@ -3,13 +3,13 @@ package com.xn.report.excel;
 import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.ExcelTableBinding;
 import com.xn.report.config.definition.ChartDefinition;
-import com.xn.report.config.definition.ChartSeriesDefinition;
 import com.xn.report.chart.ChartFormulaRange;
 import com.xn.report.chart.ChartLocator;
 import com.xn.report.chart.ChartRangeResolver;
 import com.xn.report.chart.ChartModel;
 import com.xn.report.chart.ChartModelBuilder;
 import com.xn.report.chart.ChartSeriesModel;
+import com.xn.report.chart.ChartSeriesConfigurationResolver;
 import com.xn.report.chart.ExcelChartDataAreaWriter;
 import com.xn.report.dataset.DatasetContext;
 import com.xn.report.dataset.DatasetResult;
@@ -162,24 +162,22 @@ public final class ExcelOutputValidator {
                 + "drawingml/2006/chart'; ";
         XmlObject[] series = chart.getCTChart().selectPath(
                 namespaces + ".//c:ser");
-        java.util.Arrays.sort(series,
-                new java.util.Comparator<XmlObject>() {
-                    @Override
-                    public int compare(
-                            XmlObject left, XmlObject right) {
-                        return Integer.compare(
-                                seriesOrder(left, namespaces),
-                                seriesOrder(right, namespaces));
-                    }
-                });
         if (series.length != model.getSeries().size()) {
             throw new IllegalStateException(
                     "Chart series count is invalid: "
                             + definition.getId());
         }
+        Set<Integer> matched = new LinkedHashSet<Integer>();
         for (int index = 0; index < series.length; index++) {
+            ChartSeriesModel configured =
+                    model.getSeries().get(index);
+            String expectedTitle = range.seriesTitleFormula(
+                    index, configured.getField());
+            XmlObject actualSeries = uniqueSeriesByTitle(
+                    series, namespaces, expectedTitle, matched,
+                    definition.getId(), configured.getName());
             String category = firstText(
-                    series[index], namespaces,
+                    actualSeries, namespaces,
                     ".//c:cat//c:f | .//c:xVal//c:f");
             String expectedCategory =
                     range.formula(definition.getCategoryField());
@@ -188,10 +186,8 @@ public final class ExcelOutputValidator {
                         "Chart category formula is invalid for "
                                 + definition.getId() + ": " + category);
             }
-            ChartSeriesModel configured =
-                    model.getSeries().get(index);
             String values = firstText(
-                    series[index], namespaces,
+                    actualSeries, namespaces,
                     ".//c:val//c:f | .//c:yVal//c:f");
             String expectedValues =
                     range.seriesFormula(
@@ -203,20 +199,20 @@ public final class ExcelOutputValidator {
                                 + configured.getName() + ": " + values);
             }
             String title = firstText(
-                    series[index], namespaces, ".//c:tx//c:f");
-            if (!range.seriesTitleFormula(
-                    index, configured.getField())
-                    .equals(title)) {
+                    actualSeries, namespaces, ".//c:tx//c:f");
+            if (!expectedTitle.equals(title)) {
                 throw new IllegalStateException(
                         "Chart series title formula is invalid for "
                                 + definition.getId() + "/"
                                 + configured.getName());
             }
-            String sizeField = configuredSizeField(
-                    definition, configured);
+            String sizeField =
+                    ChartSeriesConfigurationResolver.resolve(
+                            definition, configured, index)
+                            .getSizeField();
             if (sizeField != null) {
                 String size = firstText(
-                        series[index], namespaces,
+                        actualSeries, namespaces,
                         ".//c:bubbleSize//c:f");
                 if (!range.sizeFormula(index, sizeField)
                         .equals(size)) {
@@ -227,7 +223,7 @@ public final class ExcelOutputValidator {
                 }
             }
             validateCachePointCount(
-                    series[index], namespaces,
+                    actualSeries, namespaces,
                     ".//c:cat//c:strCache/c:ptCount"
                             + " | .//c:cat//c:numCache/c:ptCount"
                             + " | .//c:xVal//c:strCache/c:ptCount"
@@ -235,7 +231,7 @@ public final class ExcelOutputValidator {
                     range.getPointCount(), true,
                     definition.getId() + " category");
             validateCachePointCount(
-                    series[index], namespaces,
+                    actualSeries, namespaces,
                     ".//c:val//c:numCache/c:ptCount"
                             + " | .//c:yVal//c:numCache/c:ptCount",
                     range.getPointCount(), false,
@@ -243,7 +239,7 @@ public final class ExcelOutputValidator {
                             + configured.getName());
             if (sizeField != null) {
                 validateCachePointCount(
-                        series[index], namespaces,
+                        actualSeries, namespaces,
                         ".//c:bubbleSize//c:numCache/c:ptCount",
                         range.getPointCount(), false,
                         definition.getId() + " bubble size");
@@ -251,20 +247,42 @@ public final class ExcelOutputValidator {
         }
     }
 
-    private static int seriesOrder(
-            XmlObject series, String namespaces) {
-        XmlObject[] values =
-                series.selectPath(namespaces + "./c:order");
-        if (values.length != 1) {
-            return Integer.MAX_VALUE;
+    private static XmlObject uniqueSeriesByTitle(
+            XmlObject[] series,
+            String namespaces,
+            String expectedTitle,
+            Set<Integer> matched,
+            String chartId,
+            String seriesName) {
+        Integer match = null;
+        for (int index = 0; index < series.length; index++) {
+            if (!matched.contains(Integer.valueOf(index))
+                    && expectedTitle.equals(firstText(
+                            series[index], namespaces,
+                            ".//c:tx//c:f"))) {
+                if (match != null) {
+                    throw new IllegalStateException(
+                            "Chart series title formula is ambiguous for "
+                                    + chartId + "/" + seriesName);
+                }
+                match = Integer.valueOf(index);
+            }
         }
-        try (XmlCursor cursor = values[0].newCursor()) {
-            String value = cursor.getAttributeText(
-                    new javax.xml.namespace.QName("val"));
-            return value == null
-                    ? Integer.MAX_VALUE
-                    : Integer.parseInt(value);
+        if (match == null) {
+            java.util.List<String> actualTitles =
+                    new java.util.ArrayList<String>();
+            for (XmlObject candidate : series) {
+                actualTitles.add(firstText(
+                        candidate, namespaces, ".//c:tx//c:f"));
+            }
+            throw new IllegalStateException(
+                    "Chart series title formula is invalid for "
+                            + chartId + "/" + seriesName
+                            + ": expected " + expectedTitle
+                            + " but found " + actualTitles);
         }
+        matched.add(match);
+        return series[match.intValue()];
     }
 
     private static void validateCachePointCount(
@@ -308,19 +326,6 @@ public final class ExcelOutputValidator {
                     "Chart category cache points are invalid for "
                             + description);
         }
-    }
-
-    private static String configuredSizeField(
-            ChartDefinition definition,
-            ChartSeriesModel model) {
-        for (ChartSeriesDefinition configured
-                : definition.getSeries()) {
-            if (configured.getField().equalsIgnoreCase(
-                    model.getField())) {
-                return configured.getSizeField();
-            }
-        }
-        return null;
     }
 
     private static LocatorValue locator(

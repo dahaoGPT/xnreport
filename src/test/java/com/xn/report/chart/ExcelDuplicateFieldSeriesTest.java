@@ -118,6 +118,64 @@ class ExcelDuplicateFieldSeriesTest {
         }
     }
 
+    @Test
+    void twoBubbleSeriesWithSameValueFieldKeepDistinctSizeFields()
+            throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Data");
+            DatasetDefinition dataset = dataset();
+            DatasetResult result = DatasetResult.list(
+                    "duplicate", Arrays.asList(
+                            TestFixtures.row(
+                                    "category", 1,
+                                    "value", 10,
+                                    "sizeA", 2,
+                                    "sizeB", 7),
+                            TestFixtures.row(
+                                    "category", 2,
+                                    "value", 20,
+                                    "sizeA", 3,
+                                    "sizeB", 8)));
+            ChartSeriesDefinition first = series(
+                    "value", "First", ChartType.BUBBLE,
+                    ChartNullHandling.GAP);
+            first.setSizeField("sizeA");
+            first.setLegendOrder(1);
+            ChartSeriesDefinition second = series(
+                    "value", "Second", ChartType.BUBBLE,
+                    ChartNullHandling.GAP);
+            second.setSizeField("sizeB");
+            second.setLegendOrder(0);
+            ChartDefinition definition = new ChartDefinition();
+            definition.setId("duplicate");
+            definition.setDataset("duplicate");
+            definition.setExcelSheet("Data");
+            definition.setCategoryField("category");
+            definition.setCategorySort(ChartCategorySort.SOURCE);
+            definition.setSeries(Arrays.asList(first, second));
+            ChartModel model =
+                    new ChartModelBuilder().build(definition, result);
+
+            ChartFormulaRange range =
+                    new ExcelChartDataAreaWriter().write(
+                            workbook, dataset, result,
+                            definition, model);
+
+            assertThat(model.getSeries().get(0).getSourceIndex())
+                    .isEqualTo(1);
+            assertThat(range.column("sizeA"))
+                    .isNotEqualTo(range.column("sizeB"));
+            assertThat(workbook.getSheet("Data")
+                    .getRow(range.getFirstDataRow())
+                    .getCell(range.column("sizeA"))
+                    .getNumericCellValue()).isEqualTo(2d);
+            assertThat(workbook.getSheet("Data")
+                    .getRow(range.getFirstDataRow())
+                    .getCell(range.column("sizeB"))
+                    .getNumericCellValue()).isEqualTo(7d);
+        }
+    }
+
     private static XSSFWorkbook seedTwoLineTemplate() {
         XSSFWorkbook workbook = new XSSFWorkbook();
         XSSFSheet sheet = workbook.createSheet("Data");

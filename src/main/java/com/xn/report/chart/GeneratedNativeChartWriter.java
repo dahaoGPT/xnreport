@@ -178,32 +178,32 @@ public final class GeneratedNativeChartWriter {
             XSSFSheet sheet,
             ChartDefinition definition,
             int chartOrdinal) {
-        int height = value(definition.getAnchorHeightRows(), 20);
-        int row1 = definition.getAnchorRow() == null
-                ? nextFreeChartRow(sheet)
-                : definition.getAnchorRow().intValue()
-                        + chartOrdinal * (height + 2);
-        int col1 = value(definition.getAnchorColumn(), 0);
-        int width = value(definition.getAnchorWidthColumns(), 10);
-        if (row1 < 0 || col1 < 0 || width <= 0 || height <= 0) {
+        if (chartOrdinal < 0) {
             throw new IllegalArgumentException(
-                    "Chart anchor coordinates must be non-negative "
-                            + "and dimensions positive");
+                    "Chart ordinal must not be negative");
         }
+        long height = value(definition.getAnchorHeightRows(), 20);
+        long row1 = definition.getAnchorRow() == null
+                ? nextFreeChartRow(sheet)
+                : definition.getAnchorRow().longValue()
+                        + (long) chartOrdinal * (height + 2L);
+        long col1 = value(definition.getAnchorColumn(), 0);
+        long width = value(definition.getAnchorWidthColumns(), 10);
+        ExcelChartBounds.Anchor bounds =
+                ExcelChartBounds.validateAnchor(
+                        row1, col1, height, width);
         if (definition.getAnchorRow() != null
                 || definition.getAnchorColumn() != null) {
-            ensureCellsAreEmpty(sheet, row1, col1, height, width);
+            ensureCellsAreEmpty(sheet, bounds);
             ensureChartsDoNotOverlap(
-                    sheet, row1, col1,
-                    row1 + height, col1 + width);
+                    sheet, bounds.row1(), bounds.column1(),
+                    bounds.row2(), bounds.column2());
         }
-        return configure(
-                new XSSFClientAnchor(),
-                row1, col1, height, width);
+        return configure(new XSSFClientAnchor(), bounds);
     }
 
-    private static int nextFreeChartRow(XSSFSheet sheet) {
-        int next = sheet.getLastRowNum() + 2;
+    private static long nextFreeChartRow(XSSFSheet sheet) {
+        long next = (long) sheet.getLastRowNum() + 2L;
         if (sheet.getDrawingPatriarch() == null) {
             return next;
         }
@@ -212,7 +212,8 @@ public final class GeneratedNativeChartWriter {
                 : sheet.getDrawingPatriarch().getCTDrawing()
                         .getTwoCellAnchorList()) {
             if (anchor.isSetGraphicFrame()) {
-                next = Math.max(next, anchor.getTo().getRow() + 2);
+                next = Math.max(
+                        next, (long) anchor.getTo().getRow() + 2L);
             }
         }
         return next;
@@ -248,26 +249,24 @@ public final class GeneratedNativeChartWriter {
 
     private static XSSFClientAnchor configure(
             XSSFClientAnchor anchor,
-            int row, int column, int height, int width) {
-        anchor.setRow1(row);
-        anchor.setCol1(column);
-        anchor.setRow2(row + height);
-        anchor.setCol2(column + width);
+            ExcelChartBounds.Anchor bounds) {
+        anchor.setRow1(bounds.row1());
+        anchor.setCol1(bounds.column1());
+        anchor.setRow2(bounds.row2());
+        anchor.setCol2(bounds.column2());
         return anchor;
     }
 
     private static void ensureCellsAreEmpty(
             XSSFSheet sheet,
-            int row,
-            int column,
-            int height,
-            int width) {
-        for (int r = row; r < row + height; r++) {
+            ExcelChartBounds.Anchor bounds) {
+        for (int r = bounds.row1(); r < bounds.row2(); r++) {
             org.apache.poi.ss.usermodel.Row existing = sheet.getRow(r);
             if (existing == null) {
                 continue;
             }
-            for (int c = column; c < column + width; c++) {
+            for (int c = bounds.column1();
+                    c < bounds.column2(); c++) {
                 org.apache.poi.ss.usermodel.Cell cell =
                         existing.getCell(c);
                 if (cell != null

@@ -26,6 +26,56 @@ import java.util.stream.Stream;
 
 class GeneratedNativeChartWriterTest {
 
+    @Test
+    void rejectsAnchorIntegerOverflowBeforeCreatingDrawing()
+            throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Data");
+            ChartDefinition definition =
+                    TestFixtures.comboChartDefinition();
+            definition.setExcelSheet("Data");
+            definition.setAnchorRow(Integer.MAX_VALUE);
+            definition.setAnchorHeightRows(Integer.MAX_VALUE);
+            ChartModel model = TestFixtures.comboChartModel();
+            ChartFormulaRange range = new ChartFormulaRange(
+                    "Data", 0, 1, model.getCategories().size(),
+                    Collections.<String, Integer>emptyMap());
+
+            assertThatThrownBy(() ->
+                    new GeneratedNativeChartWriter().write(
+                            workbook, definition, model, range))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("bounds");
+            assertThat(workbook.getSheet("Data")
+                    .getDrawingPatriarch()).isNull();
+        }
+    }
+
+    @Test
+    void rejectsAnchorBeyondExcelColumnLimitBeforeCreatingDrawing()
+            throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            workbook.createSheet("Data");
+            ChartDefinition definition =
+                    TestFixtures.comboChartDefinition();
+            definition.setExcelSheet("Data");
+            definition.setAnchorColumn(16380);
+            definition.setAnchorWidthColumns(10);
+            ChartModel model = TestFixtures.comboChartModel();
+            ChartFormulaRange range = new ChartFormulaRange(
+                    "Data", 0, 1, model.getCategories().size(),
+                    Collections.<String, Integer>emptyMap());
+
+            assertThatThrownBy(() ->
+                    new GeneratedNativeChartWriter().write(
+                            workbook, definition, model, range))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("bounds");
+            assertThat(workbook.getSheet("Data")
+                    .getDrawingPatriarch()).isNull();
+        }
+    }
+
     @ParameterizedTest
     @MethodSource("nativeTypes")
     void mapsEveryGeneratedTypeToItsNativeOoxmlElement(

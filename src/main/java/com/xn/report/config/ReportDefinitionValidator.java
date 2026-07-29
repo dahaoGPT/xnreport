@@ -18,6 +18,7 @@ import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordCoverDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
+import com.xn.report.config.definition.WordTableColumnDefinition;
 import com.xn.report.config.definition.ExcelDefinition;
 import com.xn.report.config.definition.ExcelTableBinding;
 import com.xn.report.config.definition.ExcelValueBinding;
@@ -121,6 +122,7 @@ public final class ReportDefinitionValidator {
                 definition.getWord(),
                 definition.getReport() != null
                         && hasText(definition.getReport().getWordTemplate()),
+                datasetIds,
                 narrativeIds,
                 chartIds,
                 result);
@@ -2421,6 +2423,7 @@ public final class ReportDefinitionValidator {
     private void validateWord(
             WordDefinition word,
             boolean wordTemplateConfigured,
+            Set<String> datasetIds,
             Set<String> narrativeIds,
             Set<String> chartIds,
             ValidationResult result) {
@@ -2455,7 +2458,8 @@ public final class ReportDefinitionValidator {
         for (int index = 0; index < sections.size(); index++) {
             validateSection(sections.get(index), null, 1,
                     "$.word.sections[" + index + "]",
-                    sectionIds, narrativeIds, chartIds, visited, result);
+                    sectionIds, datasetIds, narrativeIds, chartIds,
+                    visited, result);
         }
     }
 
@@ -2484,6 +2488,7 @@ public final class ReportDefinitionValidator {
             int depth,
             String path,
             Set<String> sectionIds,
+            Set<String> datasetIds,
             Set<String> narrativeIds,
             Set<String> chartIds,
             Set<WordSectionDefinition> visited,
@@ -2530,24 +2535,30 @@ public final class ReportDefinitionValidator {
             result.add("CFG-EMPTY-STRATEGY", path + ".emptyStrategy",
                     "emptyStrategy must be KEEP, SHOW_EMPTY, or SKIP");
         }
+        if (!hasText(section.getEmptyMessage())) {
+            result.add("CFG-EMPTY-MESSAGE", path + ".emptyMessage",
+                    "Word section emptyMessage must not be blank");
+        }
 
         List<WordComponentDefinition> components = safeList(section.getComponents());
         for (int index = 0; index < components.size(); index++) {
             validateComponent(components.get(index),
                     path + ".components[" + index + "]",
-                    narrativeIds, chartIds, result);
+                    datasetIds, narrativeIds, chartIds, result);
         }
         List<WordSectionDefinition> children = safeList(section.getChildren());
         for (int index = 0; index < children.size(); index++) {
             validateSection(children.get(index), level, depth + 1,
                     path + ".children[" + index + "]",
-                    sectionIds, narrativeIds, chartIds, visited, result);
+                    sectionIds, datasetIds, narrativeIds, chartIds,
+                    visited, result);
         }
     }
 
     private void validateComponent(
             WordComponentDefinition component,
             String path,
+            Set<String> datasetIds,
             Set<String> narrativeIds,
             Set<String> chartIds,
             ValidationResult result) {
@@ -2576,9 +2587,64 @@ public final class ReportDefinitionValidator {
             result.add("CFG-COMPONENT-REFERENCE", path + ".chartId",
                     "CHART references an unknown chart: "
                             + component.getChartId());
-        } else if ("TABLE".equals(type) && !hasText(component.getTableId())) {
-            result.add("CFG-COMPONENT-REFERENCE", path + ".tableId",
-                    "TABLE requires a non-blank tableId");
+        } else if ("TABLE".equals(type)) {
+            if (hasText(component.getDataset())
+                    && !datasetIds.contains(component.getDataset())) {
+                result.add("CFG-COMPONENT-REFERENCE",
+                        path + ".dataset",
+                        "TABLE references an unknown dataset: "
+                                + component.getDataset());
+            } else if (!hasText(component.getDataset())
+                    && !hasText(component.getTableId())) {
+                result.add("CFG-COMPONENT-REFERENCE", path + ".tableId",
+                        "TABLE requires a dataset or non-blank tableId");
+            }
+            if (!hasText(component.getEmptyMessage())) {
+                result.add("CFG-EMPTY-MESSAGE", path + ".emptyMessage",
+                        "Word table emptyMessage must not be blank");
+            }
+            List<WordTableColumnDefinition> columns =
+                    safeList(component.getColumns());
+            for (int index = 0; index < columns.size(); index++) {
+                WordTableColumnDefinition column = columns.get(index);
+                String columnPath = path + ".columns[" + index + "]";
+                if (column == null) {
+                    result.add("CFG-WORD-TABLE-COLUMN", columnPath,
+                            "Word table column must not be null");
+                    continue;
+                }
+                if (!hasText(column.getField())) {
+                    result.add("CFG-WORD-TABLE-COLUMN",
+                            columnPath + ".field",
+                            "Word table column field is required");
+                }
+                if (column.getWidthDxa() != null
+                        && column.getWidthDxa().intValue() <= 0) {
+                    result.add("CFG-WORD-TABLE-COLUMN",
+                            columnPath + ".widthDxa",
+                            "Word table column widthDxa must be positive");
+                }
+            }
+        }
+        if ("CHART".equals(type) && component.getWidthInches() != null
+                && component.getWidthInches().doubleValue() <= 0.0d) {
+            result.add("CFG-WORD-IMAGE-WIDTH", path + ".widthInches",
+                    "Word chart widthInches must be positive");
+        }
+        if ("ATTACHMENT".equals(type)
+                && !hasText(component.getText())
+                && !hasText(component.getTitle())
+                && !hasText(component.getDescription())
+                && safeList(component.getItems()).isEmpty()) {
+            result.add("CFG-COMPONENT-REFERENCE", path,
+                    "ATTACHMENT requires a title, description, or item");
+        }
+        for (int index = 0; index < safeList(component.getItems()).size(); index++) {
+            if (!hasText(component.getItems().get(index))) {
+                result.add("CFG-COMPONENT-REFERENCE",
+                        path + ".items[" + index + "]",
+                        "Attachment item must not be blank");
+            }
         }
     }
 

@@ -2057,6 +2057,11 @@
             "SKIP"
           ]
         },
+        "emptyMessage": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
+        },
         "components": {
           "type": "array",
           "items": {
@@ -2102,6 +2107,70 @@
         },
         "tableId": {
           "type": "string"
+        },
+        "dataset": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/wordTableColumn"
+          }
+        },
+        "emptyMessage": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
+        },
+        "widthInches": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "caption": {
+          "type": "string"
+        },
+        "altText": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?=.*\\S).+$"
+          }
+        }
+      }
+    },
+    "wordTableColumn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field"
+      ],
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
+        },
+        "header": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "widthDxa": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },

@@ -1,0 +1,85 @@
+package com.xn.report.word;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.xn.report.dataset.DatasetResult;
+import com.xn.report.support.TestFixtures;
+import java.util.Collections;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.junit.jupiter.api.Test;
+
+class WordTableWriterTest {
+
+    private final WordTableWriter writer = new WordTableWriter();
+
+    @Test
+    void clonesPrototypeRowForEveryListRowAndPreservesHeader() throws Exception {
+        try (XWPFDocument document = ReportTemplateFixtureBuilder.build()) {
+            XWPFTable table = document.getTables().get(0);
+            DatasetResult dataset = TestFixtures.people(
+                    TestFixtures.row("personName", "张三",
+                            "centerName", "开发一中心", "avgHours", 12.345),
+                    TestFixtures.row("personName", "李四",
+                            "centerName", "开发二中心", "avgHours", 8));
+
+            int rows = writer.bindPrototype(table, dataset, "暂无数据");
+
+            assertThat(rows).isEqualTo(2);
+            assertThat(table.getNumberOfRows()).isEqualTo(3);
+            assertThat(table.getRow(0).getCell(0).getText()).isEqualTo("姓名");
+            assertThat(table.getRow(1).getCell(0).getText()).isEqualTo("张三");
+            assertThat(table.getRow(1).getCell(2).getText()).isEqualTo("12.35");
+            assertThat(table.getRow(2).getCell(0).getText()).isEqualTo("李四");
+        }
+    }
+
+    @Test
+    void replacesPrototypeWithConfiguredMessageForEmptyDataset() throws Exception {
+        try (XWPFDocument document = ReportTemplateFixtureBuilder.build()) {
+            XWPFTable table = document.getTables().get(0);
+            DatasetResult empty = DatasetResult.list(
+                    "people", Collections.emptyList());
+
+            int rows = writer.bindPrototype(table, empty, "暂无明细");
+
+            assertThat(rows).isZero();
+            assertThat(table.getNumberOfRows()).isEqualTo(2);
+            assertThat(table.getRow(1).getCell(0).getText()).isEqualTo("暂无明细");
+            assertThat(table.getRow(1).getCell(1).getText()).isEmpty();
+        }
+    }
+
+    @Test
+    void writesGeneratedTablesForSingleAndScalarDatasets() throws Exception {
+        try (XWPFDocument document = new XWPFDocument()) {
+            XWPFTable singleTable = document.createTable();
+            writer.fillGenerated(
+                    singleTable,
+                    DatasetResult.single("summary", Collections.singletonList(
+                            TestFixtures.row("name", "开发中心", "hours", 12.345))),
+                    Collections.emptyList(),
+                    "暂无数据");
+
+            XWPFTable scalarTable = document.createTable();
+            writer.fillGenerated(
+                    scalarTable,
+                    DatasetResult.scalar("count", Collections.singletonList(
+                            TestFixtures.row("count", 7))),
+                    Collections.emptyList(),
+                    "暂无数据");
+
+            assertThat(singleTable.getNumberOfRows()).isEqualTo(2);
+            assertThat(singleTable.getRow(1).getTableCells())
+                    .extracting(cell -> cell.getText())
+                    .containsExactly("开发中心", "12.345");
+            assertThat(scalarTable.getNumberOfRows()).isEqualTo(2);
+            assertThat(scalarTable.getRow(0).getCell(0).getText())
+                    .isEqualTo("count");
+            assertThat(scalarTable.getRow(1).getCell(0).getText())
+                    .isEqualTo("7");
+            assertThat(singleTable.getRow(0).getCtRow().getTrPr()
+                    .sizeOfTblHeaderArray()).isEqualTo(1);
+        }
+    }
+}

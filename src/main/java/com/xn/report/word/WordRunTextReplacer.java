@@ -58,6 +58,26 @@ public final class WordRunTextReplacer {
                 token, replacement == null ? "" : replacement));
     }
 
+    public int replaceInBody(IBody body, Map<String, String> replacements) {
+        if (body == null) {
+            throw new IllegalArgumentException("Word body is required");
+        }
+        if (replacements == null || replacements.isEmpty()) {
+            return 0;
+        }
+        List<Map.Entry<String, String>> entries =
+                new ArrayList<Map.Entry<String, String>>(replacements.entrySet());
+        Collections.sort(entries, new Comparator<Map.Entry<String, String>>() {
+            @Override
+            public int compare(
+                    Map.Entry<String, String> left,
+                    Map.Entry<String, String> right) {
+                return Integer.compare(right.getKey().length(), left.getKey().length());
+            }
+        });
+        return replaceBody(body, entries);
+    }
+
     public int count(XWPFDocument document, String token) {
         if (document == null) {
             throw new IllegalArgumentException("Word document is required");

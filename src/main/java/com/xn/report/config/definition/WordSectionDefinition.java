@@ -9,6 +9,7 @@ public class WordSectionDefinition {
     private String title;
     private int level;
     private String emptyStrategy;
+    private String emptyMessage = "暂无数据";
     private List<WordComponentDefinition> components =
             new ArrayList<WordComponentDefinition>();
     private List<WordSectionDefinition> children = new ArrayList<WordSectionDefinition>();
@@ -43,6 +44,14 @@ public class WordSectionDefinition {
 
     public void setEmptyStrategy(String emptyStrategy) {
         this.emptyStrategy = emptyStrategy;
+    }
+
+    public String getEmptyMessage() {
+        return emptyMessage;
+    }
+
+    public void setEmptyMessage(String emptyMessage) {
+        this.emptyMessage = emptyMessage;
     }
 
     public List<WordComponentDefinition> getComponents() {

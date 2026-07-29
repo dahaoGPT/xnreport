@@ -28,6 +28,11 @@ class WordTemplateLoaderTest {
                     .anyMatch(paragraph -> paragraph.getText()
                             .contains("{{chart:centerEventChart}}"));
             assertThat(loaded.getTables()).isNotEmpty();
+            assertThat(loaded.getDocument().getBody().isSetSectPr()).isTrue();
+            assertThat(loaded.getDocument().getBody().getSectPr().isSetPgSz())
+                    .isTrue();
+            assertThat(loaded.getDocument().getBody().getSectPr().isSetPgMar())
+                    .isTrue();
         }
     }
 

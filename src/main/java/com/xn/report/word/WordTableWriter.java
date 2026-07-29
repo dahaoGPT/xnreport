@@ -18,6 +18,7 @@ import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTOnOff;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRow;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrPr;
 
 public final class WordTableWriter {
@@ -56,10 +57,8 @@ public final class WordTableWriter {
             if (index == 0) {
                 target = prototype;
             } else {
-                CTRow rowCopy = CTRow.Factory.newInstance();
-                rowCopy.set(prototypeCopy);
-                target = new XWPFTableRow(rowCopy, table);
-                table.addRow(target, prototypeIndex + index);
+                target = cloneAttachedRow(
+                        table, prototypeCopy, prototypeIndex + index);
             }
             bindRow(target, rows.get(index));
         }
@@ -118,6 +117,28 @@ public final class WordTableWriter {
             }
             replacer.replaceInBody(cell, values);
         }
+    }
+
+    private static XWPFTableRow cloneAttachedRow(
+            XWPFTable table, CTRow prototype, int index) {
+        XWPFTableRow target = table.insertNewTableRow(index);
+        if (target == null) {
+            throw new WordTemplateException(
+                    "Unable to insert cloned Word table row at " + index);
+        }
+        if (prototype.isSetTrPr()) {
+            CTTrPr properties = target.getCtRow().addNewTrPr();
+            properties.set(prototype.getTrPr());
+        }
+        for (CTTc cell : prototype.getTcList()) {
+            XWPFTableCell added = target.addNewTableCell();
+            added.getCTTc().set(cell);
+            XWPFTableCell refreshed = new XWPFTableCell(
+                    added.getCTTc(), target, table.getBody());
+            target.getTableCells().set(
+                    target.getTableCells().size() - 1, refreshed);
+        }
+        return target;
     }
 
     private int findPrototype(XWPFTable table) {

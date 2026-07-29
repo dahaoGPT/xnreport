@@ -18,6 +18,9 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFonts;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTHpsMeasure;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPPrGeneral;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageSz;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSpacing;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTStyle;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STStyleType;
@@ -45,6 +48,7 @@ public final class ReportTemplateFixtureBuilder {
     static XWPFDocument build() {
         XWPFDocument document = new XWPFDocument();
         createStyles(document);
+        createPageSettings(document);
 
         XWPFParagraph title = document.createParagraph();
         title.setAlignment(ParagraphAlignment.CENTER);
@@ -98,6 +102,21 @@ public final class ReportTemplateFixtureBuilder {
 
         centered(document, "页眉页脚与模板样式保留标记", 9);
         return document;
+    }
+
+    private static void createPageSettings(XWPFDocument document) {
+        CTSectPr section = document.getDocument().getBody().addNewSectPr();
+        CTPageSz page = section.addNewPgSz();
+        page.setW(BigInteger.valueOf(11906L));
+        page.setH(BigInteger.valueOf(16838L));
+        CTPageMar margins = section.addNewPgMar();
+        margins.setTop(BigInteger.valueOf(1440L));
+        margins.setRight(BigInteger.valueOf(1440L));
+        margins.setBottom(BigInteger.valueOf(1440L));
+        margins.setLeft(BigInteger.valueOf(1440L));
+        margins.setHeader(BigInteger.valueOf(720L));
+        margins.setFooter(BigInteger.valueOf(720L));
+        margins.setGutter(BigInteger.ZERO);
     }
 
     private static void createStyles(XWPFDocument document) {

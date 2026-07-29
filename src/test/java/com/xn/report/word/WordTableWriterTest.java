@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.support.TestFixtures;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.Collections;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
@@ -31,6 +33,32 @@ class WordTableWriterTest {
             assertThat(table.getRow(1).getCell(0).getText()).isEqualTo("张三");
             assertThat(table.getRow(1).getCell(2).getText()).isEqualTo("12.35");
             assertThat(table.getRow(2).getCell(0).getText()).isEqualTo("李四");
+        }
+    }
+
+    @Test
+    void persistsEveryClonedPrototypeReplacementAfterSerialization()
+            throws Exception {
+        try (XWPFDocument document = ReportTemplateFixtureBuilder.build()) {
+            XWPFTable table = document.getTables().get(0);
+            DatasetResult dataset = TestFixtures.people(
+                    TestFixtures.row("personName", "张三",
+                            "centerName", "开发一中心", "avgHours", 12.3),
+                    TestFixtures.row("personName", "李四",
+                            "centerName", "开发二中心", "avgHours", 8),
+                    TestFixtures.row("personName", "王五",
+                            "centerName", "研发中心", "avgHours", 23.6));
+
+            writer.bindPrototype(table, dataset, "暂无数据");
+
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            document.write(bytes);
+            try (XWPFDocument reopened = new XWPFDocument(
+                    new ByteArrayInputStream(bytes.toByteArray()))) {
+                assertThat(reopened.getTables().get(0).getText())
+                        .contains("张三", "李四", "王五")
+                        .doesNotContain("{{row:");
+            }
         }
     }
 

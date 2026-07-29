@@ -9,7 +9,13 @@ import java.util.List;
 import java.util.regex.Pattern;
 import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.IBody;
+import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableCell;
+import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 
 public final class WordOutputValidator {
 
@@ -48,7 +54,7 @@ public final class WordOutputValidator {
                 }
             }
             validateHeadingOrder(document, expectedHeadings);
-            if (document.getAllPictures().size() != expectedPictures) {
+            if (pictureOccurrences(document) != expectedPictures) {
                 throw new WordTemplateException(
                         "Word picture count does not match expected count");
             }
@@ -60,6 +66,24 @@ public final class WordOutputValidator {
             throw new WordTemplateException(
                     "Unable to reopen Word output " + output, ex);
         }
+    }
+
+    private static int pictureOccurrences(IBody body) {
+        int pictures = 0;
+        for (IBodyElement element : body.getBodyElements()) {
+            if (element instanceof XWPFParagraph) {
+                for (XWPFRun run : ((XWPFParagraph) element).getRuns()) {
+                    pictures += run.getEmbeddedPictures().size();
+                }
+            } else if (element instanceof XWPFTable) {
+                for (XWPFTableRow row : ((XWPFTable) element).getRows()) {
+                    for (XWPFTableCell cell : row.getTableCells()) {
+                        pictures += pictureOccurrences(cell);
+                    }
+                }
+            }
+        }
+        return pictures;
     }
 
     private static void validateStyles(XWPFDocument document) {

@@ -38,6 +38,7 @@ public class NarrativeDefinition {
     private Map<String, Object> parameters = new LinkedHashMap<String, Object>();
     private DistributionDefinition distribution = new DistributionDefinition();
     private TrendDefinition trend;
+    private PolicyDefinition policies = new PolicyDefinition();
     @JsonIgnore
     private final Set<String> presentProperties = new LinkedHashSet<String>();
 
@@ -156,6 +157,15 @@ public class NarrativeDefinition {
     public void setTrend(TrendDefinition trend) {
         mark("trend");
         this.trend = trend;
+    }
+
+    public PolicyDefinition getPolicies() {
+        return policies;
+    }
+
+    public void setPolicies(PolicyDefinition policies) {
+        mark("policies");
+        this.policies = policies == null ? new PolicyDefinition() : policies;
     }
 
     @JsonIgnore

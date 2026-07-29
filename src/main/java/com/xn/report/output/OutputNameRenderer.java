@@ -15,6 +15,9 @@ public final class OutputNameRenderer {
             Pattern.compile("[<>:\"|?*\\p{Cntrl}]");
     private static final Pattern TRAILING_SPACE_OR_DOT =
             Pattern.compile("[ .]+$");
+    private static final Pattern WINDOWS_RESERVED =
+            Pattern.compile(
+                    "(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\.|$)");
     private final int maxLength;
 
     public OutputNameRenderer() {
@@ -47,6 +50,9 @@ public final class OutputNameRenderer {
         matcher.appendTail(rendered);
 
         String value = rendered.toString();
+        if (value.contains("${")) {
+            throw invalid("unresolved output name placeholder remains after rendering");
+        }
         rejectPathSyntax(value);
         String extension = extension(value);
         if (!".xlsx".equalsIgnoreCase(extension)
@@ -58,6 +64,9 @@ public final class OutputNameRenderer {
         base = TRAILING_SPACE_OR_DOT.matcher(base).replaceAll("");
         if (base.isEmpty()) {
             throw invalid("output file name is empty after sanitization");
+        }
+        if (WINDOWS_RESERVED.matcher(base).find()) {
+            base = "_" + base;
         }
         int allowedBaseLength = maxLength - extension.length();
         if (base.length() > allowedBaseLength) {

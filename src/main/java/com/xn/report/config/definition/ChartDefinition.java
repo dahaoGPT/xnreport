@@ -58,6 +58,7 @@ public class ChartDefinition {
     private ChartEmptyDataPolicy emptyDataPolicy =
             ChartEmptyDataPolicy.OUTPUT_MESSAGE;
     private String emptyMessage = "暂无图表数据";
+    private PolicyDefinition policies = new PolicyDefinition();
     @JsonIgnore
     private final Set<String> presentProperties = new LinkedHashSet<String>();
 
@@ -321,6 +322,15 @@ public class ChartDefinition {
     public void setEmptyMessage(String emptyMessage) {
         mark("emptyMessage");
         this.emptyMessage = emptyMessage;
+    }
+
+    public PolicyDefinition getPolicies() {
+        return policies;
+    }
+
+    public void setPolicies(PolicyDefinition policies) {
+        mark("policies");
+        this.policies = policies == null ? new PolicyDefinition() : policies;
     }
 
     @JsonIgnore

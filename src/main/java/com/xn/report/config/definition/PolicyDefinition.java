@@ -19,10 +19,6 @@ public class PolicyDefinition {
         return emptyData;
     }
 
-    public EmptyDataPolicy getEmptyDataPolicy() {
-        return emptyData;
-    }
-
     public void setEmptyData(EmptyDataPolicy emptyData) {
         this.emptyData = emptyData;
     }
@@ -39,10 +35,6 @@ public class PolicyDefinition {
         return missingField;
     }
 
-    public MissingFieldPolicy getMissingFieldPolicy() {
-        return missingField;
-    }
-
     public void setMissingField(MissingFieldPolicy missingField) {
         this.missingField = missingField;
     }
@@ -51,19 +43,11 @@ public class PolicyDefinition {
         return typeMismatch;
     }
 
-    public TypeMismatchPolicy getTypeMismatchPolicy() {
-        return typeMismatch;
-    }
-
     public void setTypeMismatch(TypeMismatchPolicy typeMismatch) {
         this.typeMismatch = typeMismatch;
     }
 
     public NullValuePolicy getNullValue() {
-        return nullValue;
-    }
-
-    public NullValuePolicy getNullValuePolicy() {
         return nullValue;
     }
 

@@ -4,6 +4,10 @@ import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.FieldDefinition;
 import com.xn.report.error.ReportErrorCode;
 import com.xn.report.error.ReportException;
+import com.xn.report.config.definition.PolicyDefinition;
+import com.xn.report.policy.EmptyDataPolicy;
+import com.xn.report.policy.PolicyExecutionBridge;
+import com.xn.report.policy.PolicyResolver;
 import com.xn.report.sql.SqlQueryResult;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -20,6 +24,23 @@ import java.util.Objects;
 public final class DatasetResultValidator {
 
     private static final Map<String, Class<?>> FIELD_TYPES = fieldTypes();
+    private final PolicyExecutionBridge policyBridge;
+    private final PolicyDefinition reportPolicies;
+
+    public DatasetResultValidator() {
+        this(
+                new PolicyExecutionBridge(new PolicyResolver(
+                        PolicyDefinition.systemDefaults())),
+                PolicyDefinition.systemDefaults());
+    }
+
+    public DatasetResultValidator(
+            PolicyExecutionBridge policyBridge,
+            PolicyDefinition reportPolicies) {
+        this.policyBridge = Objects.requireNonNull(policyBridge, "policyBridge");
+        this.reportPolicies = reportPolicies == null
+                ? PolicyDefinition.systemDefaults() : reportPolicies;
+    }
 
     public DatasetResult validate(
             DatasetDefinition definition, List<DatasetRow> sourceRows) {
@@ -49,6 +70,22 @@ public final class DatasetResultValidator {
         List<DatasetRow> rows = copyRows(datasetId, queryResult.rows());
         DatasetSchema schema = queryResult.schema();
 
+        if (rows.isEmpty()) {
+            EmptyDataPolicy emptyData = policyBridge.onEmptyData(
+                    null,
+                    null,
+                    definition.getPolicies(),
+                    reportPolicies,
+                    "dataset",
+                    datasetId,
+                    "dataset returned no rows");
+            if (emptyData == EmptyDataPolicy.FAIL) {
+                throw error(
+                        ReportErrorCode.DATA_001,
+                        datasetId,
+                        "Dataset " + datasetId + " returned no rows");
+            }
+        }
         validateShape(datasetId, resultType, schema, rows);
         validateFields(
                 datasetId,

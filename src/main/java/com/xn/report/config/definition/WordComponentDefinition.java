@@ -21,6 +21,7 @@ public class WordComponentDefinition {
     private String title;
     private String description;
     private List<String> items = new ArrayList<String>();
+    private PolicyDefinition policies = new PolicyDefinition();
 
     public String getType() {
         return type;
@@ -141,5 +142,13 @@ public class WordComponentDefinition {
 
     public void setItems(List<String> items) {
         this.items = items == null ? new ArrayList<String>() : items;
+    }
+
+    public PolicyDefinition getPolicies() {
+        return policies;
+    }
+
+    public void setPolicies(PolicyDefinition policies) {
+        this.policies = policies == null ? new PolicyDefinition() : policies;
     }
 }

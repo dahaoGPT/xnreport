@@ -554,6 +554,7 @@ public final class ReportDefinitionValidator {
         if ("dpi".equals(property)) return chart.getDpi();
         if ("emptyDataPolicy".equals(property)) return chart.getEmptyDataPolicy();
         if ("emptyMessage".equals(property)) return chart.getEmptyMessage();
+        if ("policies".equals(property)) return chart.getPolicies();
         return null;
     }
 

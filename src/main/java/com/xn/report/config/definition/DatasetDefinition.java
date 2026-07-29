@@ -22,6 +22,7 @@ public class DatasetDefinition {
             new ArrayList<TransformDefinition>();
     private Integer timeoutSeconds;
     private Integer maxRows;
+    private PolicyDefinition policies = new PolicyDefinition();
 
     public String getId() {
         return id;
@@ -112,5 +113,13 @@ public class DatasetDefinition {
 
     public void setMaxRows(Integer maxRows) {
         this.maxRows = maxRows;
+    }
+
+    public PolicyDefinition getPolicies() {
+        return policies;
+    }
+
+    public void setPolicies(PolicyDefinition policies) {
+        this.policies = policies == null ? new PolicyDefinition() : policies;
     }
 }

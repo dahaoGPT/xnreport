@@ -26,8 +26,8 @@ public final class PolicyResolver {
             PolicyDefinition report) {
         for (PolicyDefinition scope : scopes(
                 component, rule, dataset, report, systemDefaults)) {
-            if (scope != null && scope.getEmptyDataPolicy() != null) {
-                return scope.getEmptyDataPolicy();
+            if (scope != null && scope.getEmptyData() != null) {
+                return scope.getEmptyData();
             }
         }
         return EmptyDataPolicy.OUTPUT_MESSAGE;
@@ -40,8 +40,8 @@ public final class PolicyResolver {
             PolicyDefinition report) {
         for (PolicyDefinition scope : scopes(
                 component, rule, dataset, report, systemDefaults)) {
-            if (scope != null && scope.getMissingFieldPolicy() != null) {
-                return scope.getMissingFieldPolicy();
+            if (scope != null && scope.getMissingField() != null) {
+                return scope.getMissingField();
             }
         }
         return MissingFieldPolicy.FAIL;
@@ -54,8 +54,8 @@ public final class PolicyResolver {
             PolicyDefinition report) {
         for (PolicyDefinition scope : scopes(
                 component, rule, dataset, report, systemDefaults)) {
-            if (scope != null && scope.getTypeMismatchPolicy() != null) {
-                return scope.getTypeMismatchPolicy();
+            if (scope != null && scope.getTypeMismatch() != null) {
+                return scope.getTypeMismatch();
             }
         }
         return TypeMismatchPolicy.FAIL;
@@ -68,8 +68,8 @@ public final class PolicyResolver {
             PolicyDefinition report) {
         for (PolicyDefinition scope : scopes(
                 component, rule, dataset, report, systemDefaults)) {
-            if (scope != null && scope.getNullValuePolicy() != null) {
-                return scope.getNullValuePolicy();
+            if (scope != null && scope.getNullValue() != null) {
+                return scope.getNullValue();
             }
         }
         return NullValuePolicy.RULE_NOT_MATCHED;

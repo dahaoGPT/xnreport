@@ -46,4 +46,28 @@ class OutputNameRendererTest {
                 .isInstanceOf(ReportException.class)
                 .hasMessageContaining("extension");
     }
+
+    @Test
+    void rejectsPlaceholderFragmentsIntroducedByVariableValues() {
+        Map<String, Object> values = new HashMap<String, Object>();
+        values.put("period", "${injected}");
+
+        assertThatThrownBy(() -> renderer.render("report_${period}.xlsx", values))
+                .isInstanceOf(ReportException.class)
+                .hasMessageContaining("placeholder");
+        values.put("period", "${");
+        assertThatThrownBy(() -> renderer.render("report_${period}.xlsx", values))
+                .isInstanceOf(ReportException.class)
+                .hasMessageContaining("placeholder");
+    }
+
+    @Test
+    void rewritesWindowsReservedDeviceNames() {
+        assertThat(renderer.render("CON.xlsx", Collections.emptyMap()))
+                .isEqualTo("_CON.xlsx");
+        assertThat(renderer.render("lpt9.docx", Collections.emptyMap()))
+                .isEqualTo("_lpt9.docx");
+        assertThat(renderer.render("COM1.report.xlsx", Collections.emptyMap()))
+                .isEqualTo("_COM1.report.xlsx");
+    }
 }

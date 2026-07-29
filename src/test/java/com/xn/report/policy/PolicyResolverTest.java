@@ -71,4 +71,27 @@ class PolicyResolverTest {
         assertThat(warnings).extracting(ReportWarning::getScopeId)
                 .containsExactly("monthly", "chart-1");
     }
+
+    @Test
+    void executionBridgeResolvesAndRecordsAnAppliedDecisionAtomically() {
+        List<ReportWarning> warnings = new ArrayList<ReportWarning>();
+        PolicyExecutionBridge bridge = new PolicyExecutionBridge(
+                new PolicyResolver(
+                        PolicyDefinition.systemDefaults(), warnings::add));
+        PolicyDefinition dataset = new PolicyDefinition();
+        dataset.setEmptyData(EmptyDataPolicy.SKIP);
+
+        EmptyDataPolicy selected = bridge.onEmptyData(
+                null,
+                null,
+                dataset,
+                PolicyDefinition.systemDefaults(),
+                "dataset",
+                "monthly",
+                "empty result skipped");
+
+        assertThat(selected).isEqualTo(EmptyDataPolicy.SKIP);
+        assertThat(warnings).extracting(ReportWarning::getAction)
+                .containsExactly("SKIP");
+    }
 }

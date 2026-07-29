@@ -15,6 +15,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -73,6 +75,23 @@ class OutputPublisherTest {
         assertThat(result.getExcel()).isEqualTo(oldExcel);
         assertThat(read(oldExcel)).isEqualTo("new-x");
         assertThat(read(oldWord)).isEqualTo("new-w");
+    }
+
+    @Test
+    void coordinationLockDoesNotPollutePublishedOutputDirectory() throws Exception {
+        Path output = Files.createDirectory(temp.resolve("clean-output"));
+
+        new OutputPublisher(output).publish(
+                source("clean.xlsx", "x"),
+                source("clean.docx", "w"),
+                new OutputTargets(
+                        output.resolve("report.xlsx"),
+                        output.resolve("report.docx")));
+
+        try (java.util.stream.Stream<Path> paths = Files.list(output)) {
+            assertThat(paths.map(path -> path.getFileName().toString()))
+                    .containsExactlyInAnyOrder("report.xlsx", "report.docx");
+        }
     }
 
     @Test
@@ -178,6 +197,128 @@ class OutputPublisherTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void backupCleanupFailureDoesNotRollbackCommittedNewPair() throws Exception {
+        Path output = Files.createDirectory(temp.resolve("cleanup-output"));
+        Path oldExcel = Files.write(output.resolve("report.xlsx"), bytes("old-x"));
+        Path oldWord = Files.write(output.resolve("report.docx"), bytes("old-w"));
+        OutputPublisher.DeleteStrategy failingBackupCleanup = path -> {
+            if (path.getFileName().toString().contains(".backup-")) {
+                throw new IOException("cannot delete " + path);
+            }
+            return Files.deleteIfExists(path);
+        };
+        OutputPublisher publisher = new OutputPublisher(
+                output,
+                CollisionPolicy.OVERWRITE,
+                OutputPublisher::defaultMove,
+                failingBackupCleanup);
+
+        assertThatThrownBy(() -> publisher.publish(
+                source("cleanup.xlsx", "new-x"),
+                source("cleanup.docx", "new-w"),
+                new OutputTargets(oldExcel, oldWord)))
+                .isInstanceOf(ReportException.class)
+                .hasMessageContaining("already committed")
+                .hasMessageContaining(".backup-");
+        assertThat(read(oldExcel)).isEqualTo("new-x");
+        assertThat(read(oldWord)).isEqualTo("new-w");
+        try (java.util.stream.Stream<Path> paths = Files.list(output)) {
+            assertThat(paths
+                    .filter(path -> path.getFileName().toString()
+                            .contains(".backup-"))
+                    .count()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void restoreFailureRetainsBackupAndReportsItsPath() throws Exception {
+        Path output = Files.createDirectory(temp.resolve("restore-failure-output"));
+        Path oldExcel = Files.write(output.resolve("report.xlsx"), bytes("old-x"));
+        Path oldWord = Files.write(output.resolve("report.docx"), bytes("old-w"));
+        AtomicInteger finalMoves = new AtomicInteger();
+        OutputPublisher.MoveStrategy failingFinalAndRestore =
+                (source, target, options) -> {
+                    String sourceName = source.getFileName().toString();
+                    String targetName = target.getFileName().toString();
+                    if (sourceName.contains(".backup-")) {
+                        throw new IOException("cannot restore " + source);
+                    }
+                    if (!targetName.contains(".backup-")
+                            && finalMoves.incrementAndGet() == 2) {
+                        throw new IOException("second final move failed");
+                    }
+                    return Files.move(source, target, options);
+                };
+
+        assertThatThrownBy(() -> new OutputPublisher(
+                output, CollisionPolicy.OVERWRITE, failingFinalAndRestore).publish(
+                source("restore-failure.xlsx", "new-x"),
+                source("restore-failure.docx", "new-w"),
+                new OutputTargets(oldExcel, oldWord)))
+                .isInstanceOf(ReportException.class)
+                .hasMessageContaining("backup")
+                .hasMessageContaining(output.toString());
+        try (java.util.stream.Stream<Path> paths = Files.list(output)) {
+            assertThat(paths
+                    .filter(path -> path.getFileName().toString()
+                            .contains(".backup-"))
+                    .count()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void windowsCaseVariantsShareOneJvmTargetLockAcrossPublishers() throws Exception {
+        Path output = Files.createDirectory(temp.resolve("case-lock-output"));
+        CountDownLatch firstFinalMove = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        OutputPublisher.MoveStrategy blockingFirstMove =
+                (source, target, options) -> {
+                    if (!target.getFileName().toString().contains(".backup-")) {
+                        firstFinalMove.countDown();
+                        try {
+                            releaseFirst.await();
+                        } catch (InterruptedException ex) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException("interrupted", ex);
+                        }
+                    }
+                    return Files.move(source, target, options);
+                };
+        OutputPublisher firstPublisher = new OutputPublisher(
+                output, CollisionPolicy.VERSIONED, blockingFirstMove);
+        OutputPublisher secondPublisher = new OutputPublisher(
+                output, CollisionPolicy.VERSIONED);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<PublishedOutputs> first = executor.submit(() ->
+                    firstPublisher.publish(
+                            source("case1.xlsx", "x1"),
+                            source("case1.docx", "w1"),
+                            new OutputTargets(
+                                    output.resolve("report.xlsx"),
+                                    output.resolve("report.docx"))));
+            firstFinalMove.await();
+            Future<PublishedOutputs> second = executor.submit(() ->
+                    secondPublisher.publish(
+                            source("case2.xlsx", "x2"),
+                            source("case2.docx", "w2"),
+                            new OutputTargets(
+                                    output.resolve("REPORT.xlsx"),
+                                    output.resolve("REPORT.docx"))));
+            Thread.sleep(200L);
+            assertThat(second).isNotDone();
+            releaseFirst.countDown();
+            assertThat(first.get().getExcel()).exists();
+            assertThat(second.get().getExcel()).exists();
+        } finally {
+            releaseFirst.countDown();
+            executor.shutdownNow();
+        }
+        assertThat(OutputPublisher.jvmLockRegistrySize()).isZero();
     }
 
     private Path source(String name, String content) throws IOException {

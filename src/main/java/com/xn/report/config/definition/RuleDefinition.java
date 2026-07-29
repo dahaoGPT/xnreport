@@ -13,6 +13,7 @@ public class RuleDefinition {
     private String dataset;
     private ConditionDefinition condition;
     private ResultDefinition result = new ResultDefinition();
+    private PolicyDefinition policies = new PolicyDefinition();
     @JsonIgnore
     private final Set<String> presentProperties = new LinkedHashSet<String>();
 
@@ -50,6 +51,15 @@ public class RuleDefinition {
     public void setResult(ResultDefinition result) {
         mark("result");
         this.result = result;
+    }
+
+    public PolicyDefinition getPolicies() {
+        return policies;
+    }
+
+    public void setPolicies(PolicyDefinition policies) {
+        mark("policies");
+        this.policies = policies == null ? new PolicyDefinition() : policies;
     }
 
     @JsonIgnore

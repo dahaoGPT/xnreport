@@ -7,6 +7,10 @@ import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.FieldDefinition;
 import com.xn.report.error.ReportErrorCode;
 import com.xn.report.error.ReportException;
+import com.xn.report.policy.EmptyDataPolicy;
+import com.xn.report.policy.PolicyExecutionBridge;
+import com.xn.report.policy.PolicyResolver;
+import com.xn.report.policy.ReportWarning;
 import com.xn.report.sql.SqlQueryResult;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -16,6 +20,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 import org.junit.jupiter.api.Test;
 
 class DatasetResultValidatorTest {
@@ -189,6 +194,26 @@ class DatasetResultValidatorTest {
                         DatasetRow.of("value", new BigDecimal("1.00")))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("MONEY");
+    }
+
+    @Test
+    void appliesDatasetEmptyPolicyThroughWarningBridgeOnRealValidationPath() {
+        List<ReportWarning> warnings = new ArrayList<ReportWarning>();
+        DatasetDefinition definition = definition(DatasetType.LIST);
+        definition.getPolicies().setEmptyData(EmptyDataPolicy.SKIP);
+        DatasetResultValidator policyValidator = new DatasetResultValidator(
+                new PolicyExecutionBridge(new PolicyResolver(
+                        com.xn.report.config.definition.PolicyDefinition
+                                .systemDefaults(),
+                        warnings::add)),
+                com.xn.report.config.definition.PolicyDefinition.systemDefaults());
+
+        DatasetResult result = policyValidator.validate(
+                definition, Collections.<DatasetRow>emptyList());
+
+        assertThat(result.list()).isEmpty();
+        assertThat(warnings).extracting(ReportWarning::getAction)
+                .containsExactly("SKIP");
     }
 
     @SafeVarargs

@@ -351,6 +351,9 @@
         },
         "emptyMessage": {
           "type": "string"
+        },
+        "policies": {
+          "$ref": "#/definitions/policies"
         }
       }
     },
@@ -786,6 +789,9 @@
         "maxRows": {
           "type": "integer",
           "minimum": 1
+        },
+        "policies": {
+          "$ref": "#/definitions/policies"
         }
       }
     },
@@ -1233,6 +1239,9 @@
         },
         "result": {
           "$ref": "#/definitions/ruleResult"
+        },
+        "policies": {
+          "$ref": "#/definitions/policies"
         }
       }
     },
@@ -1546,6 +1555,9 @@
             },
             "parameters": {
               "type": "object"
+            },
+            "policies": {
+              "$ref": "#/definitions/policies"
             }
           }
         },
@@ -1608,6 +1620,9 @@
             },
             "trend": {
               "$ref": "#/definitions/trend"
+            },
+            "policies": {
+              "$ref": "#/definitions/policies"
             }
           }
         },
@@ -1666,6 +1681,9 @@
             },
             "distribution": {
               "$ref": "#/definitions/distribution"
+            },
+            "policies": {
+              "$ref": "#/definitions/policies"
             }
           }
         }
@@ -2217,6 +2235,9 @@
             "minLength": 1,
             "pattern": "^(?=.*\\S).+$"
           }
+        },
+        "policies": {
+          "$ref": "#/definitions/policies"
         }
       }
     },
@@ -2317,25 +2338,53 @@
       "additionalProperties": false,
       "properties": {
         "emptyData": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "SKIP",
+            "USE_DEFAULT",
+            "OUTPUT_MESSAGE",
+            "FAIL"
+          ]
         },
         "emptyMessage": {
           "type": "string"
         },
         "missingField": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "FAIL",
+            "USE_DEFAULT",
+            "WARN_AND_SKIP"
+          ]
         },
         "typeMismatch": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "FAIL",
+            "SAFE_CONVERT",
+            "WARN_AND_SKIP"
+          ]
         },
         "nullValue": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "RULE_NOT_MATCHED",
+            "USE_DEFAULT",
+            "ALLOW",
+            "FAIL"
+          ]
         },
         "emptyCollectionParameter": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "FAIL"
+          ]
         },
         "unresolvedPlaceholder": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "FAIL"
+          ]
         }
       }
     }

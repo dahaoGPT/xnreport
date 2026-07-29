@@ -4,11 +4,7 @@ import java.util.Objects;
 
 public class ReportException extends RuntimeException {
 
-    private final ReportErrorCode errorCode;
-    private final String executionId;
-    private final String stage;
-    private final String reportCode;
-    private final String componentId;
+    private final ReportErrorDetail detail;
 
     public ReportException(ReportErrorCode errorCode, String message) {
         this(errorCode, message, null);
@@ -27,31 +23,45 @@ public class ReportException extends RuntimeException {
             String reportCode,
             String componentId,
             Throwable cause) {
-        super(message, cause);
-        this.errorCode = Objects.requireNonNull(errorCode, "errorCode");
-        this.executionId = executionId;
-        this.stage = stage;
-        this.reportCode = reportCode;
-        this.componentId = componentId;
+        this(new ReportErrorDetail(
+                errorCode,
+                executionId,
+                stage,
+                reportCode,
+                componentId,
+                message), cause);
+    }
+
+    public ReportException(ReportErrorDetail detail) {
+        this(detail, null);
+    }
+
+    public ReportException(ReportErrorDetail detail, Throwable cause) {
+        super(Objects.requireNonNull(detail, "detail").getMessage(), cause);
+        this.detail = detail;
     }
 
     public ReportErrorCode getErrorCode() {
-        return errorCode;
+        return detail.getErrorCode();
     }
 
     public String getExecutionId() {
-        return executionId;
+        return detail.getExecutionId();
     }
 
     public String getStage() {
-        return stage;
+        return detail.getStage();
     }
 
     public String getReportCode() {
-        return reportCode;
+        return detail.getReportCode();
     }
 
     public String getComponentId() {
-        return componentId;
+        return detail.getComponentId();
+    }
+
+    public ReportErrorDetail getDetail() {
+        return detail;
     }
 }

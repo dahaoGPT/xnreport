@@ -2,6 +2,6 @@ target/
 .idea/
 *.iml
 .vscode/
-output/
-temp/
+/output/
+/temp/
 *.log

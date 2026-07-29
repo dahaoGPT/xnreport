@@ -8,8 +8,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 import javax.xml.parsers.DocumentBuilderFactory;
+import org.apache.poi.xwpf.usermodel.XWPFComment;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFEndnote;
 import org.apache.poi.xwpf.usermodel.XWPFFooter;
+import org.apache.poi.xwpf.usermodel.XWPFFootnote;
 import org.apache.poi.xwpf.usermodel.XWPFHeader;
 import org.apache.xmlbeans.XmlObject;
 import org.xml.sax.InputSource;
@@ -28,6 +31,9 @@ final class WordPackageTextScanner {
         }
         for (XWPFFooter footer : uniqueFooters(document)) {
             count += count(footer._getHdrFtr(), token);
+        }
+        for (XmlObject story : additionalStories(document)) {
+            count += count(story, token);
         }
         return count;
     }
@@ -52,7 +58,34 @@ final class WordPackageTextScanner {
         for (XWPFFooter footer : uniqueFooters(document)) {
             paragraphs(footer._getHdrFtr(), values);
         }
+        for (XmlObject story : additionalStories(document)) {
+            paragraphs(story, values);
+        }
         return values;
+    }
+
+    private static List<XmlObject> additionalStories(
+            XWPFDocument document) {
+        List<XmlObject> stories = new ArrayList<XmlObject>();
+        List<XWPFFootnote> footnotes = document.getFootnotes();
+        if (footnotes != null) {
+            for (XWPFFootnote footnote : footnotes) {
+                stories.add(footnote.getCTFtnEdn());
+            }
+        }
+        List<XWPFEndnote> endnotes = document.getEndnotes();
+        if (endnotes != null) {
+            for (XWPFEndnote endnote : endnotes) {
+                stories.add(endnote.getCTFtnEdn());
+            }
+        }
+        XWPFComment[] comments = document.getComments();
+        if (comments != null) {
+            for (XWPFComment comment : comments) {
+                stories.add(comment.getCtComment());
+            }
+        }
+        return stories;
     }
 
     private static int count(XmlObject root, String token) {

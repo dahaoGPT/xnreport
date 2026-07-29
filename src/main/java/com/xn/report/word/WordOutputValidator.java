@@ -50,7 +50,8 @@ public final class WordOutputValidator {
             validateCoverStructure(
                     document, expectation.getCoverValues());
             validateExactHeadings(document, expectation.getHeadings());
-            validateTables(document, expectation.getTables());
+            validateTables(document, expectation.getTables(),
+                    expectation.getHeadings());
             validateAttachmentStructure(
                     document, expectation.getAttachments());
             int pictures = validatePictures(document);
@@ -351,7 +352,8 @@ public final class WordOutputValidator {
         List<XWPFParagraph> actual = new ArrayList<XWPFParagraph>();
         for (XWPFParagraph paragraph : document.getParagraphs()) {
             if (paragraph.getStyle() != null
-                    && paragraph.getStyle().matches("Heading[1-4]")) {
+                    && paragraph.getStyle().matches("Heading[1-4]")
+                    && hasDynamicNumbering(paragraph)) {
                 actual.add(paragraph);
             }
         }
@@ -396,8 +398,10 @@ public final class WordOutputValidator {
 
     private static void validateTables(
             XWPFDocument document,
-            List<WordOutputExpectation.Table> expected) {
-        List<XWPFTable> dynamicTables = dynamicTables(document);
+            List<WordOutputExpectation.Table> expected,
+            List<WordOutputExpectation.Heading> headings) {
+        List<XWPFTable> dynamicTables =
+                dynamicTables(document, headings);
         for (WordOutputExpectation.Table table : expected) {
             if (table.getIndex() >= dynamicTables.size()) {
                 throw new WordTemplateException(
@@ -419,13 +423,20 @@ public final class WordOutputValidator {
         }
     }
 
-    private static List<XWPFTable> dynamicTables(XWPFDocument document) {
+    private static List<XWPFTable> dynamicTables(
+            XWPFDocument document,
+            List<WordOutputExpectation.Heading> headings) {
         List<XWPFTable> values = new ArrayList<XWPFTable>();
+        if (headings.isEmpty()) {
+            return values;
+        }
+        WordOutputExpectation.Heading first = headings.get(0);
         boolean insideDynamicSections = false;
         for (IBodyElement element : document.getBodyElements()) {
             if (element instanceof XWPFParagraph) {
-                String style = ((XWPFParagraph) element).getStyle();
-                if (style != null && style.matches("Heading[1-4]")) {
+                XWPFParagraph paragraph = (XWPFParagraph) element;
+                if (!insideDynamicSections
+                        && matchesDynamicHeading(paragraph, first)) {
                     insideDynamicSections = true;
                 }
             } else if (insideDynamicSections
@@ -434,6 +445,28 @@ public final class WordOutputValidator {
             }
         }
         return values;
+    }
+
+    private static boolean matchesDynamicHeading(
+            XWPFParagraph paragraph,
+            WordOutputExpectation.Heading heading) {
+        if (!("Heading" + heading.getLevel())
+                .equals(paragraph.getStyle())
+                || !heading.getText().equals(paragraph.getText())
+                || !hasDynamicNumbering(paragraph)) {
+            return false;
+        }
+        BigInteger level = paragraph.getCTP().getPPr()
+                .getNumPr().getIlvl().getVal();
+        return BigInteger.valueOf(heading.getLevel() - 1L).equals(level);
+    }
+
+    private static boolean hasDynamicNumbering(
+            XWPFParagraph paragraph) {
+        return paragraph.getCTP().isSetPPr()
+                && paragraph.getCTP().getPPr().isSetNumPr()
+                && paragraph.getCTP().getPPr().getNumPr().isSetNumId()
+                && paragraph.getCTP().getPPr().getNumPr().isSetIlvl();
     }
 
     private static int validatePictures(IBody body) throws IOException {

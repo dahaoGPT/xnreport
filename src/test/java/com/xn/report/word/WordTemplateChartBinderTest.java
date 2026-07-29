@@ -89,6 +89,32 @@ class WordTemplateChartBinderTest {
         }
     }
 
+    @Test
+    void rejectsBodyAndFootnoteDuplicateAfterReopen()
+            throws Exception {
+        Path template = tempDir.resolve("duplicate-footnote.docx");
+        try (XWPFDocument document = new XWPFDocument()) {
+            document.createParagraph().createRun()
+                    .setText("{{chart:approval}}");
+            document.createFootnote().createParagraph().createRun()
+                    .setText("{{chart:approval}}");
+            try (OutputStream stream = Files.newOutputStream(template)) {
+                document.write(stream);
+            }
+        }
+
+        try (InputStream stream = Files.newInputStream(template);
+             XWPFDocument reopened = new XWPFDocument(stream)) {
+            WordComponentDefinition component =
+                    new WordComponentDefinition();
+            component.setChartId("approval");
+            assertThatThrownBy(() -> new WordTemplateChartBinder().bind(
+                    reopened, "approval", chart(), component))
+                    .isInstanceOf(WordTemplateException.class)
+                    .hasMessageContaining("exactly once");
+        }
+    }
+
     private RenderedChart chart() throws Exception {
         Path image = tempDir.resolve("chart.png");
         ImageIO.write(new BufferedImage(

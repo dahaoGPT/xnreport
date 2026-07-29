@@ -88,6 +88,25 @@ class WordOutputValidatorTest {
     }
 
     @Test
+    void rejectsUnresolvedPlaceholderInsideFootnoteAfterReopen()
+            throws Exception {
+        Path output = tempDir.resolve("invalid-footnote.docx");
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            prepareEmptyOutput(document);
+            document.createFootnote().createParagraph().createRun()
+                    .setText("{{value:hiddenFootnote}}");
+            try (OutputStream stream = Files.newOutputStream(output)) {
+                document.write(stream);
+            }
+        }
+
+        assertThatThrownBy(() -> new WordOutputValidator().validate(
+                output, WordOutputExpectation.builder().build()))
+                .isInstanceOf(WordTemplateException.class)
+                .hasMessageContaining("unresolved");
+    }
+
+    @Test
     void validatesCompleteImmutableOutputExpectation() throws Exception {
         Path image = tempDir.resolve("chart.png");
         ImageIO.write(new BufferedImage(
@@ -221,6 +240,67 @@ class WordOutputValidatorTest {
                 .isInstanceOf(WordTemplateException.class)
                 .hasMessageContaining("attachment")
                 .hasMessageContaining("structure");
+    }
+
+    @Test
+    void ignoresCoverHeadingAndFollowingCoverTableWhenLocatingDynamicTables()
+            throws Exception {
+        DatasetResult details = DatasetResult.single(
+                "details", Collections.singletonList(
+                        TestFixtures.row("name", "张三", "hours", 12.5)));
+        Path output = tempDir.resolve("cover-heading-table.docx");
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            org.apache.xmlbeans.XmlObject anchor =
+                    ((org.apache.poi.xwpf.usermodel.XWPFParagraph)
+                            document.getBodyElements().get(0)).getCTP();
+            org.apache.xmlbeans.XmlCursor cursor = anchor.newCursor();
+            try {
+                org.apache.poi.xwpf.usermodel.XWPFParagraph cover =
+                        document.insertNewParagraph(cursor);
+                cover.setStyle("Heading1");
+                cover.createRun().setText("研发效能报告");
+            } finally {
+                cursor.dispose();
+            }
+            cursor = anchor.newCursor();
+            try {
+                org.apache.poi.xwpf.usermodel.XWPFTable coverTable =
+                        document.insertNewTbl(cursor);
+                coverTable.getRow(0).getCell(0)
+                        .setText("封面期间：2026年6月");
+            } finally {
+                cursor.dispose();
+            }
+
+            WordSectionDefinition section =
+                    section("delivery", "交付速率", 1);
+            WordComponentDefinition table = new WordComponentDefinition();
+            table.setType("TABLE");
+            table.setDataset("details");
+            section.setComponents(Collections.singletonList(table));
+            new WordSectionRenderer().render(
+                    document, Collections.singletonList(section),
+                    WordRenderContext.builder()
+                            .datasets(DatasetContext.builder()
+                                    .put(details).build())
+                            .build());
+            new WordTocManager().configure(document, 3, true);
+            try (OutputStream stream = Files.newOutputStream(output)) {
+                document.write(stream);
+            }
+        }
+
+        WordOutputExpectation expectation =
+                WordOutputExpectation.builder()
+                        .tocMaxLevel(3)
+                        .requireUpdateFields(true)
+                        .heading(1, "交付速率")
+                        .table(0, 2,
+                                Arrays.asList(
+                                        "name", "hours", "张三", "12.5"))
+                        .build();
+        assertThatCode(() -> new WordOutputValidator().validate(
+                output, expectation)).doesNotThrowAnyException();
     }
 
     private static WordSectionDefinition section(

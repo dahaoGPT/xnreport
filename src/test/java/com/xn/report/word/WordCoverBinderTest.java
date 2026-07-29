@@ -49,11 +49,11 @@ class WordCoverBinderTest {
 
     private static XWPFDocument coverTemplate() {
         XWPFDocument document = new XWPFDocument();
-        document.createParagraph().createRun().setText("{{reportTitle}}");
-        document.createParagraph().createRun().setText("{{organization}}");
-        document.createParagraph().createRun().setText("{{reportPeriod}}");
-        document.createParagraph().createRun().setText("{{preparedBy}}");
-        document.createParagraph().createRun().setText("{{preparedDate}}");
+        document.createParagraph().createRun().setText("{{cover:title}}");
+        document.createParagraph().createRun().setText("{{cover:organization}}");
+        document.createParagraph().createRun().setText("{{cover:reportPeriod}}");
+        document.createParagraph().createRun().setText("{{cover:preparedBy}}");
+        document.createParagraph().createRun().setText("{{cover:preparedDate}}");
         return document;
     }
 

@@ -7,11 +7,11 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 
 public final class WordCoverBinder {
 
-    public static final String REPORT_TITLE = "{{reportTitle}}";
-    public static final String ORGANIZATION = "{{organization}}";
-    public static final String REPORT_PERIOD = "{{reportPeriod}}";
-    public static final String PREPARED_BY = "{{preparedBy}}";
-    public static final String PREPARED_DATE = "{{preparedDate}}";
+    public static final String REPORT_TITLE = "{{cover:title}}";
+    public static final String ORGANIZATION = "{{cover:organization}}";
+    public static final String REPORT_PERIOD = "{{cover:reportPeriod}}";
+    public static final String PREPARED_BY = "{{cover:preparedBy}}";
+    public static final String PREPARED_DATE = "{{cover:preparedDate}}";
 
     private final WordRunTextReplacer replacer;
 

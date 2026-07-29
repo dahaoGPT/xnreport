@@ -22,14 +22,14 @@ class WordRunTextReplacerTest {
         try (XWPFDocument document = new XWPFDocument()) {
             XWPFParagraph paragraph = document.createParagraph();
             paragraph.createRun().setText("前缀 ");
-            paragraph.createRun().setText("{{report");
+            paragraph.createRun().setText("{{cover:");
             paragraph.getRuns().get(1).setBold(true);
-            paragraph.createRun().setText("Title}}");
+            paragraph.createRun().setText("title}}");
             paragraph.getRuns().get(2).setItalic(true);
             paragraph.createRun().setText(" 后缀");
 
             int count = replacer.replace(
-                    document, "{{reportTitle}}", "研发效能报告");
+                    document, "{{cover:title}}", "研发效能报告");
 
             assertThat(count).isEqualTo(1);
             assertThat(paragraph.getText()).isEqualTo("前缀 研发效能报告 后缀");

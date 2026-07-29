@@ -15,6 +15,7 @@ import com.xn.report.config.definition.TransformDefinition;
 import com.xn.report.config.definition.TransformOperator;
 import com.xn.report.config.definition.TrendDefinition;
 import com.xn.report.config.definition.WordComponentDefinition;
+import com.xn.report.config.definition.WordCoverDefinition;
 import com.xn.report.config.definition.WordDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.config.definition.ExcelDefinition;
@@ -116,7 +117,13 @@ public final class ReportDefinitionValidator {
                         datasetIds,
                         definition.getParameters(),
                         result);
-        validateWord(definition.getWord(), narrativeIds, chartIds, result);
+        validateWord(
+                definition.getWord(),
+                definition.getReport() != null
+                        && hasText(definition.getReport().getWordTemplate()),
+                narrativeIds,
+                chartIds,
+                result);
         return result;
     }
 
@@ -2413,16 +2420,33 @@ public final class ReportDefinitionValidator {
 
     private void validateWord(
             WordDefinition word,
+            boolean wordTemplateConfigured,
             Set<String> narrativeIds,
             Set<String> chartIds,
             ValidationResult result) {
         if (word == null) {
             return;
         }
+        WordCoverDefinition cover = word.getCover();
+        boolean coverStarted = cover != null
+                && (hasText(cover.getTitle())
+                || hasText(cover.getOrganization())
+                || hasText(cover.getReportPeriod())
+                || hasText(cover.getPreparedBy())
+                || hasText(cover.getPreparedDate()));
+        if (wordTemplateConfigured || coverStarted) {
+            validateWordCover(cover, result);
+        }
         if (word.getToc() != null
                 && (word.getToc().getMaxLevel() < 1 || word.getToc().getMaxLevel() > 4)) {
             result.add("CFG-TOC-LEVEL", "$.word.toc.maxLevel",
                     "TOC maxLevel must be between 1 and 4");
+        }
+        if (word.getToc() != null
+                && word.getToc().isEnabled()
+                && !word.getToc().isUpdateOnOpen()) {
+            result.add("CFG-TOC-UPDATE", "$.word.toc.updateOnOpen",
+                    "Enabled TOC must update fields when Word opens the document");
         }
         Set<String> sectionIds = new LinkedHashSet<String>();
         Set<WordSectionDefinition> visited = Collections.newSetFromMap(
@@ -2433,6 +2457,25 @@ public final class ReportDefinitionValidator {
                     "$.word.sections[" + index + "]",
                     sectionIds, narrativeIds, chartIds, visited, result);
         }
+    }
+
+    private void validateWordCover(
+            WordCoverDefinition cover, ValidationResult result) {
+        if (cover == null) {
+            result.add("CFG-WORD-COVER", "$.word.cover",
+                    "Word cover definition is required");
+            return;
+        }
+        requireText(result, cover.getTitle(), "CFG-WORD-COVER",
+                "$.word.cover.title", "Word cover title is required");
+        requireText(result, cover.getOrganization(), "CFG-WORD-COVER",
+                "$.word.cover.organization", "Word cover organization is required");
+        requireText(result, cover.getReportPeriod(), "CFG-WORD-COVER",
+                "$.word.cover.reportPeriod", "Word cover reportPeriod is required");
+        requireText(result, cover.getPreparedBy(), "CFG-WORD-COVER",
+                "$.word.cover.preparedBy", "Word cover preparedBy is required");
+        requireText(result, cover.getPreparedDate(), "CFG-WORD-COVER",
+                "$.word.cover.preparedDate", "Word cover preparedDate is required");
     }
 
     private void validateSection(

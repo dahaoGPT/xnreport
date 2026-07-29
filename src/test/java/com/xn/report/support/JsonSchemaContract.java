@@ -34,7 +34,8 @@ public final class JsonSchemaContract {
                     "x-java-chartDataLabelDefaults",
                     "x-java-chartPointLimits",
                     "x-java-chartExcelMode",
-                    "x-java-chartSeriesPropertyMatrix")));
+                    "x-java-chartSeriesPropertyMatrix",
+                    "x-java-wordTocUpdate")));
 
     private final JsonNode rootSchema;
 
@@ -283,6 +284,13 @@ public final class JsonSchemaContract {
                     || "RADAR".equals(type)) && instance.has("axis")) {
                 errors.add(path + ".axis is unsupported for " + type);
             }
+        }
+        if (schema.path("x-java-wordTocUpdate").asBoolean(false)
+                && instance.path("enabled").asBoolean(false)
+                && (!instance.has("updateOnOpen")
+                || !instance.path("updateOnOpen").asBoolean(false))) {
+            errors.add(path
+                    + ".updateOnOpen must be true when the TOC is enabled");
         }
     }
 

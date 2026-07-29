@@ -1969,27 +1969,45 @@
     "wordCover": {
       "type": "object",
       "additionalProperties": false,
+      "required": [
+        "title",
+        "organization",
+        "reportPeriod",
+        "preparedBy",
+        "preparedDate"
+      ],
       "properties": {
         "title": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
         },
         "organization": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
         },
         "reportPeriod": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
         },
         "preparedBy": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
         },
         "preparedDate": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?=.*\\S).+$"
         }
       }
     },
     "wordToc": {
       "type": "object",
       "additionalProperties": false,
+      "x-java-wordTocUpdate": true,
       "properties": {
         "enabled": {
           "type": "boolean"

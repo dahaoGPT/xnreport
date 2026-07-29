@@ -19,6 +19,19 @@ class WordTemplateLoaderTest {
     Path tempDir;
 
     @Test
+    void loadsRepositoryReportTemplateFixture() throws Exception {
+        Path fixture = java.nio.file.Paths.get(
+                "src/test/resources/fixtures/templates/report-template.docx");
+
+        try (XWPFDocument loaded = new WordTemplateLoader().load(fixture)) {
+            assertThat(loaded.getParagraphs())
+                    .anyMatch(paragraph -> paragraph.getText()
+                            .contains("{{chart:centerEventChart}}"));
+            assertThat(loaded.getTables()).isNotEmpty();
+        }
+    }
+
+    @Test
     void loadsValidTemplateAndPreservesUntouchedContent() throws Exception {
         Path template = tempDir.resolve("template.docx");
         try (XWPFDocument document = validTemplate()) {

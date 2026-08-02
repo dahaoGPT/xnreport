@@ -77,6 +77,36 @@ class ReportDefinitionValidatorTest {
     }
 
     @Test
+    void validatesStaticOutputNameContractAndPlaceholders() {
+        ReportDefinition definition = TestFixtures.report(
+                TestFixtures.dataset("summary"));
+        definition.getReport().setExcelFileName("data.pdf");
+        definition.getReport().setWordFileName("report.docx");
+
+        ValidationResult invalidNames = validator.validate(definition);
+
+        assertThat(invalidNames.codes()).contains("CFG-OUTPUT-NAME");
+        assertThat(invalidNames.issues())
+                .extracting(ValidationIssue::getPath)
+                .contains(
+                        "$.report.excelFileName",
+                        "$.report.wordFileName");
+
+        definition.getReport().setExcelFileName(
+                "report-${unknown}.xlsx");
+        definition.getReport().setWordFileName(
+                "report-${unknown}.docx");
+
+        ValidationResult unknownPlaceholder = validator.validate(definition);
+
+        assertThat(unknownPlaceholder.codes()).contains("CFG-OUTPUT-NAME");
+        assertThat(unknownPlaceholder.issues())
+                .extracting(ValidationIssue::getMessage)
+                .anySatisfy(message -> assertThat(message)
+                        .contains("unknown placeholder", "unknown"));
+    }
+
+    @Test
     void reportsMissingDuplicateIllegalAndOverlongSheetNames() {
         DatasetDefinition missing = TestFixtures.dataset("missing");
         missing.setSheetName(" ");

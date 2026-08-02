@@ -196,9 +196,14 @@ public final class DefaultReportPipeline implements ReportPipeline {
             putReportCode(definition);
 
             final ReportDefinition configured = definition;
-            stage(activeContext, ExecutionStage.VALIDATE_CONFIG, () -> {
+            PublicationPlan publicationPlan = stage(
+                    activeContext, ExecutionStage.VALIDATE_CONFIG, () -> {
                 validator.validateOrThrow(configured);
-                return null;
+                OutputTargets targets = outputTargets(
+                        configured, request, executionId);
+                validateOutputTargetContract(targets);
+                return new PublicationPlan(
+                        targets, collisionPolicy(configured));
             });
 
             DatasetQueryService activeQueryService =
@@ -255,14 +260,12 @@ public final class DefaultReportPipeline implements ReportPipeline {
             published = stage(
                     activeContext,
                     ExecutionStage.PUBLISH,
-                    () -> {
-                        OutputTargets targets =
-                                outputTargets(configured, request, executionId);
-                        CollisionPolicy collision = collisionPolicy(configured);
-                        return publisher.publish(
-                                excel, word, targets,
-                                request.getOutputRoot(), collision);
-                    });
+                    () -> publisher.publish(
+                            excel,
+                            word,
+                            publicationPlan.targets,
+                            request.getOutputRoot(),
+                            publicationPlan.collision));
             for (String warning : published.getWarnings()) {
                 activeContext.addWarning(ReportWarning.publication(warning));
             }
@@ -379,9 +382,47 @@ public final class DefaultReportPipeline implements ReportPipeline {
         }
     }
 
+    private static void validateOutputTargetContract(
+            OutputTargets targets) {
+        String excel = targets.getExcel().getFileName().toString();
+        String word = targets.getWord().getFileName().toString();
+        requireOutputExtension(excel, ".xlsx", "Excel");
+        requireOutputExtension(word, ".docx", "Word");
+        if (!outputBaseName(excel).equals(outputBaseName(word))) {
+            throw new ReportException(
+                    ReportErrorCode.OUT_001,
+                    "Excel and Word output targets must share the same base name");
+        }
+    }
+
+    private static void requireOutputExtension(
+            String name, String extension, String kind) {
+        if (!name.toLowerCase(Locale.ROOT).endsWith(extension)) {
+            throw new ReportException(
+                    ReportErrorCode.OUT_001,
+                    kind + " output target must end with " + extension);
+        }
+    }
+
+    private static String outputBaseName(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot < 0 ? name : name.substring(0, dot);
+    }
+
     private static void validateGeneratedFiles(Path excel, Path word) {
         validateGeneratedFile(excel, ".xlsx");
         validateGeneratedFile(word, ".docx");
+    }
+
+    private static final class PublicationPlan {
+        private final OutputTargets targets;
+        private final CollisionPolicy collision;
+
+        private PublicationPlan(
+                OutputTargets targets, CollisionPolicy collision) {
+            this.targets = targets;
+            this.collision = collision;
+        }
     }
 
     private static void validateGeneratedFile(Path path, String extension) {

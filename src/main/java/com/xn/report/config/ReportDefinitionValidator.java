@@ -47,6 +47,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class ReportDefinitionValidator {
@@ -59,6 +60,8 @@ public final class ReportDefinitionValidator {
             Pattern.compile("^(?:[一二三四五六七八九十百]+[、.]"
                     + "|\\d+(?:\\.\\d+)*[.、]"
                     + "|[（(]\\d+[）)]|[①-⑳])\\s*");
+    private static final Pattern OUTPUT_PLACEHOLDER =
+            Pattern.compile("\\$\\{([A-Za-z0-9_.-]+)}");
     private static final Set<String> COMPONENT_TYPES =
             unmodifiableSet("SCENARIO", "KEY_FACTORS", "FIXED_TEXT", "RULE_TEXT",
                     "CHART", "TABLE", "UNIT", "ATTACHMENT");
@@ -90,6 +93,7 @@ public final class ReportDefinitionValidator {
             result.add("CFG-REPORT", "$.report",
                     "report with non-blank code and name is required");
         }
+        validateOutputNames(definition, result);
 
         List<DatasetDefinition> datasets = safeList(definition.getDatasets());
         if (datasets.isEmpty()) {
@@ -145,6 +149,83 @@ public final class ReportDefinitionValidator {
                 chartIds,
                 result);
         return result;
+    }
+
+    private void validateOutputNames(
+            ReportDefinition definition, ValidationResult result) {
+        ReportMetadata report = definition.getReport();
+        if (report == null) {
+            return;
+        }
+        String defaultBase = hasText(report.getCode())
+                ? report.getCode() : "report";
+        String excel = hasText(report.getExcelFileName())
+                ? report.getExcelFileName() : defaultBase + ".xlsx";
+        String word = hasText(report.getWordFileName())
+                ? report.getWordFileName() : defaultBase + ".docx";
+        Set<String> allowedPlaceholders = new LinkedHashSet<String>();
+        if (definition.getParameters() != null) {
+            allowedPlaceholders.addAll(definition.getParameters().keySet());
+        }
+        allowedPlaceholders.add("executionId");
+        allowedPlaceholders.add("reportCode");
+        validateOutputNameTemplate(
+                excel,
+                ".xlsx",
+                "$.report.excelFileName",
+                allowedPlaceholders,
+                result);
+        validateOutputNameTemplate(
+                word,
+                ".docx",
+                "$.report.wordFileName",
+                allowedPlaceholders,
+                result);
+        if (!outputBaseName(excel).equals(outputBaseName(word))) {
+            result.add(
+                    "CFG-OUTPUT-NAME",
+                    "$.report.wordFileName",
+                    "Excel and Word output names must share the same base name");
+        }
+    }
+
+    private void validateOutputNameTemplate(
+            String template,
+            String expectedExtension,
+            String path,
+            Set<String> allowedPlaceholders,
+            ValidationResult result) {
+        if (template.contains("..")
+                || template.indexOf('/') >= 0
+                || template.indexOf('\\') >= 0) {
+            result.add("CFG-OUTPUT-NAME", path,
+                    "Output name must not contain path syntax");
+        }
+        if (!template.toLowerCase(Locale.ROOT)
+                .endsWith(expectedExtension)) {
+            result.add("CFG-OUTPUT-NAME", path,
+                    "Output name must end with " + expectedExtension);
+        }
+        Matcher matcher = OUTPUT_PLACEHOLDER.matcher(template);
+        StringBuffer remainder = new StringBuffer();
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            if (!allowedPlaceholders.contains(key)) {
+                result.add("CFG-OUTPUT-NAME", path,
+                        "Output name contains unknown placeholder: " + key);
+            }
+            matcher.appendReplacement(remainder, "");
+        }
+        matcher.appendTail(remainder);
+        if (remainder.toString().contains("${")) {
+            result.add("CFG-OUTPUT-NAME", path,
+                    "Output name contains a malformed placeholder");
+        }
+    }
+
+    private static String outputBaseName(String value) {
+        int dot = value.lastIndexOf('.');
+        return dot < 0 ? value : value.substring(0, dot);
     }
 
     private Set<String> validateCharts(

@@ -231,6 +231,42 @@ class DefaultReportPipelineTest {
     }
 
     @Test
+    void invalidResolvedOutputNamesStopBeforeQuery() {
+        definition.getReport().setExcelFileName("data.xlsx");
+        definition.getReport().setWordFileName("report.docx");
+
+        ReportExecutionResult result = pipeline.execute(request);
+
+        assertThat(result.getStatus()).isEqualTo(ExecutionStatus.FAILED);
+        assertThat(result.getFailedStage())
+                .isEqualTo(ExecutionStage.VALIDATE_CONFIG);
+        assertThat(result.getError().getErrorCode())
+                .isEqualTo(ReportErrorCode.OUT_001);
+        assertThat(result.getFailure().getMessage())
+                .contains("same base name");
+        verifyNoInteractions(queryService, analysisService, excelGenerator,
+                wordGenerator, outputValidator, publisher);
+    }
+
+    @Test
+    void unresolvedOutputNamePlaceholderStopsBeforeQuery() {
+        definition.getReport().setExcelFileName(
+                "efficiency-${unknown}.xlsx");
+        definition.getReport().setWordFileName(
+                "efficiency-${unknown}.docx");
+
+        ReportExecutionResult result = pipeline.execute(request);
+
+        assertThat(result.getStatus()).isEqualTo(ExecutionStatus.FAILED);
+        assertThat(result.getFailedStage())
+                .isEqualTo(ExecutionStage.VALIDATE_CONFIG);
+        assertThat(result.getFailure().getMessage())
+                .contains("unresolved output name placeholder");
+        verifyNoInteractions(queryService, analysisService, excelGenerator,
+                wordGenerator, outputValidator, publisher);
+    }
+
+    @Test
     void policyAndPublicationWarningsProduceSuccessWithWarnings() {
         analyzed = AnalysisContext.empty(queried)
                 .withWarning("SKIP", "dataset", "empty",

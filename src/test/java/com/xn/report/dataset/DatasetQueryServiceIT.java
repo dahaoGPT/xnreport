@@ -53,7 +53,10 @@ class DatasetQueryServiceIT {
             new MySQLContainer<>(DockerImageName.parse("mysql:5.7.44"))
                     .withDatabaseName("xnreport")
                     .withUsername("xnreport")
-                    .withPassword("xnreport");
+                    .withPassword("xnreport")
+                    .withCommand(
+                            "--character-set-server=utf8mb4",
+                            "--collation-server=utf8mb4_unicode_ci");
 
     private static DatasetQueryService service;
     private static DriverManagerDataSource dataSource;

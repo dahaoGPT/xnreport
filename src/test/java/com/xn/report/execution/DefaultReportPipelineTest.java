@@ -35,6 +35,7 @@ import java.util.Collections;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import org.slf4j.MDC;
 
 class DefaultReportPipelineTest {
 
@@ -290,6 +291,24 @@ class DefaultReportPipelineTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(
                 () -> copied.getRuntimeParameters().put("x", "y"))
                 .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void restoresCallingThreadMdcValuesAfterExecution() {
+        MDC.put("reportExecutionId", "caller-execution");
+        MDC.put("reportStage", "caller-stage");
+        MDC.put("unrelated", "keep-me");
+        try {
+            pipeline.execute(request);
+
+            assertThat(MDC.get("reportExecutionId"))
+                    .isEqualTo("caller-execution");
+            assertThat(MDC.get("reportStage")).isEqualTo("caller-stage");
+            assertThat(MDC.get("unrelated")).isEqualTo("keep-me");
+            assertThat(MDC.get("reportCode")).isNull();
+        } finally {
+            MDC.clear();
+        }
     }
 
     private void assertWorkspaceWasCleaned() {

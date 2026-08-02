@@ -124,7 +124,7 @@ public final class WordSectionRenderer {
                     return false;
                 }
             } else if ("CHART".equals(type)) {
-                if (context.chart(component.getChartId()) != null) {
+                if (!context.charts(component.getChartId()).isEmpty()) {
                     return false;
                 }
             } else if (component.getText() != null

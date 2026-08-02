@@ -99,14 +99,16 @@ public final class WordComponentRenderer {
             return;
         }
         if ("CHART".equals(type)) {
-            RenderedChart chart = context.chart(component.getChartId());
-            if (chart == null) {
+            List<RenderedChart> charts = context.charts(component.getChartId());
+            if (charts.isEmpty()) {
                 throw new WordTemplateException(
                         "Word chart is missing rendered image: "
                                 + component.getChartId());
             }
-            XWPFParagraph paragraph = inserter.paragraph();
-            imageWriter.write(document, paragraph, chart, component);
+            for (RenderedChart chart : charts) {
+                XWPFParagraph paragraph = inserter.paragraph();
+                imageWriter.write(document, paragraph, chart, component);
+            }
             return;
         }
         if ("ATTACHMENT".equals(type)) {

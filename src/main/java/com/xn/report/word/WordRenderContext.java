@@ -6,6 +6,8 @@ import com.xn.report.text.NarrativeResult;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class WordRenderContext {
 
@@ -36,6 +38,19 @@ public final class WordRenderContext {
 
     public RenderedChart chart(String id) {
         return charts.get(id);
+    }
+
+    /** Returns the base chart and every grouped chart in insertion order. */
+    public List<RenderedChart> charts(String baseId) {
+        List<RenderedChart> matches = new ArrayList<RenderedChart>();
+        String groupedPrefix = baseId + "::";
+        for (Map.Entry<String, RenderedChart> entry : charts.entrySet()) {
+            if (entry.getKey().equals(baseId)
+                    || entry.getKey().startsWith(groupedPrefix)) {
+                matches.add(entry.getValue());
+            }
+        }
+        return Collections.unmodifiableList(matches);
     }
 
     public static final class Builder {

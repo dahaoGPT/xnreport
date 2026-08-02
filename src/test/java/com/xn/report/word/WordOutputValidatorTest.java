@@ -313,6 +313,40 @@ class WordOutputValidatorTest {
         return section;
     }
 
+    @Test
+    void failsWhenConfigurationExpectsATableButOutputOmitsIt()
+            throws Exception {
+        Path output = tempDir.resolve("missing-configured-table.docx");
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            WordSectionDefinition section = section(
+                    "plain", "Configured section", 1);
+            WordComponentDefinition text = new WordComponentDefinition();
+            text.setType("FIXED_TEXT");
+            text.setText("body");
+            section.setComponents(Collections.singletonList(text));
+            new WordSectionRenderer().render(document,
+                    Collections.singletonList(section),
+                    WordRenderContext.builder()
+                            .datasets(DatasetContext.builder().build())
+                            .build());
+            new WordTocManager().configure(document, 3, true);
+            try (OutputStream stream = Files.newOutputStream(output)) {
+                document.write(stream);
+            }
+        }
+        WordOutputExpectation expectation = WordOutputExpectation.builder()
+                .tocMaxLevel(3)
+                .requireUpdateFields(true)
+                .heading(1, "Configured section")
+                .tablePresence(0, Collections.<String>emptyList())
+                .build();
+
+        assertThatThrownBy(() -> new WordOutputValidator().validate(
+                output, expectation))
+                .isInstanceOf(WordTemplateException.class)
+                .hasMessageContaining("table count");
+    }
+
     private static void addCoverTokens(XWPFDocument document) {
         String[] tokens = {
             WordCoverBinder.REPORT_TITLE,

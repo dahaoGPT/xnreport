@@ -113,6 +113,12 @@ public final class ReportDefinitionValidator {
                 datasetIds,
                 definition.getParameters(),
                 result);
+        Set<String> ruleIds = new LinkedHashSet<String>();
+        for (RuleDefinition rule : safeList(definition.getRules())) {
+            if (rule != null && hasText(rule.getId())) {
+                ruleIds.add(rule.getId());
+            }
+        }
         if (definition.isChartsExplicitNull()) {
             result.add("CHART-001", "$.charts", "charts must not be null");
         }
@@ -127,6 +133,7 @@ public final class ReportDefinitionValidator {
                         definition.getNarratives(),
                         datasets,
                         datasetIds,
+                        ruleIds,
                         definition.getParameters(),
                         result);
         validateWord(
@@ -1851,6 +1858,7 @@ public final class ReportDefinitionValidator {
             List<NarrativeDefinition> narratives,
             List<DatasetDefinition> datasets,
             Set<String> datasetIds,
+            Set<String> ruleIds,
             Map<String, ParameterDefinition> parameters,
             ValidationResult result) {
         Set<String> narrativeIds = new LinkedHashSet<String>();
@@ -1896,7 +1904,7 @@ public final class ReportDefinitionValidator {
             }
             validateNarrativeVariant(
                     narrative, path, datasetIds, datasetsById,
-                    parameters, result);
+                    ruleIds, parameters, result);
             if (narrative.hasProperty("distribution")
                     && narrative.getDistribution() == null) {
                 result.add("TEXT-001", path + ".distribution",
@@ -1926,6 +1934,7 @@ public final class ReportDefinitionValidator {
             String path,
             Set<String> datasetIds,
             Map<String, DatasetDefinition> datasetsById,
+            Set<String> ruleIds,
             Map<String, ParameterDefinition> parameters,
             ValidationResult result) {
         rejectNarrativeExplicitNull(
@@ -1941,6 +1950,7 @@ public final class ReportDefinitionValidator {
                 validateTextTemplate(
                         narrative.getTemplate(),
                         path + ".template",
+                        ruleIds,
                         result);
             }
             rejectNarrativeProperties(
@@ -1964,6 +1974,7 @@ public final class ReportDefinitionValidator {
                 validateTextTemplate(
                         narrative.getSentence(),
                         path + ".sentence",
+                        ruleIds,
                         result);
             }
             rejectNarrativeProperties(narrative, path, result, "template");
@@ -2195,6 +2206,7 @@ public final class ReportDefinitionValidator {
     private void validateTextTemplate(
             String template,
             String path,
+            Set<String> ruleIds,
             ValidationResult result) {
         try {
             for (Part part : PLACEHOLDER_PARSER.parse(template)) {
@@ -2203,6 +2215,22 @@ public final class ReportDefinitionValidator {
                         && !FORMATTERS.supports(part.formatter())) {
                     result.add("TEXT-001", path,
                             "Unknown formatter: " + part.formatter());
+                }
+                if (!part.isLiteral() && part.name().startsWith("rule.")) {
+                    String reference = part.name().substring("rule.".length());
+                    int separator = reference.indexOf('.');
+                    String ruleId = separator < 0
+                            ? reference : reference.substring(0, separator);
+                    String property = separator < 0
+                            ? "" : reference.substring(separator + 1);
+                    boolean supported = "matchedCount".equals(property)
+                            || (property.startsWith("summary.")
+                            && property.length() > "summary.".length());
+                    if (!ruleIds.contains(ruleId) || !supported) {
+                        result.add("TEXT-001", path,
+                                "Unknown or unsupported rule placeholder: "
+                                        + part.name());
+                    }
                 }
             }
         } catch (RuntimeException exception) {

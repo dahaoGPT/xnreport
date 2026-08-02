@@ -10,6 +10,9 @@ import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.NarrativeDefinition;
 import com.xn.report.config.definition.TransformDefinition;
 import com.xn.report.config.definition.TransformType;
+import com.xn.report.config.definition.ConditionDefinition;
+import com.xn.report.config.definition.ValueReferenceDefinition;
+import com.xn.report.config.definition.RuleDefinition;
 import com.xn.report.dataset.DatasetContext;
 import com.xn.report.support.TestFixtures;
 import java.nio.file.Files;
@@ -92,5 +95,53 @@ class AnalysisServiceTest {
         try (java.util.stream.Stream<Path> files = Files.list(charts)) {
             assertThat(files.filter(Files::isRegularFile)).hasSize(2);
         }
+    }
+
+    @Test
+    void nestedAndOrRuleResultsFlowIntoFixedNarrative() throws Exception {
+        ReportDefinition definition = TestFixtures.report(
+                TestFixtures.dataset("pipeline"));
+        RuleDefinition rule = TestFixtures.pipelineRule();
+        ConditionDefinition eitherName = new ConditionDefinition();
+        eitherName.setOperator(ConditionDefinition.Operator.OR);
+        eitherName.setChildren(java.util.Arrays.asList(
+                equalsName("A"), equalsName("B")));
+        ConditionDefinition nested = new ConditionDefinition();
+        nested.setOperator(ConditionDefinition.Operator.AND);
+        nested.setChildren(java.util.Arrays.asList(
+                rule.getCondition(), eitherName));
+        rule.setCondition(nested);
+        definition.setRules(Collections.singletonList(rule));
+        NarrativeDefinition narrative = new NarrativeDefinition();
+        narrative.setId("ruleText");
+        narrative.setSourceType(NarrativeDefinition.SourceType.FIXED_TEMPLATE);
+        narrative.setTemplate("matched=${rule.pipeline.matchedCount};max="
+                + "${rule.pipeline.summary.maxHours|number:0.0}");
+        definition.setNarratives(Collections.singletonList(narrative));
+        definition.setCharts(Collections.emptyList());
+
+        AnalysisContext result = new AnalysisService().analyze(
+                definition,
+                DatasetContext.builder().put(TestFixtures.pipelineRows()).build(),
+                Collections.emptyMap(),
+                Files.createTempDirectory(java.nio.file.Paths.get("target"),
+                        "analysis-rule-text-"));
+
+        assertThat(result.getNarratives().get("ruleText").text())
+                .isEqualTo("matched=2;max=12.0");
+    }
+
+    private static ConditionDefinition equalsName(String value) {
+        ValueReferenceDefinition left = new ValueReferenceDefinition();
+        left.setSource(ValueReferenceDefinition.Source.CURRENT_FIELD);
+        left.setField("name");
+        ValueReferenceDefinition right = new ValueReferenceDefinition();
+        right.setSource(ValueReferenceDefinition.Source.LITERAL);
+        right.setValue(value);
+        ConditionDefinition result = new ConditionDefinition();
+        result.setOperator(ConditionDefinition.Operator.EQ);
+        result.setLeft(left);
+        result.setRight(right);
+        return result;
     }
 }

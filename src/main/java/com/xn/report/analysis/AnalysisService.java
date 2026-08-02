@@ -85,7 +85,8 @@ public class AnalysisService {
         Map<String, RuleResult> rules =
                 evaluateRules(definition, transformed, runtimeParameters);
         Map<String, NarrativeResult> narratives =
-                renderNarratives(definition, transformed, runtimeParameters);
+                renderNarratives(definition, transformed, rules,
+                        runtimeParameters);
         ChartAnalysis charts = buildCharts(
                 definition, transformed, chartDirectory);
         List<ReportWarning> warnings = new ArrayList<ReportWarning>();
@@ -148,11 +149,13 @@ public class AnalysisService {
     private Map<String, NarrativeResult> renderNarratives(
             ReportDefinition definition,
             DatasetContext datasets,
+            Map<String, RuleResult> rules,
             Map<String, Object> runtimeParameters) {
         Map<String, NarrativeResult> results =
                 new LinkedHashMap<String, NarrativeResult>();
         TextRenderContext context = TextRenderContext.builder()
                 .datasets(datasets)
+                .rules(rules)
                 .runtime(runtimeParameters)
                 .build();
         for (NarrativeDefinition narrative : definition.getNarratives()) {

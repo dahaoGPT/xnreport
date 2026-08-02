@@ -7,6 +7,7 @@ import com.xn.report.support.TestFixtures;
 import com.xn.report.error.ReportErrorCode;
 import com.xn.report.dataset.DatasetContext;
 import com.xn.report.dataset.DatasetResult;
+import com.xn.report.rule.RuleResult;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -29,6 +30,25 @@ import org.junit.jupiter.api.Test;
 class TextRendererTest {
 
     private final TextRenderer renderer = TextRenderer.createDefault();
+
+    @Test
+    void rendersQualifiedRuleMatchedCountAndSummaryValues() {
+        Map<String, Object> summary = new LinkedHashMap<String, Object>();
+        summary.put("maxHours", new java.math.BigDecimal("42.5"));
+        RuleResult rule = new RuleResult(
+                "slowApproval",
+                Arrays.asList(TestFixtures.row("hours", 21),
+                        TestFixtures.row("hours", 42.5)),
+                java.util.Collections.emptyMap(), null, summary);
+        TextRenderContext context = TextRenderContext.builder()
+                .rules(java.util.Collections.singletonMap("slowApproval", rule))
+                .build();
+
+        assertThat(renderer.render(
+                "命中${rule.slowApproval.matchedCount}条，最大"
+                        + "${rule.slowApproval.summary.maxHours|number:0.0}小时",
+                context)).isEqualTo("命中2条，最大42.5小时");
+    }
 
     @Test
     void rendersCurrentSummaryRuntimeAndDatasetValues() {

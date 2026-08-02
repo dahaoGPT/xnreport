@@ -194,6 +194,16 @@ public final class WordOutputExpectation {
             return this;
         }
 
+        public Builder tablePresence(
+                int index, List<String> expectedValues) {
+            if (index < 0 || expectedValues == null) {
+                throw new IllegalArgumentException(
+                        "Table index and values are required");
+            }
+            tables.add(new Table(index, -1, expectedValues));
+            return this;
+        }
+
         public Builder attachmentSequence(List<String> values) {
             if (values == null || values.size() < 2) {
                 throw new IllegalArgumentException(

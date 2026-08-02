@@ -8,6 +8,7 @@ import com.xn.report.config.definition.WordComponentDefinition;
 import com.xn.report.config.definition.WordCoverDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.config.definition.WordTocDefinition;
+import com.xn.report.config.definition.WordTableBinding;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetType;
@@ -97,6 +98,8 @@ public class WordGenerator {
                 .resolve("report.docx").toAbsolutePath().normalize();
         execution.getWorkspace().assertOwned(output);
         try (XWPFDocument document = templateLoader.load(template)) {
+            int templateChartInstances = expectedTemplateChartInstances(
+                    document, analysis);
             coverBinder.bind(document, definition.getWord().getCover());
             tocManager.configure(
                     document,
@@ -108,8 +111,8 @@ public class WordGenerator {
                     document,
                     definition.getWord(),
                     renderContext(analysis));
-            WordOutputExpectation expectation =
-                    captureExpectation(document, definition);
+            WordOutputExpectation expectation = expectationFromConfiguration(
+                    definition, analysis, templateChartInstances);
             Files.createDirectories(output.getParent());
             try (OutputStream stream = Files.newOutputStream(
                     output,
@@ -225,8 +228,10 @@ public class WordGenerator {
         return null;
     }
 
-    private static WordOutputExpectation captureExpectation(
-            XWPFDocument document, ReportDefinition definition) {
+    private static WordOutputExpectation expectationFromConfiguration(
+            ReportDefinition definition,
+            AnalysisContext analysis,
+            int templateChartInstances) {
         WordCoverDefinition cover = definition.getWord().getCover();
         WordTocDefinition toc = definition.getWord().getToc();
         WordOutputExpectation.Builder expected =
@@ -239,27 +244,135 @@ public class WordGenerator {
                                 cover.getPreparedDate())
                         .tocMaxLevel(toc.getMaxLevel())
                         .requireUpdateFields(toc.isUpdateOnOpen());
-        boolean dynamicStarted = false;
-        int tableIndex = 0;
-        for (IBodyElement element : document.getBodyElements()) {
-            if (element instanceof XWPFParagraph) {
-                XWPFParagraph paragraph = (XWPFParagraph) element;
-                int level = dynamicHeadingLevel(paragraph);
-                if (level > 0) {
-                    dynamicStarted = true;
-                    expected.heading(level, paragraph.getText());
-                }
-            } else if (dynamicStarted && element instanceof XWPFTable) {
-                XWPFTable table = (XWPFTable) element;
-                expected.table(
-                        tableIndex++,
-                        table.getNumberOfRows(),
-                        tableValues(table));
+        ExpectedStructure structure = new ExpectedStructure(
+                expected, renderContext(analysis), templateChartInstances,
+                definition.getWord().getTableBindings());
+        structure.sections(definition.getWord().getSections());
+        expected.pictureInstances(structure.pictureInstances);
+        return expected.build();
+    }
+
+    private static int expectedTemplateChartInstances(
+            XWPFDocument document, AnalysisContext analysis) {
+        int count = 0;
+        for (String id : analysis.getRenderedCharts().keySet()) {
+            count += WordPackageTextScanner.count(
+                    document, "{{chart:" + id + "}}");
+        }
+        return count;
+    }
+
+    private static final class ExpectedStructure {
+        private final WordOutputExpectation.Builder expectation;
+        private final WordRenderContext context;
+        private final Map<String, WordTableBinding> tableBindings =
+                new java.util.LinkedHashMap<String, WordTableBinding>();
+        private int pictureInstances;
+        private int tableIndex;
+
+        private ExpectedStructure(
+                WordOutputExpectation.Builder expectation,
+                WordRenderContext context,
+                int pictureInstances,
+                List<WordTableBinding> bindings) {
+            this.expectation = expectation;
+            this.context = context;
+            this.pictureInstances = pictureInstances;
+            for (WordTableBinding binding : bindings) {
+                tableBindings.put(binding.getId(), binding);
             }
         }
-        captureAttachments(definition.getWord().getSections(), document, expected);
-        expected.pictureInstances(pictureOccurrences(document));
-        return expected.build();
+
+        private void sections(List<WordSectionDefinition> sections) {
+            for (WordSectionDefinition section : sections) {
+                boolean empty = sectionEmpty(
+                        section, context, tableBindings);
+                String strategy = section.getEmptyStrategy() == null
+                        ? "KEEP" : section.getEmptyStrategy();
+                if (empty && "SKIP".equals(strategy)) {
+                    continue;
+                }
+                expectation.heading(section.getLevel(), section.getTitle());
+                if (!(empty && "SHOW_EMPTY".equals(strategy))) {
+                    for (WordComponentDefinition component
+                            : section.getComponents()) {
+                        if ("CHART".equals(component.getType())) {
+                            pictureInstances += context.charts(
+                                    component.getChartId()).size();
+                        } else if ("ATTACHMENT".equals(component.getType())) {
+                            expectation.attachment(component.getTitle(),
+                                    component.getDescription(),
+                                    component.getItems());
+                        } else if ("TABLE".equals(component.getType())) {
+                            DatasetResult dataset = tableDataset(
+                                    component, context, tableBindings);
+                            expectation.tablePresence(tableIndex++,
+                                    java.util.Collections.<String>emptyList());
+                        }
+                    }
+                }
+                sections(section.getChildren());
+            }
+        }
+    }
+
+    private static DatasetResult tableDataset(
+            WordComponentDefinition component,
+            WordRenderContext context,
+            Map<String, WordTableBinding> bindings) {
+        WordTableBinding binding = bindings.get(component.getTableId());
+        String datasetId = binding == null
+                ? component.getDataset() : binding.getDataset();
+        return context.datasets().get(datasetId);
+    }
+
+
+    private static boolean sectionEmpty(
+            WordSectionDefinition section,
+            WordRenderContext context,
+            Map<String, WordTableBinding> bindings) {
+        for (WordComponentDefinition component : section.getComponents()) {
+            if ("CHART".equals(component.getType())) {
+                if (!context.charts(component.getChartId()).isEmpty()) {
+                    return false;
+                }
+            } else if ("RULE_TEXT".equals(component.getType())) {
+                NarrativeResult result = context.narrative(
+                        component.getNarrativeId());
+                if (result != null && !result.skipped()
+                        && !result.text().trim().isEmpty()) {
+                    return false;
+                }
+            } else if ("ATTACHMENT".equals(component.getType())) {
+                if (hasText(component.getTitle())
+                        || hasText(component.getDescription())
+                        || !component.getItems().isEmpty()) {
+                    return false;
+                }
+            } else if ("TABLE".equals(component.getType())) {
+                WordTableBinding binding = bindings.get(
+                        component.getTableId());
+                String id = binding == null
+                        ? component.getDataset() : binding.getDataset();
+                if (hasText(id) && context.datasets().contains(id)
+                        && !datasetEmpty(context.datasets().get(id))) {
+                    return false;
+                }
+            } else if (hasText(component.getText())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean datasetEmpty(DatasetResult result) {
+        if (result.type() == DatasetType.LIST) return result.list().isEmpty();
+        if (result.type() == DatasetType.SINGLE) return result.single() == null;
+        return result.scalar() == null;
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     private static int dynamicHeadingLevel(XWPFParagraph paragraph) {

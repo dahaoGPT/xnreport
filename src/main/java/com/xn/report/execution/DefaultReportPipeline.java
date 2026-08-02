@@ -8,6 +8,8 @@ import com.xn.report.config.ReportDefinitionValidator;
 import com.xn.report.config.ReportMetadata;
 import com.xn.report.dataset.DatasetContext;
 import com.xn.report.dataset.DatasetQueryService;
+import com.xn.report.dataset.DatasetQueryServiceFactory;
+import com.xn.report.dataset.QueryOutcome;
 import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetType;
 import com.xn.report.entry.ExecutionStatus;
@@ -46,7 +48,8 @@ public final class DefaultReportPipeline implements ReportPipeline {
 
     private final ReportConfigLoader loader;
     private final ReportConfigValidator validator;
-    private final DatasetQueryService queryService;
+    private final DatasetQueryServiceFactory queryServiceFactory;
+    private final boolean queryWarningsSupported;
     private final AnalysisService analysisService;
     private final ExcelGenerator excelGenerator;
     private final WordGenerator wordGenerator;
@@ -80,7 +83,10 @@ public final class DefaultReportPipeline implements ReportPipeline {
             OutputNameRenderer outputNameRenderer) {
         this.loader = Objects.requireNonNull(loader, "loader");
         this.validator = Objects.requireNonNull(validator, "validator");
-        this.queryService = Objects.requireNonNull(queryService, "queryService");
+        final DatasetQueryService fixed = Objects.requireNonNull(
+                queryService, "queryService");
+        this.queryServiceFactory = sqlRoot -> fixed;
+        this.queryWarningsSupported = false;
         this.analysisService =
                 Objects.requireNonNull(analysisService, "analysisService");
         this.excelGenerator =
@@ -114,6 +120,52 @@ public final class DefaultReportPipeline implements ReportPipeline {
                                 .publish(excel, word, targets));
     }
 
+    public static DefaultReportPipeline createDefault(
+            DatasetQueryServiceFactory queryServiceFactory) {
+        ReportDefinitionLoader definitionLoader =
+                ReportDefinitionLoader.createDefault();
+        ReportDefinitionValidator definitionValidator =
+                new ReportDefinitionValidator();
+        return new DefaultReportPipeline(
+                definitionLoader::load,
+                definition -> definitionValidator.validate(definition)
+                        .throwIfInvalid(),
+                queryServiceFactory,
+                new AnalysisService(),
+                new ExcelGenerator(),
+                new WordGenerator(),
+                DefaultReportPipeline::validateGeneratedFiles,
+                (excel, word, targets, root, collision) ->
+                        new OutputPublisher(root, collision)
+                                .publish(excel, word, targets));
+    }
+
+    private DefaultReportPipeline(
+            ReportConfigLoader loader,
+            ReportConfigValidator validator,
+            DatasetQueryServiceFactory queryServiceFactory,
+            AnalysisService analysisService,
+            ExcelGenerator excelGenerator,
+            WordGenerator wordGenerator,
+            GeneratedOutputValidator outputValidator,
+            ReportOutputPublisher publisher) {
+        this.loader = Objects.requireNonNull(loader, "loader");
+        this.validator = Objects.requireNonNull(validator, "validator");
+        this.queryServiceFactory = Objects.requireNonNull(
+                queryServiceFactory, "queryServiceFactory");
+        this.queryWarningsSupported = true;
+        this.analysisService = Objects.requireNonNull(analysisService,
+                "analysisService");
+        this.excelGenerator = Objects.requireNonNull(excelGenerator,
+                "excelGenerator");
+        this.wordGenerator = Objects.requireNonNull(wordGenerator,
+                "wordGenerator");
+        this.outputValidator = Objects.requireNonNull(outputValidator,
+                "outputValidator");
+        this.publisher = Objects.requireNonNull(publisher, "publisher");
+        this.outputNameRenderer = new OutputNameRenderer();
+    }
+
     @Override
     public ReportExecutionResult execute(ReportExecutionRequest request) {
         Objects.requireNonNull(request, "request");
@@ -129,6 +181,7 @@ public final class DefaultReportPipeline implements ReportPipeline {
         ReportDefinition definition = null;
         DatasetContext analyzedDatasets = null;
         List<ReportWarning> warnings = new ArrayList<ReportWarning>();
+        Map<String, String> previousMdc = MDC.getCopyOfContextMap();
 
         MDC.put(MDC_EXECUTION_ID, executionId);
         try {
@@ -148,11 +201,25 @@ public final class DefaultReportPipeline implements ReportPipeline {
                 return null;
             });
 
-            DatasetContext snapshot = stage(
+            DatasetQueryService activeQueryService =
+                    queryServiceFactory.create(request.getSqlRoot());
+            QueryOutcome queryOutcome = stage(
                     activeContext,
                     ExecutionStage.QUERY,
-                    () -> queryService.executeAll(
-                            configured, request.getRuntimeParameters()));
+                    () -> queryWarningsSupported
+                            ? activeQueryService.executeAllWithWarnings(
+                                    configured,
+                                    request.getRuntimeParameters())
+                            : new QueryOutcome(
+                                    activeQueryService.executeAll(
+                                            configured,
+                                            request.getRuntimeParameters()),
+                                    Collections.emptyList()));
+            DatasetContext snapshot = queryOutcome.getDatasets();
+            for (com.xn.report.policy.ReportWarning warning
+                    : queryOutcome.getWarnings()) {
+                activeContext.addWarning(ReportWarning.fromPolicy(warning));
+            }
             activeContext.setQuerySnapshot(snapshot);
 
             AnalysisContext analysis = stage(
@@ -225,9 +292,10 @@ public final class DefaultReportPipeline implements ReportPipeline {
                     }
                 }
             }
-            MDC.remove(MDC_STAGE);
-            MDC.remove(MDC_REPORT_CODE);
-            MDC.remove(MDC_EXECUTION_ID);
+            MDC.clear();
+            if (previousMdc != null) {
+                MDC.setContextMap(previousMdc);
+            }
         }
 
         Instant finishedAt = Instant.now();

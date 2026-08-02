@@ -10,6 +10,7 @@ import com.xn.report.config.definition.WordNumberingLevelDefinition;
 import com.xn.report.config.definition.WordSectionDefinition;
 import com.xn.report.dataset.DatasetContext;
 import com.xn.report.dataset.DatasetResult;
+import com.xn.report.chart.RenderedChart;
 import com.xn.report.support.TestFixtures;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -20,6 +21,10 @@ import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.junit.jupiter.api.Test;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 
 class WordSectionRendererTest {
 
@@ -176,6 +181,44 @@ class WordSectionRendererTest {
                     .hasMessageContaining("standalone top-level body");
             assertThat(anchor.getText()).isEqualTo("{{sections}} suffix");
         }
+    }
+
+    @Test
+    void baseChartComponentRendersEveryGroupedImageInStableOrder()
+            throws Exception {
+        Path directory = Files.createTempDirectory(
+                java.nio.file.Paths.get("target"), "word-grouped-chart-");
+        RenderedChart first = chart(directory.resolve("first.png"), 10);
+        RenderedChart second = chart(directory.resolve("second.png"), 20);
+        WordComponentDefinition chart = new WordComponentDefinition();
+        chart.setType("CHART");
+        chart.setChartId("approval");
+        WordSectionDefinition section = section(
+                "charts", "Grouped charts", 1, "SKIP");
+        section.setComponents(Collections.singletonList(chart));
+
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            new WordSectionRenderer().render(document,
+                    Collections.singletonList(section),
+                    WordRenderContext.builder()
+                            .datasets(DatasetContext.builder().build())
+                            .chart("approval", first)
+                            .chart("approval::002::b", second)
+                            .build());
+
+            assertThat(document.getAllPictures()).hasSize(2);
+            assertThat(document.getParagraphs())
+                    .anyMatch(p -> "Grouped charts".equals(p.getText()));
+        }
+    }
+
+    private static RenderedChart chart(Path path, int shade)
+            throws Exception {
+        BufferedImage image = new BufferedImage(
+                2, 2, BufferedImage.TYPE_INT_RGB);
+        image.setRGB(0, 0, new java.awt.Color(shade, shade, shade).getRGB());
+        ImageIO.write(image, "png", path.toFile());
+        return new RenderedChart(path, "image/png", 2, 2, 96);
     }
 
     private static WordSectionDefinition section(

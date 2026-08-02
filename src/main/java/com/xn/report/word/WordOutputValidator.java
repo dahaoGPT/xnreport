@@ -402,6 +402,10 @@ public final class WordOutputValidator {
             List<WordOutputExpectation.Heading> headings) {
         List<XWPFTable> dynamicTables =
                 dynamicTables(document, headings);
+        if (dynamicTables.size() != expected.size()) {
+            throw new WordTemplateException(
+                    "Word dynamic table count does not match configuration");
+        }
         for (WordOutputExpectation.Table table : expected) {
             if (table.getIndex() >= dynamicTables.size()) {
                 throw new WordTemplateException(
@@ -409,7 +413,8 @@ public final class WordOutputValidator {
                                 + table.getIndex());
             }
             XWPFTable actual = dynamicTables.get(table.getIndex());
-            if (actual.getNumberOfRows() != table.getRowCount()) {
+            if (table.getRowCount() >= 0
+                    && actual.getNumberOfRows() != table.getRowCount()) {
                 throw new WordTemplateException(
                         "Word dynamic table row count mismatch at index "
                                 + table.getIndex());

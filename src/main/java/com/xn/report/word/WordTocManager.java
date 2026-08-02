@@ -38,7 +38,7 @@ public final class WordTocManager {
     }
 
     public static String instruction(int maxLevel) {
-        return " TOC \\\\o \"1-" + maxLevel + "\" \\\\h \\\\z \\\\u ";
+        return " TOC \\o \"1-" + maxLevel + "\" \\h \\z \\u ";
     }
 
     String configuredInstruction(XWPFDocument document) {

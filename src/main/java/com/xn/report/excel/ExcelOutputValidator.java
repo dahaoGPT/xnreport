@@ -181,7 +181,7 @@ public final class ExcelOutputValidator {
                     ".//c:cat//c:f | .//c:xVal//c:f");
             String expectedCategory =
                     range.formula(definition.getCategoryField());
-            if (!expectedCategory.equals(category)) {
+            if (!formulasEquivalent(expectedCategory, category)) {
                 throw new IllegalStateException(
                         "Chart category formula is invalid for "
                                 + definition.getId() + ": " + category);
@@ -192,7 +192,7 @@ public final class ExcelOutputValidator {
             String expectedValues =
                     range.seriesFormula(
                             index, configured.getField());
-            if (!expectedValues.equals(values)) {
+            if (!formulasEquivalent(expectedValues, values)) {
                 throw new IllegalStateException(
                         "Chart series formula is invalid for "
                                 + definition.getId() + "/"
@@ -200,7 +200,7 @@ public final class ExcelOutputValidator {
             }
             String title = firstText(
                     actualSeries, namespaces, ".//c:tx//c:f");
-            if (!expectedTitle.equals(title)) {
+            if (!formulasEquivalent(expectedTitle, title)) {
                 throw new IllegalStateException(
                         "Chart series title formula is invalid for "
                                 + definition.getId() + "/"
@@ -214,8 +214,8 @@ public final class ExcelOutputValidator {
                 String size = firstText(
                         actualSeries, namespaces,
                         ".//c:bubbleSize//c:f");
-                if (!range.sizeFormula(index, sizeField)
-                        .equals(size)) {
+                if (!formulasEquivalent(
+                        range.sizeFormula(index, sizeField), size)) {
                     throw new IllegalStateException(
                             "Chart bubble size formula is invalid for "
                                     + definition.getId() + "/"
@@ -257,7 +257,7 @@ public final class ExcelOutputValidator {
         Integer match = null;
         for (int index = 0; index < series.length; index++) {
             if (!matched.contains(Integer.valueOf(index))
-                    && expectedTitle.equals(firstText(
+                    && formulasEquivalent(expectedTitle, firstText(
                             series[index], namespaces,
                             ".//c:tx//c:f"))) {
                 if (match != null) {
@@ -283,6 +283,57 @@ public final class ExcelOutputValidator {
         }
         matched.add(match);
         return series[match.intValue()];
+    }
+
+    static boolean formulasEquivalent(String expected, String actual) {
+        if (expected == null || actual == null) {
+            return expected == actual;
+        }
+        return canonicalFormula(expected).equals(canonicalFormula(actual));
+    }
+
+    private static String canonicalFormula(String formula) {
+        if (formula.length() >= 3 && formula.charAt(0) == '\'') {
+            StringBuilder sheet = new StringBuilder();
+            for (int index = 1; index < formula.length(); index++) {
+                char character = formula.charAt(index);
+                if (character != '\'') {
+                    sheet.append(character);
+                    continue;
+                }
+                if (index + 1 < formula.length()
+                        && formula.charAt(index + 1) == '\'') {
+                    sheet.append('\'');
+                    index++;
+                    continue;
+                }
+                if (index + 1 < formula.length()
+                        && formula.charAt(index + 1) == '!') {
+                    return isSafeUnquotedSheetName(sheet)
+                            ? sheet.toString() + formula.substring(index + 1)
+                            : formula;
+                }
+                return formula;
+            }
+            return formula;
+        }
+        return formula;
+    }
+
+    private static boolean isSafeUnquotedSheetName(
+            CharSequence sheetName) {
+        if (sheetName.length() == 0) {
+            return false;
+        }
+        for (int index = 0; index < sheetName.length(); index++) {
+            char character = sheetName.charAt(index);
+            if (!Character.isLetterOrDigit(character)
+                    && character != '_'
+                    && character != '.') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void validateCachePointCount(

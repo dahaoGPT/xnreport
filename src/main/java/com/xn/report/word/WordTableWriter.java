@@ -5,6 +5,7 @@ import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetType;
 import com.xn.report.text.FormatterRegistry;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -18,12 +19,16 @@ import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTOnOff;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRow;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTblPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTblWidth;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STTblWidth;
 
 public final class WordTableWriter {
 
-    private static final int DEFAULT_TABLE_WIDTH_DXA = 9360;
+    private static final int DEFAULT_TABLE_WIDTH_DXA = 8800;
+    private static final int DEFAULT_CELL_SIDE_MARGIN_DXA = 120;
     private static final Pattern ROW_TOKEN = Pattern.compile(
             "\\{\\{row:([^}|]+)(?:\\|([^}:|]+)(?::([^}]*))?)?}}");
 
@@ -82,7 +87,6 @@ public final class WordTableWriter {
                             columns.get(index).getField()));
         }
         markHeader(table);
-        applyGeometry(table, columns);
         List<DatasetRow> rows = rows(dataset);
         if (rows.isEmpty()) {
             XWPFTableRow row = table.createRow();
@@ -92,6 +96,7 @@ public final class WordTableWriter {
             for (int index = 1; index < columns.size(); index++) {
                 setCell(row.getCell(index), "");
             }
+            applyGeometry(table, columns);
             return;
         }
         for (DatasetRow source : rows) {
@@ -104,6 +109,7 @@ public final class WordTableWriter {
                                 column.getFormat()));
             }
         }
+        applyGeometry(table, columns);
     }
 
     private void bindRow(XWPFTableRow row, DatasetRow source) {
@@ -282,12 +288,30 @@ public final class WordTableWriter {
             XWPFTable table, List<WordTableColumnDefinition> columns) {
         table.setTableAlignment(TableRowAlign.CENTER);
         table.setWidth(String.valueOf(DEFAULT_TABLE_WIDTH_DXA));
-        table.setCellMargins(80, 120, 80, 120);
+        table.setCellMargins(
+                80,
+                DEFAULT_CELL_SIDE_MARGIN_DXA,
+                80,
+                DEFAULT_CELL_SIDE_MARGIN_DXA);
         if (table.getNumberOfRows() == 0) {
             return;
         }
         int columnCount = table.getRow(0).getTableCells().size();
         int[] widths = columnWidths(columns, columnCount);
+        CTTblPr properties = table.getCTTbl().getTblPr();
+        if (properties == null) {
+            properties = table.getCTTbl().addNewTblPr();
+        }
+        CTTblWidth indent = properties.isSetTblInd()
+                ? properties.getTblInd() : properties.addNewTblInd();
+        indent.setType(STTblWidth.DXA);
+        indent.setW(BigInteger.valueOf(DEFAULT_CELL_SIDE_MARGIN_DXA));
+        org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTblGrid grid =
+                table.getCTTbl().getTblGrid();
+        for (int index = 0; index < widths.length; index++) {
+            grid.getGridColArray(index).setW(
+                    BigInteger.valueOf(widths[index]));
+        }
         for (XWPFTableRow row : table.getRows()) {
             for (int index = 0;
                     index < row.getTableCells().size() && index < widths.length;
@@ -319,6 +343,11 @@ public final class WordTableWriter {
             int each = DEFAULT_TABLE_WIDTH_DXA / Math.max(1, columnCount);
             java.util.Arrays.fill(widths, each);
         }
+        int actualTotal = 0;
+        for (int width : widths) {
+            actualTotal += width;
+        }
+        widths[widths.length - 1] += DEFAULT_TABLE_WIDTH_DXA - actualTotal;
         return widths;
     }
 

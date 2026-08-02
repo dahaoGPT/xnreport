@@ -6,6 +6,7 @@ import com.xn.report.dataset.DatasetResult;
 import com.xn.report.support.TestFixtures;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.Arrays;
 import java.util.Collections;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
@@ -146,6 +147,45 @@ class WordTableWriterTest {
                     .isEqualTo("7");
             assertThat(singleTable.getRow(0).getCtRow().getTrPr()
                     .sizeOfTblHeaderArray()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void persistsGeneratedTableGridIndentAndEveryRowWidth()
+            throws Exception {
+        try (XWPFDocument document = new XWPFDocument()) {
+            XWPFTable table = document.createTable();
+            writer.fillGenerated(
+                    table,
+                    DatasetResult.list("centers", Arrays.asList(
+                            TestFixtures.row(
+                                    "name", "开发一中心",
+                                    "hours", 12.3,
+                                    "baseline", 10.0,
+                                    "status", "正常"),
+                            TestFixtures.row(
+                                    "name", "开发二中心",
+                                    "hours", 18.5,
+                                    "baseline", 10.0,
+                                    "status", "关注"))),
+                    Collections.emptyList(),
+                    "暂无数据");
+
+            try (XWPFDocument reopened = reopen(document)) {
+                XWPFTable actual = reopened.getTables().get(0);
+                assertThat(actual.getCTTbl().getTblGrid()
+                        .getGridColList())
+                        .extracting(column -> column.getW().toString())
+                        .containsExactly("2200", "2200", "2200", "2200");
+                assertThat(actual.getCTTbl().getTblPr().getTblInd()
+                        .getW().toString()).isEqualTo("120");
+                for (org.apache.poi.xwpf.usermodel.XWPFTableRow row
+                        : actual.getRows()) {
+                    assertThat(row.getTableCells())
+                            .extracting(cell -> cell.getWidth())
+                            .containsExactly(2200, 2200, 2200, 2200);
+                }
+            }
         }
     }
 

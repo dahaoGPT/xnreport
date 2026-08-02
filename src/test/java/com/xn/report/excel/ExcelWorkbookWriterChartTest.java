@@ -30,6 +30,20 @@ class ExcelWorkbookWriterChartTest {
     Path temporary;
 
     @Test
+    void treatsQuotedAndUnquotedSafeSheetReferencesAsEquivalent() {
+        assertThat(ExcelOutputValidator.formulasEquivalent(
+                "'时长分布'!$F$2", "时长分布!$F$2")).isTrue();
+        assertThat(ExcelOutputValidator.formulasEquivalent(
+                "'人员''明细'!$A$2:$A$4",
+                "人员'明细!$A$2:$A$4")).isFalse();
+        assertThat(ExcelOutputValidator.formulasEquivalent(
+                "'人员''明细'!$A$2:$A$4",
+                "'人员''明细'!$A$2:$A$4")).isTrue();
+        assertThat(ExcelOutputValidator.formulasEquivalent(
+                "'时长分布'!$F$2", "其他页!$F$2")).isFalse();
+    }
+
+    @Test
     void writesDatasetSheetsBeforeBindingNativeCharts() throws Exception {
         Path template = temporary.resolve("template.xlsx");
         try (XSSFWorkbook workbook = new XSSFWorkbook();

@@ -26,7 +26,7 @@ class WordTocManagerTest {
         manager.configure(document, 4, true);
 
         assertThat(document.getDocument().xmlText())
-                .contains("TOC \\\\o \"1-4\" \\\\h \\\\z \\\\u");
+                .contains("TOC \\o \"1-4\" \\h \\z \\u");
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         document.write(output);
         document.close();

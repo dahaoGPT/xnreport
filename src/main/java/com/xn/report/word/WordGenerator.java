@@ -190,8 +190,12 @@ public class WordGenerator {
             XWPFDocument document,
             ReportDefinition definition,
             AnalysisContext analysis) {
+        java.util.Set<String> consumed = new java.util.LinkedHashSet<String>();
         for (Map.Entry<String, RenderedChart> item
                 : analysis.getRenderedCharts().entrySet()) {
+            if (consumed.contains(item.getKey())) {
+                continue;
+            }
             String marker = "{{chart:" + item.getKey() + "}}";
             int count = WordPackageTextScanner.count(document, marker);
             if (count == 0) {
@@ -205,8 +209,18 @@ public class WordGenerator {
                 component.setType("CHART");
                 component.setChartId(item.getKey());
             }
-            templateChartBinder.bind(
-                    document, item.getKey(), item.getValue(), component);
+            List<RenderedChart> charts = new ArrayList<RenderedChart>();
+            String prefix = item.getKey() + "::";
+            for (Map.Entry<String, RenderedChart> candidate
+                    : analysis.getRenderedCharts().entrySet()) {
+                if (candidate.getKey().equals(item.getKey())
+                        || candidate.getKey().startsWith(prefix)) {
+                    charts.add(candidate.getValue());
+                    consumed.add(candidate.getKey());
+                }
+            }
+            templateChartBinder.bindAll(
+                    document, item.getKey(), charts, component);
         }
     }
 
@@ -256,8 +270,17 @@ public class WordGenerator {
             XWPFDocument document, AnalysisContext analysis) {
         int count = 0;
         for (String id : analysis.getRenderedCharts().keySet()) {
-            count += WordPackageTextScanner.count(
+            int markers = WordPackageTextScanner.count(
                     document, "{{chart:" + id + "}}");
+            if (markers == 0) continue;
+            int logicalInstances = 0;
+            String prefix = id + "::";
+            for (String candidate : analysis.getRenderedCharts().keySet()) {
+                if (candidate.equals(id) || candidate.startsWith(prefix)) {
+                    logicalInstances++;
+                }
+            }
+            count += markers * logicalInstances;
         }
         return count;
     }

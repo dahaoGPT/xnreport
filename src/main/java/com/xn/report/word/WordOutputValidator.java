@@ -257,6 +257,9 @@ public final class WordOutputValidator {
             List<WordOutputExpectation.Attachment> expected) {
         List<StyledText> actual = new ArrayList<StyledText>();
         List<XWPFParagraph> paragraphs = document.getParagraphs();
+        boolean[] consumed = new boolean[paragraphs.size()];
+        java.util.Set<String> configuredTexts =
+                new java.util.LinkedHashSet<String>();
         int cursor = 0;
         for (WordOutputExpectation.Attachment attachment : expected) {
             List<StyledText> wanted = new ArrayList<StyledText>();
@@ -273,6 +276,9 @@ public final class WordOutputValidator {
             for (String item : attachment.getItems()) {
                 wanted.add(new StyledText(
                         "ITEM", item));
+            }
+            for (StyledText text : wanted) {
+                configuredTexts.add(text.text);
             }
             int start = findAttachmentStart(
                     paragraphs, cursor, wanted.get(0));
@@ -294,7 +300,20 @@ public final class WordOutputValidator {
                 throw new WordTemplateException(
                         "Word attachment structure or configured order mismatch");
             }
+            for (int offset = 0; offset < wanted.size(); offset++) {
+                consumed[start + offset] = true;
+            }
             cursor = start + wanted.size();
+        }
+        for (int index = 0; index < paragraphs.size(); index++) {
+            XWPFParagraph paragraph = paragraphs.get(index);
+            if (!consumed[index]
+                    && ("ListBullet".equals(paragraph.getStyle())
+                    || configuredTexts.contains(paragraph.getText()))) {
+                throw new WordTemplateException(
+                        "Word attachment structure contains an extra or"
+                                + " duplicate trailing block");
+            }
         }
     }
 

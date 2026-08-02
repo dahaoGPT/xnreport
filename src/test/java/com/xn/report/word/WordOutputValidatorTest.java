@@ -243,6 +243,34 @@ class WordOutputValidatorTest {
     }
 
     @Test
+    void rejectsDuplicateTrailingAttachmentBlock() throws Exception {
+        Path output = tempDir.resolve("duplicate-attachment.docx");
+        WordComponentDefinition attachment = new WordComponentDefinition();
+        attachment.setType("ATTACHMENT");
+        attachment.setTitle("Attachment title");
+        attachment.setDescription("Attachment description");
+        attachment.setItems(Collections.singletonList("details.xlsx"));
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            prepareEmptyOutput(document);
+            new WordAttachmentWriter().append(document, attachment);
+            new WordAttachmentWriter().append(document, attachment);
+            try (OutputStream stream = Files.newOutputStream(output)) {
+                document.write(stream);
+            }
+        }
+        WordOutputExpectation expectation = WordOutputExpectation.builder()
+                .attachment("Attachment title", "Attachment description",
+                        Collections.singletonList("details.xlsx"))
+                .build();
+
+        assertThatThrownBy(() -> new WordOutputValidator().validate(
+                output, expectation))
+                .isInstanceOf(WordTemplateException.class)
+                .hasMessageContaining("attachment")
+                .hasMessageContaining("extra");
+    }
+
+    @Test
     void ignoresCoverHeadingAndFollowingCoverTableWhenLocatingDynamicTables()
             throws Exception {
         DatasetResult details = DatasetResult.single(

@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import javax.imageio.ImageIO;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -55,6 +56,41 @@ class WordTemplateChartBinderTest {
             assertThat(paragraph.getRuns())
                     .anySatisfy(run -> assertThat(
                             run.getEmbeddedPictures()).hasSize(1));
+        }
+    }
+
+    @Test
+    void baseMarkerBindsAllGroupedChartsAsStableConsecutiveParagraphs()
+            throws Exception {
+        RenderedChart first = chart("first.png", 10);
+        RenderedChart second = chart("second.png", 20);
+        WordComponentDefinition component = new WordComponentDefinition();
+        component.setChartId("approval");
+        Path output = tempDir.resolve("grouped-bound.docx");
+
+        try (XWPFDocument document = new XWPFDocument()) {
+            document.createParagraph().createRun()
+                    .setText("{{chart:approval}}");
+            document.createParagraph().createRun().setText("after");
+            new WordTemplateChartBinder().bindAll(
+                    document, "approval", Arrays.asList(first, second),
+                    component);
+            try (OutputStream stream = Files.newOutputStream(output)) {
+                document.write(stream);
+            }
+        }
+
+        try (InputStream stream = Files.newInputStream(output);
+             XWPFDocument reopened = new XWPFDocument(stream)) {
+            assertThat(reopened.getParagraphs()).hasSize(3);
+            assertThat(reopened.getParagraphs().get(0).getRuns())
+                    .anySatisfy(run -> assertThat(
+                            run.getEmbeddedPictures()).hasSize(1));
+            assertThat(reopened.getParagraphs().get(1).getRuns())
+                    .anySatisfy(run -> assertThat(
+                            run.getEmbeddedPictures()).hasSize(1));
+            assertThat(reopened.getParagraphs().get(2).getText())
+                    .isEqualTo("after");
         }
     }
 
@@ -116,10 +152,16 @@ class WordTemplateChartBinderTest {
     }
 
     private RenderedChart chart() throws Exception {
-        Path image = tempDir.resolve("chart.png");
-        ImageIO.write(new BufferedImage(
-                80, 40, BufferedImage.TYPE_INT_RGB),
-                "png", image.toFile());
+        return chart("chart.png", 0);
+    }
+
+    private RenderedChart chart(String fileName, int shade) throws Exception {
+        Path image = tempDir.resolve(fileName);
+        BufferedImage buffered = new BufferedImage(
+                80, 40, BufferedImage.TYPE_INT_RGB);
+        buffered.setRGB(0, 0,
+                new java.awt.Color(shade, shade, shade).getRGB());
+        ImageIO.write(buffered, "png", image.toFile());
         return new RenderedChart(
                 image, "image/png", 80, 40, 96);
     }

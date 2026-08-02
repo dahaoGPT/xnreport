@@ -36,6 +36,10 @@ final class WordBodyInserter {
         }
     }
 
+    XWPFDocument document() {
+        return document;
+    }
+
     private XmlCursor beforeAnchor() {
         return anchor.newCursor();
     }

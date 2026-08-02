@@ -1,0 +1,436 @@
+schemaVersion: "1.0"
+
+report:
+  code: api-design-efficiency
+  name: 研发效能报告
+  excelTemplate: api-design-efficiency.xlsx
+  wordTemplate: api-design-efficiency.docx
+  excelFileName: "研发效能报告-${reportPeriod}.xlsx"
+  wordFileName: "研发效能报告-${reportPeriod}.docx"
+  collisionPolicy: VERSIONED
+
+parameters:
+  startTime: {type: DATETIME, required: true}
+  endTimeExclusive: {type: DATETIME, required: true}
+  baselineStartTime: {type: DATETIME, required: true}
+  baselineEndTimeExclusive: {type: DATETIME, required: true}
+  centerNames: {type: STRING_LIST, required: true, minItems: 1, maxItems: 50}
+  reportPeriod: {type: STRING, required: true}
+  preparedDate: {type: STRING, required: true}
+
+policies:
+  emptyData: OUTPUT_MESSAGE
+  emptyMessage: 暂无符合条件的数据
+  missingField: FAIL
+  typeMismatch: SAFE_CONVERT
+  nullValue: RULE_NOT_MATCHED
+  emptyCollectionParameter: FAIL
+  unresolvedPlaceholder: FAIL
+
+datasets:
+  - id: departmentMonthly
+    sheetName: 部门-每月
+    sqlFile: sql/department-monthly.sql
+    resultType: LIST
+    parameters:
+      startTime: {from: RUNTIME, key: startTime}
+      endTimeExclusive: {from: RUNTIME, key: endTimeExclusive}
+      baselineStartTime: {from: RUNTIME, key: baselineStartTime}
+      baselineEndTimeExclusive: {from: RUNTIME, key: baselineEndTimeExclusive}
+      centerNames: {from: RUNTIME, key: centerNames}
+    timeoutSeconds: 60
+    maxRows: 10000
+    expectedFields:
+      nodeName: {type: STRING}
+      statMonth: {type: STRING}
+      avgHours: {type: DECIMAL}
+      baselineHours: {type: DECIMAL}
+
+  - id: centerAnnual
+    sheetName: 中心-全年
+    sqlFile: sql/center-annual.sql
+    resultType: LIST
+    parameters:
+      startTime: {from: RUNTIME, key: startTime}
+      endTimeExclusive: {from: RUNTIME, key: endTimeExclusive}
+      baselineStartTime: {from: RUNTIME, key: baselineStartTime}
+      baselineEndTimeExclusive: {from: RUNTIME, key: baselineEndTimeExclusive}
+      centerNames: {from: RUNTIME, key: centerNames}
+    timeoutSeconds: 60
+    maxRows: 10000
+    expectedFields:
+      nodeName: {type: STRING}
+      centerName: {type: STRING}
+      avgHours: {type: DECIMAL}
+      baselineHours: {type: DECIMAL}
+
+  - id: centerMonthly
+    sheetName: 中心-每月
+    sqlFile: sql/center-monthly.sql
+    resultType: LIST
+    parameters:
+      startTime: {from: RUNTIME, key: startTime}
+      endTimeExclusive: {from: RUNTIME, key: endTimeExclusive}
+      baselineStartTime: {from: RUNTIME, key: baselineStartTime}
+      baselineEndTimeExclusive: {from: RUNTIME, key: baselineEndTimeExclusive}
+      centerNames: {from: RUNTIME, key: centerNames}
+    timeoutSeconds: 60
+    maxRows: 50000
+    expectedFields:
+      nodeName: {type: STRING}
+      centerName: {type: STRING}
+      statMonth: {type: STRING}
+      avgHours: {type: DECIMAL}
+      baselineHours: {type: DECIMAL}
+      overStandardCount: {type: INTEGER}
+      withinStandardCount: {type: INTEGER}
+
+  - id: personAnnual
+    sheetName: 个人-全年
+    sqlFile: sql/person-annual.sql
+    resultType: LIST
+    parameters:
+      startTime: {from: RUNTIME, key: startTime}
+      endTimeExclusive: {from: RUNTIME, key: endTimeExclusive}
+      baselineStartTime: {from: RUNTIME, key: baselineStartTime}
+      baselineEndTimeExclusive: {from: RUNTIME, key: baselineEndTimeExclusive}
+      centerNames: {from: RUNTIME, key: centerNames}
+    timeoutSeconds: 90
+    maxRows: 100000
+    expectedFields:
+      nodeName: {type: STRING}
+      centerName: {type: STRING}
+      approverId: {type: STRING}
+      approverName: {type: STRING}
+      avgHours: {type: DECIMAL}
+      baselineHours: {type: DECIMAL}
+      groupCategory: {type: STRING}
+      groupLeader: {type: STRING}
+      onJob: {type: STRING}
+
+  - id: personMonthly
+    sheetName: 个人-每月
+    sqlFile: sql/person-monthly.sql
+    resultType: LIST
+    parameters:
+      startTime: {from: RUNTIME, key: startTime}
+      endTimeExclusive: {from: RUNTIME, key: endTimeExclusive}
+      baselineStartTime: {from: RUNTIME, key: baselineStartTime}
+      baselineEndTimeExclusive: {from: RUNTIME, key: baselineEndTimeExclusive}
+      centerNames: {from: RUNTIME, key: centerNames}
+    timeoutSeconds: 90
+    maxRows: 200000
+    expectedFields:
+      nodeName: {type: STRING}
+      centerName: {type: STRING}
+      approverId: {type: STRING}
+      approverName: {type: STRING}
+      statMonth: {type: STRING}
+      avgHours: {type: DECIMAL}
+      baselineHours: {type: DECIMAL}
+      groupCategory: {type: STRING}
+      groupLeader: {type: STRING}
+      onJob: {type: STRING}
+
+  - id: durationDistribution
+    sheetName: 时长分布
+    sqlFile: sql/duration-distribution.sql
+    resultType: LIST
+    parameters:
+      startTime: {from: RUNTIME, key: startTime}
+      endTimeExclusive: {from: RUNTIME, key: endTimeExclusive}
+      centerNames: {from: RUNTIME, key: centerNames}
+    timeoutSeconds: 60
+    maxRows: 3
+    expectedFields:
+      durationRange: {type: STRING}
+      approvalCount: {type: INTEGER}
+      rangeOrder: {type: INTEGER}
+
+rules:
+  - id: abnormalApprovers
+    dataset: personAnnual
+    condition:
+      operator: AND
+      children:
+        - operator: GT
+          left: {source: CURRENT_FIELD, field: avgHours}
+          right: {source: CURRENT_FIELD, field: baselineHours}
+        - operator: OR
+          children:
+            - operator: EQ
+              left: {source: CURRENT_FIELD, field: onJob}
+              right: {source: LITERAL, value: "1"}
+            - operator: CONTAINS
+              ignoreCase: true
+              left: {source: CURRENT_FIELD, field: groupCategory}
+              right: {source: LITERAL, value: "开发"}
+    result:
+      distinctFields: [approverId]
+      groupByFields: [centerName]
+      maxItems: 50
+      sort:
+        - {field: avgHours, direction: DESC, nullOrder: LAST}
+      summaries:
+        - {name: maxHours, field: avgHours, operation: MAX}
+    policies:
+      emptyData: OUTPUT_MESSAGE
+      emptyMessage: 本期未发现超过标准的在岗审批人员
+      nullValue: RULE_NOT_MATCHED
+
+narratives:
+  - id: reportScope
+    sourceType: FIXED_TEMPLATE
+    dataset: centerAnnual
+    template: "本报告统计周期为${runtime.reportPeriod}，数据来自API设计流程审批记录。"
+    emptyStrategy: OUTPUT_MESSAGE
+
+  - id: annualTrendNarrative
+    sourceType: RULE_GENERATED
+    analyzer: annualApprovalTrend
+    analyzerType: TREND
+    dataset: departmentMonthly
+    sentence: "全年变化趋势：当期平均审批耗时${summary.current|number:0.00}小时，对比基准${summary.comparison|number:0.00}小时，趋势${summary.direction}，极值月份${summary.maximumPeriod}。"
+    emptyStrategy: OUTPUT_MESSAGE
+    trend:
+      periodField: statMonth
+      valueField: avgHours
+      comparisonSource: LITERAL
+      comparisonValue: 19.51
+      flatTolerance: 0.01
+      abnormalThreshold: 24
+
+  - id: currentMonthNarrative
+    sourceType: RULE_GENERATED
+    analyzer: currentMonthApproval
+    analyzerType: TREND
+    dataset: departmentMonthly
+    sentence: "当月分析：最新月份平均审批耗时${summary.current|number:0.00}小时，方向${summary.direction}，超过24小时的月份为${summary.abnormalPeriods}。"
+    emptyStrategy: OUTPUT_MESSAGE
+    trend:
+      periodField: statMonth
+      valueField: avgHours
+      comparisonSource: LITERAL
+      comparisonValue: 24
+      flatTolerance: 0.01
+      abnormalThreshold: 24
+
+  - id: abnormalApproverNarrative
+    sourceType: FIXED_TEMPLATE
+    dataset: personAnnual
+    template: "异常说明：超过标准且满足在岗/开发组条件的审批人员共${rule.abnormalApprovers.matchedCount}人，最高平均耗时${rule.abnormalApprovers.summary.maxHours|number:0.00}小时。"
+    emptyStrategy: OUTPUT_MESSAGE
+
+  - id: durationNarrative
+    sourceType: RULE_GENERATED
+    analyzer: approvalDurationDistribution
+    analyzerType: DISTRIBUTION
+    dataset: personAnnual
+    sentence: "审批时长区间分布：共${summary.total}人，1天之内${summary.within1Day.count}人，7天之内${summary.within7Days.count}人，7天以上${summary.over7Days.count}人。"
+    emptyStrategy: OUTPUT_MESSAGE
+    distribution:
+      field: avgHours
+      bins:
+        - {id: within1Day, label: 1天之内, max: 24, maxInclusive: true}
+        - {id: within7Days, label: 7天之内, min: 24, minInclusive: false, max: 168, maxInclusive: true}
+        - {id: over7Days, label: 7天以上, min: 168, minInclusive: false}
+      labelMode: COUNT_AND_PERCENT
+
+charts:
+  - id: centerEventCombo
+    title: 中心事件数
+    mode: GENERATED_NATIVE
+    dataset: centerMonthly
+    excelSheet: 中心-每月
+    excelTable: tbl_center_monthly
+    categoryField: statMonth
+    anchorRow: 1
+    anchorColumn: 20
+    anchorWidthColumns: 11
+    anchorHeightRows: 20
+    legendPosition: BOTTOM
+    series:
+      - field: overStandardCount
+        name: 不达标事件
+        type: STACKED_COLUMN
+        stackGroup: events
+        color: "#5B9BD5"
+        dataLabels: VALUE
+      - field: withinStandardCount
+        name: 达标事件
+        type: STACKED_COLUMN
+        stackGroup: events
+        color: "#ED7D31"
+        dataLabels: VALUE
+      - field: baselineHours
+        name: 中心基准值
+        type: LINE
+        axis: SECONDARY
+        color: "#A5A5A5"
+        lineStyle: DASHED
+        marker: false
+
+  - id: approvalTrend
+    title: API设计平台审批时长
+    mode: GENERATED_NATIVE
+    dataset: departmentMonthly
+    excelSheet: 部门-每月
+    excelTable: tbl_department_monthly
+    categoryField: statMonth
+    anchorRow: 1
+    anchorColumn: 20
+    anchorWidthColumns: 11
+    anchorHeightRows: 20
+    series:
+      - {field: avgHours, name: "耗时（小时）", type: LINE, color: "#ED7D31", marker: true, dataLabels: VALUE}
+      - {field: baselineHours, name: 基准值, type: LINE, color: "#5B9BD5", lineStyle: DASHED, marker: false}
+
+  - id: durationDistribution
+    title: 审批时长区间分布
+    mode: GENERATED_NATIVE
+    dataset: durationDistribution
+    excelSheet: 时长分布
+    excelTable: tbl_duration_distribution
+    categoryField: durationRange
+    anchorRow: 1
+    anchorColumn: 20
+    anchorWidthColumns: 10
+    anchorHeightRows: 18
+    dataLabelMode: COUNT_AND_PERCENT
+    series:
+      - {field: approvalCount, name: 人数, type: PIE, dataLabels: COUNT_AND_PERCENT}
+
+excel:
+  tableBindings:
+    - dataset: departmentMonthly
+      sheet: 部门-每月
+      table: tbl_department_monthly
+      columns:
+        - {field: nodeName, header: 节点}
+        - {field: statMonth, header: 月份}
+        - {field: avgHours, header: "平均耗时（小时）", format: "0.00"}
+        - {field: baselineHours, header: "基准值（小时）", format: "0.00"}
+    - dataset: centerAnnual
+      sheet: 中心-全年
+      table: tbl_center_annual
+      columns:
+        - {field: nodeName, header: 节点}
+        - {field: centerName, header: 中心}
+        - {field: avgHours, header: "平均耗时（小时）", format: "0.00"}
+        - {field: baselineHours, header: "基准值（小时）", format: "0.00"}
+    - dataset: centerMonthly
+      sheet: 中心-每月
+      table: tbl_center_monthly
+      columns:
+        - {field: nodeName, header: 节点}
+        - {field: centerName, header: 中心}
+        - {field: statMonth, header: 月份}
+        - {field: avgHours, header: "平均耗时（小时）", format: "0.00"}
+        - {field: baselineHours, header: "基准值（小时）", format: "0.00"}
+        - {field: overStandardCount, header: 不达标事件}
+        - {field: withinStandardCount, header: 达标事件}
+    - dataset: personAnnual
+      sheet: 个人-全年
+      table: tbl_person_annual
+      columns:
+        - {field: nodeName, header: 节点}
+        - {field: centerName, header: 中心}
+        - {field: approverId, header: 审批人工号}
+        - {field: approverName, header: 审批人}
+        - {field: avgHours, header: "平均耗时（小时）", format: "0.00"}
+        - {field: baselineHours, header: "基准值（小时）", format: "0.00"}
+        - {field: groupCategory, header: 小组类别}
+        - {field: groupLeader, header: 小组长}
+        - {field: onJob, header: 是否在岗}
+    - dataset: personMonthly
+      sheet: 个人-每月
+      table: tbl_person_monthly
+      columns:
+        - {field: nodeName, header: 节点}
+        - {field: centerName, header: 中心}
+        - {field: approverId, header: 审批人工号}
+        - {field: approverName, header: 审批人}
+        - {field: statMonth, header: 月份}
+        - {field: avgHours, header: "平均耗时（小时）", format: "0.00"}
+        - {field: baselineHours, header: "基准值（小时）", format: "0.00"}
+        - {field: groupCategory, header: 小组类别}
+        - {field: groupLeader, header: 小组长}
+        - {field: onJob, header: 是否在岗}
+    - dataset: durationDistribution
+      sheet: 时长分布
+      table: tbl_duration_distribution
+      columns:
+        - {field: durationRange, header: 时长区间}
+        - {field: approvalCount, header: 人数}
+        - {field: rangeOrder, header: 顺序}
+
+word:
+  cover:
+    title: 研发效能报告
+    organization: 软件开发二中心
+    reportPeriod: "${runtime.reportPeriod}"
+    preparedBy: 效能小组
+    preparedDate: "${runtime.preparedDate}"
+  toc:
+    enabled: true
+    maxLevel: 4
+    updateOnOpen: true
+  sections:
+    - id: deliverySpeed
+      title: 交付速率
+      level: 1
+      emptyStrategy: KEEP
+      components:
+        - {type: SCENARIO, text: "场景说明：反映审核人员在周期内审批节点的时长以及各类设计平台审批时长较长的情况。"}
+        - {type: KEY_FACTORS, text: "构成要素：API设计平台审批时长、数据库表设计平台审批时长。"}
+        - {type: FIXED_TEXT, text: "以下内容由同一查询快照生成，Excel数据页保持可见并可追溯图表数据源。"}
+      children:
+        - id: approvalDuration
+          title: 设计平台审批时长
+          level: 2
+          emptyStrategy: KEEP
+          components:
+            - {type: RULE_TEXT, narrativeId: reportScope}
+            - {type: CHART, chartId: approvalTrend, widthInches: 6.2, alignment: CENTER, caption: "API设计平台审批时长", altText: "API设计平台审批时长趋势图"}
+            - {type: RULE_TEXT, narrativeId: annualTrendNarrative}
+            - {type: UNIT, text: "单位：小时"}
+          children:
+            - id: annualSituation
+              title: 中心全年总体情况
+              level: 3
+              emptyStrategy: KEEP
+              components:
+                - {type: CHART, chartId: centerEventCombo, widthInches: 6.2, alignment: CENTER, caption: "中心事件数", altText: "堆积柱形和基准折线组合图"}
+                - {type: TABLE, dataset: centerAnnual, emptyMessage: 暂无中心年度数据}
+              children:
+                - id: currentMonth
+                  title: 中心当月分析
+                  level: 4
+                  emptyStrategy: KEEP
+                  components:
+                    - {type: RULE_TEXT, narrativeId: currentMonthNarrative}
+                    - {type: RULE_TEXT, narrativeId: abnormalApproverNarrative}
+                    - {type: TABLE, dataset: personMonthly, emptyMessage: 暂无个人月度明细}
+        - id: durationRange
+          title: 审批时长区间分布
+          level: 2
+          emptyStrategy: KEEP
+          components:
+            - {type: CHART, chartId: durationDistribution, widthInches: 5.8, alignment: CENTER, caption: "审批时长区间分布", altText: "1天之内、7天之内、7天以上分布饼图"}
+            - {type: RULE_TEXT, narrativeId: durationNarrative}
+        - id: attachments
+          title: 附件信息
+          level: 2
+          emptyStrategy: KEEP
+          components:
+            - type: ATTACHMENT
+              title: 附件信息
+              description: 本报告同时生成下列可追溯附件：
+              items: ["研发效能报告 Excel 数据与原生图表"]
+
+    - id: deliveryQuality
+      title: 交付质量
+      level: 1
+      emptyStrategy: KEEP
+      components:
+        - {type: FIXED_TEXT, text: "需求质量、开发质量、测试质量、版本质量和系统运行质量可继续按相同配置模型扩展。"}

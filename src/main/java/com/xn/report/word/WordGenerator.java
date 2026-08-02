@@ -44,6 +44,7 @@ public class WordGenerator {
     private final WordOutputValidator outputValidator;
     private final WordRunTextReplacer textReplacer;
     private final WordTemplateChartBinder templateChartBinder;
+    private final WordCoverValueResolver coverValueResolver;
 
     public WordGenerator() {
         this(
@@ -53,7 +54,8 @@ public class WordGenerator {
                 new WordSectionRenderer(),
                 new WordOutputValidator(),
                 new WordRunTextReplacer(),
-                new WordTemplateChartBinder());
+                new WordTemplateChartBinder(),
+                new WordCoverValueResolver());
     }
 
     WordGenerator(
@@ -63,7 +65,8 @@ public class WordGenerator {
             WordSectionRenderer sectionRenderer,
             WordOutputValidator outputValidator,
             WordRunTextReplacer textReplacer,
-            WordTemplateChartBinder templateChartBinder) {
+            WordTemplateChartBinder templateChartBinder,
+            WordCoverValueResolver coverValueResolver) {
         this.templateLoader =
                 Objects.requireNonNull(templateLoader, "templateLoader");
         this.coverBinder = Objects.requireNonNull(coverBinder, "coverBinder");
@@ -76,6 +79,8 @@ public class WordGenerator {
                 Objects.requireNonNull(textReplacer, "textReplacer");
         this.templateChartBinder =
                 Objects.requireNonNull(templateChartBinder, "templateChartBinder");
+        this.coverValueResolver =
+                Objects.requireNonNull(coverValueResolver, "coverValueResolver");
     }
 
     public Path generate(
@@ -100,7 +105,11 @@ public class WordGenerator {
         try (XWPFDocument document = templateLoader.load(template)) {
             int templateChartInstances = expectedTemplateChartInstances(
                     document, analysis);
-            coverBinder.bind(document, definition.getWord().getCover());
+            WordCoverDefinition resolvedCover = coverValueResolver.resolve(
+                    definition.getWord().getCover(),
+                    execution.getRequest().getRuntimeParameters(),
+                    definition.getPolicies());
+            coverBinder.bind(document, resolvedCover);
             tocManager.configure(
                     document,
                     definition.getWord().getToc().getMaxLevel(),
@@ -112,7 +121,8 @@ public class WordGenerator {
                     definition.getWord(),
                     renderContext(analysis));
             WordOutputExpectation expectation = expectationFromConfiguration(
-                    definition, analysis, templateChartInstances);
+                    definition, resolvedCover, analysis,
+                    templateChartInstances);
             Files.createDirectories(output.getParent());
             try (OutputStream stream = Files.newOutputStream(
                     output,
@@ -244,9 +254,9 @@ public class WordGenerator {
 
     private static WordOutputExpectation expectationFromConfiguration(
             ReportDefinition definition,
+            WordCoverDefinition cover,
             AnalysisContext analysis,
             int templateChartInstances) {
-        WordCoverDefinition cover = definition.getWord().getCover();
         WordTocDefinition toc = definition.getWord().getToc();
         WordOutputExpectation.Builder expected =
                 WordOutputExpectation.builder()

@@ -271,6 +271,37 @@ class WordOutputValidatorTest {
     }
 
     @Test
+    void rejectsExtraUniqueAttachmentWithoutListItems() throws Exception {
+        Path output = tempDir.resolve("extra-unique-attachment.docx");
+        WordComponentDefinition expected = new WordComponentDefinition();
+        expected.setType("ATTACHMENT");
+        expected.setTitle("Expected attachment");
+        expected.setDescription("Expected description");
+        WordComponentDefinition extra = new WordComponentDefinition();
+        extra.setType("ATTACHMENT");
+        extra.setTitle("Unique trailing attachment");
+        extra.setDescription("Unique trailing description");
+        try (XWPFDocument document = WordTemplateLoaderTest.validTemplate()) {
+            prepareEmptyOutput(document);
+            new WordAttachmentWriter().append(document, expected);
+            new WordAttachmentWriter().append(document, extra);
+            try (OutputStream stream = Files.newOutputStream(output)) {
+                document.write(stream);
+            }
+        }
+        WordOutputExpectation expectation = WordOutputExpectation.builder()
+                .attachment("Expected attachment", "Expected description",
+                        Collections.<String>emptyList())
+                .build();
+
+        assertThatThrownBy(() -> new WordOutputValidator().validate(
+                output, expectation))
+                .isInstanceOf(WordTemplateException.class)
+                .hasMessageContaining("attachment")
+                .hasMessageContaining("count");
+    }
+
+    @Test
     void ignoresCoverHeadingAndFollowingCoverTableWhenLocatingDynamicTables()
             throws Exception {
         DatasetResult details = DatasetResult.single(

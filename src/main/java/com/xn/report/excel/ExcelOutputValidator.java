@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import org.apache.poi.ss.formula.SheetNameFormatter;
 import org.apache.poi.ss.usermodel.SheetVisibility;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFTable;
@@ -322,18 +323,9 @@ public final class ExcelOutputValidator {
 
     private static boolean isSafeUnquotedSheetName(
             CharSequence sheetName) {
-        if (sheetName.length() == 0) {
-            return false;
-        }
-        for (int index = 0; index < sheetName.length(); index++) {
-            char character = sheetName.charAt(index);
-            if (!Character.isLetterOrDigit(character)
-                    && character != '_'
-                    && character != '.') {
-                return false;
-            }
-        }
-        return true;
+        String value = sheetName.toString();
+        return !value.isEmpty()
+                && SheetNameFormatter.format(value).equals(value);
     }
 
     private static void validateCachePointCount(

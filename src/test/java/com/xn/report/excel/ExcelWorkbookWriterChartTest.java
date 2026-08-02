@@ -41,6 +41,12 @@ class ExcelWorkbookWriterChartTest {
                 "'人员''明细'!$A$2:$A$4")).isTrue();
         assertThat(ExcelOutputValidator.formulasEquivalent(
                 "'时长分布'!$F$2", "其他页!$F$2")).isFalse();
+        assertThat(ExcelOutputValidator.formulasEquivalent(
+                "'1Sheet'!$A$1", "1Sheet!$A$1")).isFalse();
+        assertThat(ExcelOutputValidator.formulasEquivalent(
+                "'A1'!$A$1", "A1!$A$1")).isFalse();
+        assertThat(ExcelOutputValidator.formulasEquivalent(
+                "'R1C1'!$A$1", "R1C1!$A$1")).isFalse();
     }
 
     @Test

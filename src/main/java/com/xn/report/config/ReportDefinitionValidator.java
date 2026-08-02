@@ -170,6 +170,9 @@ public final class ReportDefinitionValidator {
             }
             if (!hasText(chart.getId())) {
                 result.add("CHART-001", path + ".id", "Chart id is required");
+            } else if (chart.getId().contains("::")) {
+                result.add("CHART-001", path + ".id",
+                        "Chart id must not contain reserved separator ::");
             } else if (!ids.add(chart.getId())) {
                 result.add("CHART-001", path + ".id",
                         "Duplicate chart id: " + chart.getId());

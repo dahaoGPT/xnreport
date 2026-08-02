@@ -4,7 +4,9 @@ import com.xn.report.config.definition.WordComponentDefinition;
 import java.io.StringReader;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -113,21 +115,24 @@ public final class WordAttachmentWriter {
 
     private static BigInteger nextBookmarkId(XWPFDocument document) {
         Set<BigInteger> used = new HashSet<BigInteger>();
-        collectBookmarkIds(document.getDocument().getBody(), used);
+        Set<XmlObject> stories = Collections.newSetFromMap(
+                new IdentityHashMap<XmlObject, Boolean>());
+        stories.add(document.getDocument().getBody());
         for (XWPFHeader header : document.getHeaderList()) {
-            collectBookmarkIds(header._getHdrFtr(), used);
+            stories.add(header._getHdrFtr());
         }
         for (XWPFFooter footer : document.getFooterList()) {
-            collectBookmarkIds(footer._getHdrFtr(), used);
+            stories.add(footer._getHdrFtr());
         }
         for (POIXMLDocumentPart relation : document.getRelations()) {
             if (relation instanceof XWPFHeader) {
-                collectBookmarkIds(
-                        ((XWPFHeader) relation)._getHdrFtr(), used);
+                stories.add(((XWPFHeader) relation)._getHdrFtr());
             } else if (relation instanceof XWPFFooter) {
-                collectBookmarkIds(
-                        ((XWPFFooter) relation)._getHdrFtr(), used);
+                stories.add(((XWPFFooter) relation)._getHdrFtr());
             }
+        }
+        for (XmlObject story : stories) {
+            collectBookmarkIds(story, used);
         }
         BigInteger candidate = BigInteger.ONE;
         while (used.contains(candidate)) {

@@ -79,6 +79,30 @@ class ChartConfigurationTest {
     }
 
     @Test
+    void rejectsChartIdsUsingTheInternalGroupedChartSeparator()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode json = mapper.readTree(validChartJson(
+                "generatedNative",
+                "{\"field\":\"a\",\"name\":\"A\",\"type\":\"line\"}"));
+        ((com.fasterxml.jackson.databind.node.ObjectNode)
+                json.path("charts").get(0)).put("id", "approval::custom");
+        assertThat(schema().validate(json)).isNotEmpty();
+
+        ReportDefinition report = TestFixtures.report(datasetWithFields("a"));
+        ChartDefinition chart = chart(ChartType.LINE, "a", null);
+        chart.setId("approval::custom");
+        report.setCharts(Collections.singletonList(chart));
+
+        assertThat(new ReportDefinitionValidator().validate(report).issues())
+                .anySatisfy(issue -> {
+                    assertThat(issue.getCode()).isEqualTo("CHART-001");
+                    assertThat(issue.getPath()).isEqualTo("$.charts[0].id");
+                    assertThat(issue.getMessage()).contains("::");
+                });
+    }
+
+    @Test
     void rejectsMixedStackGroupsInSchemaValidatorAndBuilder() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode reportJson = mapper.readTree(validChartJson(

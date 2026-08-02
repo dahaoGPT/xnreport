@@ -58,7 +58,7 @@ ReportExecutionResult result = entry.generate(request);
 - 空数据、缺失字段、类型不匹配、null 和未解析占位符策略；
 - 失败时不发布半成品，执行临时目录自动清理。
 
-详细字段与模板约定见 [配置与模板使用说明](docs/配置与模板使用说明.md)。
+面向使用者的完整操作步骤见 [使用手册](docs/使用手册.md)，详细字段与模板约定见 [配置与模板使用说明](docs/配置与模板使用说明.md)。
 
 ## 构建与测试
 
@@ -68,4 +68,3 @@ mvn verify
 ```
 
 MySQL 集成测试使用 MySQL 5.7 容器时需要可用的 Docker 环境。项目生产编译目标为 Java 8。
-

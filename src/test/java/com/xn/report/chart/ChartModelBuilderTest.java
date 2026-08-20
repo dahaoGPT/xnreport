@@ -56,6 +56,8 @@ class ChartModelBuilderTest {
 
         assertThat(models).extracting(ChartModel::getGroupKey)
                 .containsExactly("A中心", "B中心");
+        assertThat(models).extracting(ChartModel::getTitle)
+                .containsExactly("中心事件数 - A中心", "中心事件数 - B中心");
         assertThat(models.get(0).getCategories()).containsExactly(
                 "2026年1月", "2026年2月", "2026年3月", "2026年4月");
         assertThat(models.get(0).getSeries().get(0).getValues())

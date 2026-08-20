@@ -259,7 +259,7 @@ public final class ChartModelBuilder {
             String datasetId) {
         return new ChartModel(
                 definition.getId(),
-                definition.getTitle(),
+                visibleTitle(definition.getTitle(), groupKey),
                 datasetId,
                 groupKey,
                 categories,
@@ -275,6 +275,16 @@ public final class ChartModelBuilder {
                 intValue(definition.getHeightPixels(), 850),
                 definition.getEmptyDataPolicy(),
                 definition.getEmptyMessage());
+    }
+
+    private static String visibleTitle(String title, String groupKey) {
+        if (groupKey == null || groupKey.trim().isEmpty()) {
+            return title;
+        }
+        if (title == null || title.trim().isEmpty()) {
+            return groupKey;
+        }
+        return title + " - " + groupKey;
     }
 
     private static ChartSeriesModel seriesModel(

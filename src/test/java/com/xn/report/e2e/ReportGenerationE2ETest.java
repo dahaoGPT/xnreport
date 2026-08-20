@@ -183,6 +183,7 @@ class ReportGenerationE2ETest {
     private static DatasetRow centerMonth(
             String center, String month, String hours, int over, int within) {
         return row("nodeName", "API设计", "centerName", center,
+                "chartGroup", center + " / API设计",
                 "statMonth", month, "avgHours", decimal(hours),
                 "baselineHours", decimal("19.51"),
                 "overStandardCount", Long.valueOf(over),

@@ -27,7 +27,7 @@ class ReportRunnerPropertiesTest {
                     "report-runner.root=.",
                     "report-runner.report-config=config/api-design-efficiency.yml",
                     "report-runner.config-root=config",
-                    "report-runner.sql-root=config/sql",
+                    "report-runner.sql-root=config",
                     "report-runner.template-root=templates",
                     "report-runner.output-root=output",
                     "report-runner.temp-root=temp",

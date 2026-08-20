@@ -35,7 +35,7 @@ runtime.put("preparedDate", "2026年7月23日");
 ReportExecutionRequest request = new ReportExecutionRequest(
         root.resolve("config/api-design-efficiency.yml"),
         root.resolve("config"),
-        root.resolve("config/sql"),
+        root.resolve("config"),
         root.resolve("templates"),
         root.resolve("output"),
         root.resolve("temp"),

@@ -18,7 +18,7 @@ report-runner:
   root: ${XNREPORT_ROOT:.}
   report-config: config/api-design-efficiency.yml
   config-root: config
-  sql-root: config/sql
+  sql-root: config
   template-root: templates
   output-root: output
   temp-root: temp

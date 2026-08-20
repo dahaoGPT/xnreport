@@ -30,7 +30,7 @@ policies:
 datasets:
   - id: departmentMonthly
     sheetName: 部门-每月
-    sqlFile: department-monthly.sql
+    sqlFile: sql/department-monthly.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -48,7 +48,7 @@ datasets:
 
   - id: centerAnnual
     sheetName: 中心-全年
-    sqlFile: center-annual.sql
+    sqlFile: sql/center-annual.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -66,7 +66,7 @@ datasets:
 
   - id: centerMonthly
     sheetName: 中心-每月
-    sqlFile: center-monthly.sql
+    sqlFile: sql/center-monthly.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -88,7 +88,7 @@ datasets:
 
   - id: personAnnual
     sheetName: 个人-全年
-    sqlFile: person-annual.sql
+    sqlFile: sql/person-annual.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -111,7 +111,7 @@ datasets:
 
   - id: personMonthly
     sheetName: 个人-每月
-    sqlFile: person-monthly.sql
+    sqlFile: sql/person-monthly.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -135,7 +135,7 @@ datasets:
 
   - id: durationDistribution
     sheetName: 时长分布
-    sqlFile: duration-distribution.sql
+    sqlFile: sql/duration-distribution.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}

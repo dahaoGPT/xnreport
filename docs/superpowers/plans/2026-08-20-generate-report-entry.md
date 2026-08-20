@@ -51,7 +51,7 @@ class ReportRunnerPropertiesTest {
                             "report-runner.root=.",
                             "report-runner.report-config=config/api-design-efficiency.yml",
                             "report-runner.config-root=config",
-                            "report-runner.sql-root=config/sql",
+                            "report-runner.sql-root=config",
                             "report-runner.template-root=templates",
                             "report-runner.output-root=output",
                             "report-runner.temp-root=temp",
@@ -362,4 +362,3 @@ git log -5 --oneline
 ```
 
 Expected: 工作区干净，最近提交包含配置绑定、入口类、打包配置和使用手册。
-

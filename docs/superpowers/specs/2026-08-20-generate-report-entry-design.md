@@ -43,7 +43,7 @@ report-runner:
   root: ${XNREPORT_ROOT:.}
   report-config: config/api-design-efficiency.yml
   config-root: config
-  sql-root: config/sql
+  sql-root: config
   template-root: templates
   output-root: output
   temp-root: temp
@@ -135,4 +135,3 @@ report-runner:
 - 不增加 REST API、调度器或多报表批量入口；
 - 不改变现有报表配置模型、SQL、Excel/Word 生成流程；
 - 不在源码中硬编码数据库密码和绝对项目路径。
-

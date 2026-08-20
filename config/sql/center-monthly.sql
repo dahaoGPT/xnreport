@@ -1,6 +1,7 @@
 SELECT
     t.NOD_NM AS nodeName,
     t.CENTR_NM AS centerName,
+    CONCAT(t.CENTR_NM, ' / ', t.NOD_NM) AS chartGroup,
     DATE_FORMAT(t.APRV_END_TM, '%Y-%m') AS statMonth,
     ROUND(AVG(TIMESTAMPDIFF(HOUR, t.APRV_BGN_TM, t.APRV_END_TM)), 2) AS avgHours,
     MAX(b.baselineHours) AS baselineHours,

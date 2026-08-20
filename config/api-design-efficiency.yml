@@ -30,7 +30,7 @@ policies:
 datasets:
   - id: departmentMonthly
     sheetName: 部门-每月
-    sqlFile: sql/department-monthly.sql
+    sqlFile: department-monthly.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -48,7 +48,7 @@ datasets:
 
   - id: centerAnnual
     sheetName: 中心-全年
-    sqlFile: sql/center-annual.sql
+    sqlFile: center-annual.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -66,7 +66,7 @@ datasets:
 
   - id: centerMonthly
     sheetName: 中心-每月
-    sqlFile: sql/center-monthly.sql
+    sqlFile: center-monthly.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -79,6 +79,7 @@ datasets:
     expectedFields:
       nodeName: {type: STRING}
       centerName: {type: STRING}
+      chartGroup: {type: STRING}
       statMonth: {type: STRING}
       avgHours: {type: DECIMAL}
       baselineHours: {type: DECIMAL}
@@ -87,7 +88,7 @@ datasets:
 
   - id: personAnnual
     sheetName: 个人-全年
-    sqlFile: sql/person-annual.sql
+    sqlFile: person-annual.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -110,7 +111,7 @@ datasets:
 
   - id: personMonthly
     sheetName: 个人-每月
-    sqlFile: sql/person-monthly.sql
+    sqlFile: person-monthly.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -134,7 +135,7 @@ datasets:
 
   - id: durationDistribution
     sheetName: 时长分布
-    sqlFile: sql/duration-distribution.sql
+    sqlFile: duration-distribution.sql
     resultType: LIST
     parameters:
       startTime: {from: RUNTIME, key: startTime}
@@ -244,6 +245,7 @@ charts:
     excelSheet: 中心-每月
     excelTable: tbl_center_monthly
     categoryField: statMonth
+    groupByField: chartGroup
     anchorRow: 1
     anchorColumn: 20
     anchorWidthColumns: 11
@@ -277,6 +279,7 @@ charts:
     excelSheet: 部门-每月
     excelTable: tbl_department_monthly
     categoryField: statMonth
+    groupByField: nodeName
     anchorRow: 1
     anchorColumn: 20
     anchorWidthColumns: 11
@@ -324,6 +327,7 @@ excel:
       columns:
         - {field: nodeName, header: 节点}
         - {field: centerName, header: 中心}
+        - {field: chartGroup, header: 图表分组}
         - {field: statMonth, header: 月份}
         - {field: avgHours, header: "平均耗时（小时）", format: "0.00"}
         - {field: baselineHours, header: "基准值（小时）", format: "0.00"}

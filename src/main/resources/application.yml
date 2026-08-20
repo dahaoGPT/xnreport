@@ -1,6 +1,11 @@
 spring:
   application:
     name: xnreport
+  datasource:
+    url: ${XNREPORT_JDBC_URL:jdbc:mysql://127.0.0.1:3307/xnreport?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${XNREPORT_DB_USERNAME:xnreport}
+    password: ${XNREPORT_DB_PASSWORD:xnreport}
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
 report-engine:
   config-root: ./config
@@ -8,3 +13,30 @@ report-engine:
   template-root: ./templates
   output-root: ./output
   temp-root: ./temp
+
+report-runner:
+  root: ${XNREPORT_ROOT:.}
+  report-config: config/api-design-efficiency.yml
+  config-root: config
+  sql-root: config/sql
+  template-root: templates
+  output-root: output
+  temp-root: temp
+  runtime:
+    start-time: "2026-01-01T00:00:00"
+    end-time-exclusive: "2026-07-01T00:00:00"
+    baseline-start-time: "2025-01-01T00:00:00"
+    baseline-end-time-exclusive: "2026-01-01T00:00:00"
+    center-names:
+      - 开发一中心
+      - 开发二中心
+      - 开发三中心
+      - 开发四中心
+      - 开发五中心
+      - 开发六中心
+      - 开发七中心
+      - 开发八中心
+      - 开发九中心
+      - 研发中心
+    report-period: 2026年6月
+    prepared-date: 2026年7月23日

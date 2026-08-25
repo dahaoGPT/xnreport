@@ -7,6 +7,18 @@ spring:
     password: ${XNREPORT_DB_PASSWORD:xnreport}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+# 日志输出配置
+logging:
+  level:
+    root: INFO
+    com.xn.report: ${XNREPORT_LOG_LEVEL:INFO}
+    org.springframework: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{reportExecutionId}] [%X{reportCode}] [%X{reportStage}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{reportExecutionId}] [%X{reportCode}] [%X{reportStage}] %logger{36} - %msg%n"
+  file:
+    name: ${XNREPORT_LOG_FILE:logs/xnreport.log}
+
 report-engine:
   config-root: ./config
   sql-root: ./config/sql

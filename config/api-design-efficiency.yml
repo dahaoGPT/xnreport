@@ -267,7 +267,7 @@ charts:
       - field: baselineHours
         name: 中心基准值
         type: LINE
-        axis: SECONDARY
+#        axis: SECONDARY
         color: "#A5A5A5"
         lineStyle: DASHED
         marker: false

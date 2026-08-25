@@ -173,7 +173,7 @@ class DatasetResultTest {
         Set<?> storedSet = (Set<?>) stored.get(1);
         assertThat((byte[]) storedMap.get("bytes")).containsExactly(6, 7);
         assertThat(storedMap.containsKey("extra")).isFalse();
-        assertThat(storedSet).containsExactly(new Date(4_000L));
+        assertThat(storedSet).isEqualTo(Collections.singleton(new Date(4_000L)));
         assertThatThrownBy(() -> ((List<Object>) stored).add("changed"))
                 .isInstanceOf(UnsupportedOperationException.class);
         assertThatThrownBy(() -> ((Map<Object, Object>) storedMap).put("x", "y"))

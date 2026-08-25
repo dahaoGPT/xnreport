@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.xn.report.config.ReportDefinition;
 import com.xn.report.config.RootPathPolicy;
 import com.xn.report.config.definition.DatasetDefinition;
 import com.xn.report.config.definition.FieldDefinition;

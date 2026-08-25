@@ -38,6 +38,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 /**
@@ -58,6 +60,8 @@ import org.slf4j.MDC;
  * </p>
  */
 public final class DefaultReportPipeline implements ReportPipeline {
+
+    private static final Logger log = LoggerFactory.getLogger(DefaultReportPipeline.class);
 
     private static final String MDC_EXECUTION_ID = "reportExecutionId";
     private static final String MDC_REPORT_CODE = "reportCode";
@@ -201,6 +205,7 @@ public final class DefaultReportPipeline implements ReportPipeline {
         Map<String, String> previousMdc = MDC.getCopyOfContextMap();
 
         MDC.put(MDC_EXECUTION_ID, executionId);
+        log.info("开始执行报表生成流水线 [executionId={}]", executionId);
         try {
             workspace = ExecutionWorkspace.create(request.getTempRoot());
             context = new ExecutionContext(
@@ -211,6 +216,8 @@ public final class DefaultReportPipeline implements ReportPipeline {
                     () -> loader.load(request.getReportConfigPath()));
             activeContext.setDefinition(definition);
             putReportCode(definition);
+            log.info("加载报表配置成功 [code={}, path={}]",
+                    reportCode(definition), request.getReportConfigPath());
 
             final ReportDefinition configured = definition;
             PublicationPlan publicationPlan = stage(
@@ -222,6 +229,7 @@ public final class DefaultReportPipeline implements ReportPipeline {
                 return new PublicationPlan(
                         targets, collisionPolicy(configured));
             });
+            log.info("报表配置校验与输出目标检查通过");
 
             DatasetQueryService activeQueryService =
                     queryServiceFactory.create(request.getSqlRoot());
@@ -243,6 +251,7 @@ public final class DefaultReportPipeline implements ReportPipeline {
                 activeContext.addWarning(ReportWarning.fromPolicy(warning));
             }
             activeContext.setQuerySnapshot(snapshot);
+            log.info("SQL 数据集查询完成，共获取 {} 个数据集快照", snapshot.ids().size());
 
             AnalysisContext analysis = stage(
                     activeContext,
@@ -258,22 +267,29 @@ public final class DefaultReportPipeline implements ReportPipeline {
                     : analysis.getWarnings()) {
                 activeContext.addWarning(ReportWarning.fromPolicy(warning));
             }
+            log.info("数据清洗、业务规则计算、叙述文本及图表渲染完成 [chartModels={}, narratives={}]",
+                    analysis.getChartModels().size(), analysis.getNarratives().size());
 
             Path excel = stage(
                     activeContext,
                     ExecutionStage.GENERATE_EXCEL,
                     () -> excelGenerator.generate(
                             configured, analysis, activeContext));
+            log.info("Excel 报表生成完成 [path={}]", excel);
+
             Path word = stage(
                     activeContext,
                     ExecutionStage.GENERATE_WORD,
                     () -> wordGenerator.generate(
                             configured, analysis, activeContext));
+            log.info("Word 报表生成完成 [path={}]", word);
 
             stage(activeContext, ExecutionStage.VALIDATE_OUTPUTS, () -> {
                 outputValidator.validate(excel, word);
                 return null;
             });
+            log.info("生成产物后置严格质检通过");
+
             published = stage(
                     activeContext,
                     ExecutionStage.PUBLISH,
@@ -286,11 +302,16 @@ public final class DefaultReportPipeline implements ReportPipeline {
             for (String warning : published.getWarnings()) {
                 activeContext.addWarning(ReportWarning.publication(warning));
             }
+            log.info("报表发布完成 [excel={}, word={}]",
+                    published.getExcel(), published.getWord());
+
             activeContext.setStage(ExecutionStage.COMPLETED);
         } catch (RuntimeException exception) {
             failure = exception;
             failedStage = context == null
                     ? ExecutionStage.INITIALIZE : context.getStage();
+            log.error("报表生成在阶段 [{}] 发生异常: {}",
+                    failedStage, exception.getMessage(), exception);
         } finally {
             if (context != null) {
                 warnings.addAll(context.getWarnings());
@@ -322,6 +343,8 @@ public final class DefaultReportPipeline implements ReportPipeline {
         ExecutionMetrics metrics = mutableMetrics.snapshot(finishedAt);
         String reportCode = reportCode(definition);
         if (failure != null) {
+            log.warn("报表生成任务失败 [reportCode={}, failedStage={}, duration={}ms]",
+                    reportCode, failedStage, metrics.getTotalDurationMillis());
             return failed(
                     executionId, reportCode, startedAt, finishedAt,
                     analyzedDatasets, warnings, failure, failedStage, metrics);
@@ -329,6 +352,8 @@ public final class DefaultReportPipeline implements ReportPipeline {
         ExecutionStatus status = warnings.isEmpty()
                 ? ExecutionStatus.SUCCESS
                 : ExecutionStatus.SUCCESS_WITH_WARNINGS;
+        log.info("报表生成流水线全部完成 [status={}, duration={}ms, warnings={}]",
+                status, metrics.getTotalDurationMillis(), warnings.size());
         return new ReportExecutionResult(
                 executionId,
                 reportCode,
@@ -352,10 +377,13 @@ public final class DefaultReportPipeline implements ReportPipeline {
         context.setStage(stage);
         MDC.put(MDC_STAGE, stage.name());
         long started = context.getMutableMetrics().start();
+        log.debug("阶段 [{}] 开始执行", stage.name());
         try {
             return operation.run();
         } finally {
+            long duration = (System.nanoTime() - started) / 1_000_000L;
             context.getMutableMetrics().finish(stage, started);
+            log.debug("阶段 [{}] 执行完成，耗时 {} ms", stage.name(), duration);
         }
     }
 

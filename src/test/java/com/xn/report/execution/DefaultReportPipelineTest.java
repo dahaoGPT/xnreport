@@ -319,8 +319,8 @@ class DefaultReportPipelineTest {
         values.put("late", "value");
 
         assertThat(copied.getRuntimeParameters()).doesNotContainKey("late");
-        assertThat((java.util.List<?>) copied.getRuntimeParameters().get("centers"))
-                .containsExactly("一中心");
+        assertThat(copied.getRuntimeParameters().get("centers"))
+                .isEqualTo(Collections.singletonList("一中心"));
         assertThat(copied.getReportConfigPath())
                 .isEqualTo(directory.resolve("config/report.yml")
                         .toAbsolutePath().normalize());

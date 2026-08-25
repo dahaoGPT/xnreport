@@ -35,6 +35,21 @@ import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 
+/**
+ * Word 报表文档生成顶层执行器。
+ * <p>
+ * 串联报表上下文、模板文件与所有组件渲染管道：
+ * <ol>
+ *   <li>通过 {@link WordTemplateLoader} 加载并校验模板（标题样式 Heading1~4、TOC、<code>{{sections}}</code> 锚点）。</li>
+ *   <li>求值并绑定文档封面占位符（{@link WordCoverValueResolver} / {@link WordCoverBinder}）。</li>
+ *   <li>配置目录层级与打开时自动更新字段标记（{@link WordTocManager}）。</li>
+ *   <li>替换模板全局标量值与分析叙述文本（<code>{{text:id}}</code>、<code>{{value:dataset.field}}</code>）。</li>
+ *   <li>绑定模板静态图表占位符（<code>{{chart:id}}</code>）。</li>
+ *   <li>在 <code>{{sections}}</code> 锚点处深度优先展开章节与各类多态组件（{@link WordSectionRenderer}）。</li>
+ *   <li>写出 report.docx 并通过 {@link WordOutputValidator} 执行全方位质检校验。</li>
+ * </ol>
+ * </p>
+ */
 public class WordGenerator {
 
     private final WordTemplateLoader templateLoader;
@@ -83,6 +98,14 @@ public class WordGenerator {
                 Objects.requireNonNull(coverValueResolver, "coverValueResolver");
     }
 
+    /**
+     * 生成 Word 报表产物文件。
+     *
+     * @param definition 报表配置定义
+     * @param analysis 分析计算上下文
+     * @param execution 任务执行上下文
+     * @return 生成的 report.docx 文件绝对路径
+     */
     public Path generate(
             ReportDefinition definition,
             AnalysisContext analysis,
@@ -179,9 +202,9 @@ public class WordGenerator {
             for (String field : row.fieldNames()) {
                 Object value = row.getOrNull(field);
                 textReplacer.replace(
-                        document,
-                        "{{value:" + datasetId + "." + field + "}}",
-                        value == null ? "" : String.valueOf(value));
+                    document,
+                    "{{value:" + datasetId + "." + field + "}}",
+                    value == null ? "" : String.valueOf(value));
             }
         }
     }

@@ -8,14 +8,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * 转换引擎深度值封装与哈希比较工具类。
+ * <p>
+ * 为 {@link DistinctTransform} 去重与比较提供支持跨复杂类型（数组、List、Set、Map、数值、日期）的深度相等性（equals）与哈希（hashCode）计算。
+ * </p>
+ */
 final class TransformDeepValue {
 
+    /** 冻结的不可变值快照。 */
     private final Object value;
 
     private TransformDeepValue(Object value) {
         this.value = TransformValueSnapshot.freeze(value);
     }
 
+    /**
+     * 构建深度值包装对象。
+     *
+     * @param value 原始值
+     * @return TransformDeepValue 包装实例
+     */
     static TransformDeepValue of(Object value) {
         return new TransformDeepValue(value);
     }

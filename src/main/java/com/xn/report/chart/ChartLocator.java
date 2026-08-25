@@ -10,8 +10,24 @@ import org.apache.xmlbeans.XmlCursor;
 import org.apache.xmlbeans.XmlObject;
 import org.openxmlformats.schemas.drawingml.x2006.main.CTNonVisualDrawingProps;
 
+/**
+ * Excel 模板图表物理定位查找器。
+ * <p>
+ * 通过读取 OpenXML 图形属性（descr 描述标识、name 名称、title 标题）或工作表内 0-based 图表索引，
+ * 在目标工作表中准确定位唯一的 {@link XSSFChart} 对象。
+ * </p>
+ */
 public final class ChartLocator {
 
+    /**
+     * 在工作表中查找唯一匹配的模板图表。
+     *
+     * @param workbook 工作簿
+     * @param sheetName 工作表名
+     * @param marker 标记字符串（可匹配 descr, name, title）
+     * @param chartIndex 0-based 物理图表索引（与 marker 二选一）
+     * @return 匹配的 XSSFChart 对象
+     */
     public XSSFChart findUnique(
             XSSFWorkbook workbook,
             String sheetName,
@@ -68,6 +84,9 @@ public final class ChartLocator {
         return matches.get(0);
     }
 
+    /**
+     * 为新生成的图表写入描述标记（descr），以便后续精准识别。
+     */
     public static void setMarker(
             XSSFChart chart, String marker) {
         if (chart == null || marker == null

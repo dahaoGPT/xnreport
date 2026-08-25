@@ -50,34 +50,73 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 报表配置全量语义与静态约束校验器。
+ * <p>
+ * 在报表流水线的 {@code VALIDATE_CONFIG} 阶段对反序列化后的 {@link ReportDefinition} 进行严格的深度语义校验：
+ * <ul>
+ *   <li><b>基础元数据与输出命名校验</b>：校验 schemaVersion、report.code、report.name、输出文件名模板及扩展名一致性。</li>
+ *   <li><b>数据集（Datasets）语义校验</b>：校验 datasetId 格式、SQL 路径或 Transform 派生转换配置、字段类型、拓扑依赖环（Cycle）检测。</li>
+ *   <li><b>规则引擎（Rules）定义校验</b>：校验条件表达式 AST、比较操作符、操作数引用及字段存在性。</li>
+ *   <li><b>图表（Charts）定义校验</b>：校验图表类型、维度/度量系列绑定、分类与数值轴边界、模板原生图表定位器（templateChartMarker/templateChartIndex）。</li>
+ *   <li><b>文字段落（Narratives）定义校验</b>：校验占位符语法、格式化器有效性、趋势分析（Trend）与分布分析（Distribution）参数。</li>
+ *   <li><b>Excel 绑定校验</b>：校验工作表名称规则（SheetNameRules）、表名规则（TableNameRules）、单元格与表格列数据绑定。</li>
+ *   <li><b>Word 模板与章节校验</b>：校验封面字段绑定、目录域配置、章节层次标题（1-4级）、组件类型及引用有效性。</li>
+ * </ul>
+ * </p>
+ */
 public final class ReportDefinitionValidator {
 
+    /** 章节标题最大 UTF-16 字符长度。 */
     static final int MAX_SECTION_TITLE_UTF16_LENGTH = 255;
 
+    /** 数据集 ID 命名规范正则：字母开头，可包含字母、数字、下划线、短横线。 */
     private static final Pattern DATASET_ID =
             Pattern.compile("^[A-Za-z][A-Za-z0-9_-]*$");
+
+    /** 手动编号格式检测正则（检测是否在章节标题中硬编码了序号）。 */
     private static final Pattern MANUAL_SECTION_NUMBERING =
             Pattern.compile("^(?:[一二三四五六七八九十百]+[、.]"
                     + "|\\d+(?:\\.\\d+)*[.、]"
                     + "|[（(]\\d+[）)]|[①-⑳])\\s*");
+
+    /** 输出文件名占位符正则。 */
     private static final Pattern OUTPUT_PLACEHOLDER =
             Pattern.compile("\\$\\{([A-Za-z0-9_.-]+)}");
+
+    /** 支持的 Word 章节组件类型集合。 */
     private static final Set<String> COMPONENT_TYPES =
             unmodifiableSet("SCENARIO", "KEY_FACTORS", "FIXED_TEXT", "RULE_TEXT",
                     "CHART", "TABLE", "UNIT", "ATTACHMENT");
+
+    /** 纯文本类型组件集合。 */
     private static final Set<String> TEXT_COMPONENT_TYPES =
             unmodifiableSet("SCENARIO", "KEY_FACTORS", "FIXED_TEXT", "UNIT");
+
+    /** 空数据展示策略集合。 */
     private static final Set<String> EMPTY_STRATEGIES =
             unmodifiableSet("KEEP", "SHOW_EMPTY", "SKIP");
+
+    /** Word 多级列表数字格式集合。 */
     private static final Set<String> WORD_NUMBER_FORMATS =
             unmodifiableSet("decimal", "lowerLetter", "upperLetter",
                     "lowerRoman", "upperRoman", "chineseCounting",
                     "decimalEnclosedCircle");
+
+    /** 占位符解析器实例。 */
     private static final PlaceholderParser PLACEHOLDER_PARSER =
             new PlaceholderParser();
+
+    /** 默认格式化器注册表。 */
     private static final FormatterRegistry FORMATTERS =
             FormatterRegistry.defaults();
 
+    /**
+     * 对报表配置定义执行完整语义与结构校验。
+     *
+     * @param definition 待校验的报表定义对象
+     * @return 包含所有校验问题项的 ValidationResult
+     */
     public ValidationResult validate(ReportDefinition definition) {
         ValidationResult result = new ValidationResult();
         if (definition == null) {

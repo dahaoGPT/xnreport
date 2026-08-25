@@ -13,8 +13,27 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * 数据集分箱分布分析计算器。
+ * <p>
+ * 按照预设的连续分箱区间（bins），对数据行中的数值字段进行归类统计：
+ * <ul>
+ *   <li><b>区间闭合性与覆盖度</b>：支持 minInclusive/maxInclusive 开闭区间判定，并严格防范分箱区间重叠（overlap）或裂隙（gap）。</li>
+ *   <li><b>度量计算</b>：统计每个分箱的计数值（count）、占比（percent）及按 labelMode 格式化的文本标签。</li>
+ *   <li><b>空数据策略支持</b>：根据 emptyStrategy 支持 FAIL 报错或 SKIP/MESSAGE 优雅降级。</li>
+ * </ul>
+ * </p>
+ */
 public final class DistributionAnalyzer {
 
+    /**
+     * 执行分箱分布分析。
+     *
+     * @param rows 数据明细行列表
+     * @param definition 分布分析规则定义
+     * @param emptyStrategy 空数据降级策略
+     * @return 分布分析综合结果 DistributionResult
+     */
     public DistributionResult analyze(
             List<DatasetRow> rows,
             DistributionDefinition definition,

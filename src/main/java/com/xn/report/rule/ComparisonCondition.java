@@ -9,11 +9,30 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 
+/**
+ * 规则引擎比较条件叶子节点。
+ * <p>
+ * 对左操作数（left）与右操作数（right）利用比较操作符（{@link ComparisonOperator}）进行求值计算：
+ * <ul>
+ *   <li>支持等于（EQ）、不等于（NE）、大小比较（GT, GE, LT, LE）。</li>
+ *   <li>支持集合归属（IN, NOT_IN）与区间闭合比对（BETWEEN）。</li>
+ *   <li>支持字符串模糊匹配（CONTAINS, STARTS_WITH, ENDS_WITH）以及大小写忽略配置（ignoreCase）。</li>
+ *   <li>支持空值断言（IS_NULL, IS_NOT_NULL）。</li>
+ * </ul>
+ * </p>
+ */
 public final class ComparisonCondition implements ConditionNode {
 
+    /** 左操作数引用。 */
     private final ValueReference left;
+
+    /** 比较操作符。 */
     private final ComparisonOperator operator;
+
+    /** 右操作数引用（一元操作符时为 null）。 */
     private final ValueReference right;
+
+    /** 字符串比较是否忽略大小写。 */
     private final boolean ignoreCase;
 
     public ComparisonCondition(

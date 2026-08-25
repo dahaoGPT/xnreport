@@ -7,8 +7,30 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 时间序列趋势与异动分析计算器。
+ * <p>
+ * 对有序的时间序列点位（TrendPoint）进行多维趋势计算：
+ * <ul>
+ *   <li><b>差值与变动率</b>：计算末期值与基准比较值（comparisonValue）的绝对差额（difference）与变化率（changeRate）。</li>
+ *   <li><b>趋势方向（{@link TrendResult.Direction}）</b>：依据容差阈值（flatTolerance）判定上升（UP）、下降（DOWN）或持平（FLAT）。</li>
+ *   <li><b>时序形态（{@link TrendResult.Pattern}）</b>：识别连续上升（CONTINUOUS_UP）、连续下降（CONTINUOUS_DOWN）、波动（FLUCTUATING）或样本不足（INSUFFICIENT）。</li>
+ *   <li><b>极值与异常识别</b>：找出最大值点、最小值点，以及超出 abnormalThreshold 异常阈值的周期列表。</li>
+ * </ul>
+ * </p>
+ */
 public final class TrendAnalyzer {
 
+    /**
+     * 执行时间序列趋势分析。
+     *
+     * @param points 时序数据点序列
+     * @param comparisonValue 比较基准值
+     * @param flatTolerance 持平容差
+     * @param abnormalThreshold 异常告警阈值（可选）
+     * @param emptyStrategy 空数据降级策略
+     * @return 趋势分析结果 TrendResult
+     */
     public TrendResult analyze(
             List<TrendPoint> points,
             BigDecimal comparisonValue,
@@ -119,6 +141,9 @@ public final class TrendAnalyzer {
         return TrendResult.Pattern.FLUCTUATING;
     }
 
+    /**
+     * 单个时间周期数值数据点。
+     */
     public static final class TrendPoint {
         private final String period;
         private final BigDecimal value;

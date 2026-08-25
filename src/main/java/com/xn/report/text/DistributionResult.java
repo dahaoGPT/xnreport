@@ -5,11 +5,24 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 分布分箱分析输出结果值对象。
+ * <p>
+ * 封装包含各分箱指标列表（{@link BinResult}）、总样本数（total）及降级状态标记。
+ * </p>
+ */
 public final class DistributionResult {
 
+    /** 各分箱计算结果明细列表。 */
     private final List<BinResult> bins;
+
+    /** 参与分布统计的有效样本总量。 */
     private final int total;
+
+    /** 是否被策略跳过。 */
     private final boolean skipped;
+
+    /** 提示或降级文案消息。 */
     private final String message;
 
     DistributionResult(
@@ -41,6 +54,9 @@ public final class DistributionResult {
         return message;
     }
 
+    /**
+     * 单个分箱的统计结果模型。
+     */
     public static final class BinResult {
         private final String id;
         private final String label;

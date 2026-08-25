@@ -5,7 +5,10 @@ import org.apache.poi.xssf.usermodel.XSSFChart;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
- * Compatibility facade using the terminology in the detailed design.
+ * 动态生成原生 Excel 图表兼容适配门面。
+ * <p>
+ * 对接详细设计说明书规范，内部委派至 {@link GeneratedNativeChartWriter}。
+ * </p>
  */
 public final class ExcelNativeChartWriter {
 

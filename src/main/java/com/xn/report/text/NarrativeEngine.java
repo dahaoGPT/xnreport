@@ -6,9 +6,22 @@ import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.Map;
 
+/**
+ * 智能叙述句与文本生成综合驱动引擎。
+ * <p>
+ * 支持两种叙述句生成模式：
+ * <ul>
+ *   <li><b>固定模板生成（FIXED_TEMPLATE）</b>：直接基于上下文环境与通用模板（template）进行占位符插值渲染。</li>
+ *   <li><b>受控规则生成（RULE_GENERATED）</b>：调度 {@link NarrativeAnalyzerRegistry} 运行结构化算法（趋势/分布），动态产出度量并渲染结论句（sentence）。</li>
+ * </ul>
+ * </p>
+ */
 public final class NarrativeEngine {
 
+    /** 文本占位符渲染器。 */
     private final TextRenderer renderer;
+
+    /** 受控分析器注册中心。 */
     private final NarrativeAnalyzerRegistry analyzers;
 
     public NarrativeEngine(TextRenderer renderer) {
@@ -25,6 +38,13 @@ public final class NarrativeEngine {
         this.analyzers = analyzers;
     }
 
+    /**
+     * 生成单条叙述句结论文案与分析产物。
+     *
+     * @param definition 叙述句配置定义
+     * @param context 渲染上下文环境
+     * @return 综合结果 NarrativeResult
+     */
     public NarrativeResult generate(
             NarrativeDefinition definition, TextRenderContext context) {
         requireBase(definition, context);
@@ -67,8 +87,7 @@ public final class NarrativeEngine {
     }
 
     /**
-     * Compatibility overload. External summaries are never accepted for
-     * RULE_GENERATED narratives.
+     * 兼容性重载方法。
      */
     public NarrativeResult generate(
             NarrativeDefinition definition,

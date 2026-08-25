@@ -10,7 +10,11 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * One-pass typed index from rendered category labels to source values.
+ * 类目轴展示标签到原始强类型对象的一趟式索引映射器。
+ * <p>
+ * 在图表写入 Excel 数据旁路区域时，将字符串形式的类目标签（如 "2026-08" 或 "产品A"）精准还原为原生类型（Date / Integer / String 等），
+ * 避免 Excel 单元格写入时发生类型丢失或字符串误转。
+ * </p>
  */
 final class ChartSourceCategoryIndex {
 
@@ -76,7 +80,7 @@ final class ChartSourceCategoryIndex {
                     : row.getOrNull(definition.getGroupByField());
             TypedKey group = TypedKey.of(rawGroup);
             ensureUniqueLabel(
-                    groupLabels, group.label(), group, "group");
+                groupLabels, group.label(), group, "group");
             Map<String, SourceValue> categories = groups.get(group);
             if (categories == null) {
                 categories =

@@ -18,12 +18,37 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+/**
+ * 图表领域数据模型构建引擎。
+ * <p>
+ * 负责从原始数据集（{@link DatasetResult}）或分布统计产物（{@link DistributionResult}）中提取、校验、分组、对齐并构造标准的 {@link ChartModel}：
+ * <ul>
+ *   <li><b>多维度校验</b>：静态配置矩阵检查（类型/坐标轴/堆叠组兼容性校验、百分比轴隔离检查、轴范围上限/下限有效性校验）。</li>
+ *   <li><b>安全边界限制</b>：单图最大类目数（5000）、最大系列数（100）、总数据点数上限（200000）。</li>
+ *   <li><b>数据对齐与缺省补全</b>：类目轴排序（SOURCE, ASC, DESC, EXPLICIT）、空值策略转换（GAP, ZERO, SKIP_CATEGORY）、气泡图（BUBBLE）尺寸对齐。</li>
+ *   <li><b>分组多图派生</b>：支持按 groupByField 拆分多个子图模型。</li>
+ * </ul>
+ * </p>
+ */
 public final class ChartModelBuilder {
 
+    /** 单图最大支持的类目数量。 */
     public static final int MAX_CATEGORIES = 5000;
+
+    /** 单图最大支持的数据系列数量。 */
     public static final int MAX_SERIES = 100;
+
+    /** 单次图表构建允许处理的累积数据点上限。 */
     public static final int MAX_POINTS = 200000;
 
+    /**
+     * 构建单个非分组图表模型。
+     *
+     * @param definition 图表配置定义
+     * @param dataset 数据集查询结果
+     * @return 构建完成的 ChartModel
+     * @throws ChartBuildException 若产生 0 个或多个分组模型时抛出异常
+     */
     public ChartModel build(
             ChartDefinition definition, DatasetResult dataset) {
         List<ChartModel> models = buildAll(definition, dataset);
@@ -36,6 +61,13 @@ public final class ChartModelBuilder {
         return models.get(0);
     }
 
+    /**
+     * 构建包含所有分组（groupByField）的图表模型列表。
+     *
+     * @param definition 图表配置定义
+     * @param dataset 数据集查询结果
+     * @return 不可变的 ChartModel 列表
+     */
     public List<ChartModel> buildAll(
             ChartDefinition definition, DatasetResult dataset) {
         validateDefinition(definition);
@@ -87,13 +119,13 @@ public final class ChartModelBuilder {
 
     private List<ChartModel> emptyModels(
             ChartDefinition definition, String datasetId) {
-            if (definition.getEmptyDataPolicy() == ChartEmptyDataPolicy.FAIL) {
-                throw new ChartBuildException(
-                        "Chart dataset is empty: " + datasetId);
-            }
-            if (definition.getEmptyDataPolicy() == ChartEmptyDataPolicy.SKIP) {
-                return Collections.emptyList();
-            }
+        if (definition.getEmptyDataPolicy() == ChartEmptyDataPolicy.FAIL) {
+            throw new ChartBuildException(
+                    "Chart dataset is empty: " + datasetId);
+        }
+        if (definition.getEmptyDataPolicy() == ChartEmptyDataPolicy.SKIP) {
+            return Collections.emptyList();
+        }
         return Collections.singletonList(
                 buildEmptyModel(definition, datasetId));
     }
@@ -131,6 +163,13 @@ public final class ChartModelBuilder {
                 datasetId);
     }
 
+    /**
+     * 基于区间分箱统计结果构建饼图/环形图模型。
+     *
+     * @param definition 图表配置定义
+     * @param distribution 分布统计分析结果
+     * @return 构建的 ChartModel
+     */
     public ChartModel buildDistribution(
             ChartDefinition definition, DistributionResult distribution) {
         validateDefinition(definition);

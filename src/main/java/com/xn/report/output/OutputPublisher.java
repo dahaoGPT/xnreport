@@ -24,22 +24,57 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * 报表文件原子发布器。
+ * <p>
+ * 负责将临时工作空间中生成的 Excel 与 Word 文件原子地发布到目标输出目录中：
+ * <ul>
+ *   <li><b>多进程/多线程并发安全</b>：使用 JVM 细粒度 ReentrantLock 与跨进程 OS 级 FileLock 防止并发覆盖或文件写入竞争。</li>
+ *   <li><b>冲突解决</b>：依据 {@link CollisionPolicy}（FAIL、OVERWRITE、VERSIONED）解决目标文件已存在的问题。</li>
+ *   <li><b>双文件原子发布与回滚机制</b>：采用 Stage-Commit 协议（先复制到中间 staging 文件，原子重命名提交；覆盖模式下先建立 backup，发布任一文件失败时触发全量逆序回滚）。</li>
+ *   <li><b>故障安全与工件报告</b>：在发布或回滚失败时记录未清理工件与警告，绝不丢失关键上下文。</li>
+ * </ul>
+ * </p>
+ */
 public final class OutputPublisher {
 
+    /** JVM 内部目标路径互斥锁注册表。 */
     private static final ConcurrentHashMap<String, LockEntry> TARGET_LOCKS =
             new ConcurrentHashMap<String, LockEntry>();
 
+    /** 输出根目录。 */
     private final Path outputRoot;
+
+    /** 冲突解决策略。 */
     private final CollisionPolicy collisionPolicy;
+
+    /** 文件移动策略。 */
     private final MoveStrategy moveStrategy;
+
+    /** 文件删除策略。 */
     private final DeleteStrategy deleteStrategy;
+
+    /** 跨进程文件加锁策略。 */
     private final LockStrategy lockStrategy;
+
+    /** 文件拷贝策略。 */
     private final CopyStrategy copyStrategy;
 
+    /**
+     * 默认构造函数（使用 VERSIONED 版本化冲突策略）。
+     *
+     * @param outputRoot 输出根目录
+     */
     public OutputPublisher(Path outputRoot) {
         this(outputRoot, CollisionPolicy.VERSIONED);
     }
 
+    /**
+     * 指定冲突策略构造发布器。
+     *
+     * @param outputRoot 输出根目录
+     * @param collisionPolicy 冲突解决策略
+     */
     public OutputPublisher(Path outputRoot, CollisionPolicy collisionPolicy) {
         this(
                 outputRoot,
@@ -115,8 +150,18 @@ public final class OutputPublisher {
         }
     }
 
+    /**
+     * 将临时文件中的 Excel 和 Word 原子的发布到目标路径。
+     *
+     * @param sourceExcel 源临时 Excel 文件路径
+     * @param sourceWord 源临时 Word 文件路径
+     * @param requestedTargets 期望的目标路径对
+     * @return 实际发布的输出文件结果
+     * @throws ReportException 发布失败或发生冲突时抛出
+     */
     public PublishedOutputs publish(
             Path sourceExcel, Path sourceWord, OutputTargets requestedTargets) {
+        // 校验源文件和目标文件合法性
         validateSource(sourceExcel, ".xlsx");
         validateSource(sourceWord, ".docx");
         Objects.requireNonNull(requestedTargets, "requestedTargets");
@@ -124,6 +169,7 @@ public final class OutputPublisher {
         Path requestedWord = validateTarget(requestedTargets.getWord(), ".docx");
         requireSameBase(requestedExcel, requestedWord);
 
+        // 获取 JVM 锁与跨进程锁
         String lockKey = normalizedLockKey(requestedExcel, requestedWord);
         JvmLockHandle jvmLock = acquireJvmLock(lockKey);
         PublicationLock processLock = null;
@@ -132,8 +178,10 @@ public final class OutputPublisher {
         try {
             try {
                 processLock = lockStrategy.acquire(lockKey);
+                // 根据冲突策略解析实际目标路径
                 OutputTargets resolved =
                         resolveCollision(requestedExcel, requestedWord);
+                // 执行原子发布流程
                 result = publishLocked(sourceExcel, sourceWord, resolved);
             } catch (IOException ex) {
                 publicationFailure = new ReportException(
@@ -171,6 +219,9 @@ public final class OutputPublisher {
         }
     }
 
+    /**
+     * 在持有并发锁的前提下执行双文件 Stage-Commit 流程。
+     */
     private PublishedOutputs publishLocked(
             Path sourceExcel, Path sourceWord, OutputTargets targets) {
         String token = UUID.randomUUID().toString();
@@ -183,9 +234,11 @@ public final class OutputPublisher {
         boolean excelPublished = false;
         boolean wordPublished = false;
         try {
+            // 1. 复制到中间暂存文件
             copyStrategy.copy(sourceExcel, stagedExcel);
             copyStrategy.copy(sourceWord, stagedWord);
 
+            // 2. 覆盖模式下先建立原有文件备份
             if (collisionPolicy == CollisionPolicy.OVERWRITE) {
                 if (Files.exists(targets.getExcel())) {
                     moveStrategy.move(
@@ -201,12 +254,15 @@ public final class OutputPublisher {
                 }
             }
 
+            // 3. 原子移动暂存文件至最终目标
             moveStrategy.move(
                     stagedExcel, targets.getExcel(), StandardCopyOption.ATOMIC_MOVE);
             excelPublished = true;
             moveStrategy.move(
                     stagedWord, targets.getWord(), StandardCopyOption.ATOMIC_MOVE);
             wordPublished = true;
+
+            // 4. 清理备份和暂存文件
             CleanupOutcome cleanup = cleanupArtifacts(
                     "backup cleanup failed after commit",
                     backupExcel,
@@ -219,6 +275,7 @@ public final class OutputPublisher {
                     cleanup.warnings,
                     cleanup.artifactPaths);
         } catch (IOException | RuntimeException ex) {
+            // 发生异常时执行双文件逆序回滚与备份恢复
             RollbackOutcome rollback = rollback(
                     targets,
                     backupExcel,
@@ -254,6 +311,9 @@ public final class OutputPublisher {
         }
     }
 
+    /**
+     * 执行逆序回滚：删除已发布的半成品，恢复覆盖前的旧文件备份。
+     */
     private RollbackOutcome rollback(
             OutputTargets targets,
             Path backupExcel,
@@ -278,6 +338,7 @@ public final class OutputPublisher {
         return new RollbackOutcome(failure);
     }
 
+    /** 恢复备份文件。 */
     private Throwable restoreBackup(
             Path backup, Path target, Throwable priorFailure) {
         try {
@@ -290,6 +351,7 @@ public final class OutputPublisher {
         return priorFailure;
     }
 
+    /** 回滚时删除已发布的目标文件。 */
     private static Throwable deleteForRollback(
             Path target, Throwable priorFailure) {
         try {
@@ -300,6 +362,9 @@ public final class OutputPublisher {
         return priorFailure;
     }
 
+    /**
+     * 根据冲突策略解析实际可用的目标路径（VERSIONED 模式下递增序号）。
+     */
     private OutputTargets resolveCollision(Path requestedExcel, Path requestedWord) {
         if (collisionPolicy == CollisionPolicy.FAIL) {
             if (Files.exists(requestedExcel) || Files.exists(requestedWord)) {
@@ -312,6 +377,7 @@ public final class OutputPublisher {
             return new OutputTargets(requestedExcel, requestedWord);
         }
 
+        // VERSIONED 策略：寻找未被占用的版本序号后缀（如 -1, -2）
         String base = baseName(requestedExcel);
         int version = 0;
         while (true) {
@@ -372,7 +438,7 @@ public final class OutputPublisher {
 
     private static Path publishingPath(Path target, String token) {
         return target.resolveSibling(
-                baseName(target) + ".publishing-" + token + extension(target));
+            baseName(target) + ".publishing-" + token + extension(target));
     }
 
     private static Path backupPath(Path target, String token) {
@@ -427,7 +493,6 @@ public final class OutputPublisher {
             try {
                 artifactRetained = Files.exists(backup);
             } catch (RuntimeException ignored) {
-                // Conservatively report an artifact whose state cannot be inspected.
                 artifactRetained = true;
             }
             if (artifactRetained) {
@@ -440,6 +505,9 @@ public final class OutputPublisher {
         return retained.toString();
     }
 
+    /**
+     * 获取操作系统级跨进程文件独占锁。
+     */
     static PublicationLock acquireDefaultProcessLock(String key) throws IOException {
         Path lockRoot = Paths.get(
                 System.getProperty("java.io.tmpdir"),

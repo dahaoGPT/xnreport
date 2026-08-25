@@ -4,19 +4,47 @@ import com.xn.report.dataset.DatasetResult;
 import com.xn.report.dataset.DatasetRow;
 import com.xn.report.dataset.DatasetType;
 
+/**
+ * 规则引擎值引用模型与求值解析器。
+ * <p>
+ * 支持从多种数据源渠道解析操作数值：
+ * <ul>
+ *   <li>{@link Source#LITERAL}：常量字面值。</li>
+ *   <li>{@link Source#CURRENT_FIELD}：当前正在评估行（{@link DatasetRow}）的字段列值。</li>
+ *   <li>{@link Source#DATASET_FIELD}：从外部数据集（SCALAR 或 SINGLE 形态）中提取指定字段值。</li>
+ *   <li>{@link Source#RUNTIME_PARAMETER}：从 {@link RuleEvaluationContext} 中提取运行时动态入参。</li>
+ * </ul>
+ * </p>
+ */
 public final class ValueReference {
 
+    /**
+     * 值引用源类型枚举。
+     */
     public enum Source {
+        /** 常量字面量。 */
         LITERAL,
+        /** 当前评估行字段。 */
         CURRENT_FIELD,
+        /** 指定前置数据集字段。 */
         DATASET_FIELD,
+        /** 运行时入参。 */
         RUNTIME_PARAMETER
     }
 
+    /** 引用源类型。 */
     private final Source source;
+
+    /** 常量字面值。 */
     private final Object literal;
+
+    /** 目标外部数据集 ID。 */
     private final String dataset;
+
+    /** 目标字段名。 */
     private final String field;
+
+    /** 目标运行时入参名。 */
     private final String parameter;
 
     private ValueReference(
@@ -60,6 +88,14 @@ public final class ValueReference {
                 requireText(parameter, "parameter"));
     }
 
+    /**
+     * 根据上下文与当前数据行解析获取引用的实际值。
+     *
+     * @param context 规则执行环境上下文
+     * @param row 当前评估的数据行
+     * @return 实际解析出的数据值
+     * @throws ReportException 如果字段缺失、数据集不存在或类型不匹配
+     */
     public Object resolve(RuleEvaluationContext context, DatasetRow row) {
         if (context == null || row == null) {
             throw new IllegalArgumentException("Rule context and current row are required");

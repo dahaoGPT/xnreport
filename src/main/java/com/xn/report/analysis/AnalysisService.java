@@ -31,6 +31,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * 报表核心分析与清洗转换服务层。
+ * <p>
+ * 串联执行报表生成前的数据处理阶段：
+ * <ol>
+ *   <li><b>数据清洗转换</b>：应用 {@link TransformEngine} 执行派生字段、过滤、排序、去重、分页等操作。</li>
+ *   <li><b>业务规则计算</b>：通过 {@link RuleEngine} 执行复杂条件树求值并判定命中级别。</li>
+ *   <li><b>叙述文本生成</b>：通过 {@link NarrativeEngine} 融合趋势、分布与受控分析并填充叙述模板。</li>
+ *   <li><b>图表模型构建与离线渲染</b>：通过 {@link ChartModelBuilder} 与 {@link JFreeChartImageRenderer} 生成高清图表图片，支持 groupByKey 动态分组衍生。</li>
+ * </ol>
+ * </p>
+ */
 public class AnalysisService {
 
     private final TransformFactory transformFactory;
@@ -71,6 +83,15 @@ public class AnalysisService {
                 Objects.requireNonNull(chartRendererFactory, "chartRendererFactory");
     }
 
+    /**
+     * 执行全流程分析与计算转换。
+     *
+     * @param definition 报表配置定义
+     * @param querySnapshot SQL 查询所得原始数据集上下文
+     * @param runtimeParameters 运行时参数
+     * @param chartDirectory 图表图片输出临时工作目录
+     * @return 包含所有转换后数据集、规则结果、叙述文本与图表产物的 AnalysisContext
+     */
     public AnalysisContext analyze(
             ReportDefinition definition,
             DatasetContext querySnapshot,

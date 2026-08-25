@@ -10,6 +10,12 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Objects;
 
+/**
+ * Excel 报表文档生成顶层执行器。
+ * <p>
+ * 串联报表上下文与模板文件，调用 {@link ExcelWorkbookWriter} 完成 Excel 报表的填充渲染与落盘输出。
+ * </p>
+ */
 public class ExcelGenerator {
 
     private final ExcelWorkbookWriter workbookWriter;
@@ -23,6 +29,14 @@ public class ExcelGenerator {
                 Objects.requireNonNull(workbookWriter, "workbookWriter");
     }
 
+    /**
+     * 生成 Excel 报表产物。
+     *
+     * @param definition 报表配置定义
+     * @param analysis 分析计算上下文
+     * @param execution 全局任务执行上下文
+     * @return 生成的 report.xlsx 文件绝对路径
+     */
     public Path generate(
             ReportDefinition definition,
             AnalysisContext analysis,

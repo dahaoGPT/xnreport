@@ -17,19 +17,44 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * 数据集值对象深拷贝与不可变性冻结工具类。
+ * <p>
+ * 为 {@link DatasetRow} 提供深层防御性拷贝能力，支持循环引用安全检测，
+ * 保证放入和读取的数据行对象不被外部修改破坏。
+ * </p>
+ */
 final class DatasetValues {
 
     private DatasetValues() {
     }
 
+    /**
+     * 冻结并深拷贝写入值。
+     *
+     * @param value 原始输入对象
+     * @return 深度拷贝后的安全对象
+     */
     static Object freeze(Object value) {
         return copy(value, new IdentityHashMap<Object, Boolean>());
     }
 
+    /**
+     * 读取时深拷贝防护。
+     *
+     * @param value 内部存储对象
+     * @return 深度拷贝后的读取副本
+     */
     static Object copyForRead(Object value) {
         return copy(value, new IdentityHashMap<Object, Boolean>());
     }
 
+    /**
+     * 获取对象用于 Schema 推断的类型 Class。
+     *
+     * @param value 对象值
+     * @return 对应的 Class
+     */
     static Class<?> schemaType(Object value) {
         if (value == null) {
             return Object.class;

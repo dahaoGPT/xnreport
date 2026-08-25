@@ -20,6 +20,20 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 文本占位符格式化器（ValueFormatter）注册表。
+ * <p>
+ * 内置支持常用的格式化管道函数：
+ * <ul>
+ *   <li>{@code number}：数值格式化（支持自定义 DecimalFormat pattern 如 {@code 0.00}）。</li>
+ *   <li>{@code percent}：百分比格式化（乘以 100 并追加 %）。</li>
+ *   <li>{@code date} / {@code datetime}：Java 8 日期时间格式化（支持时区转换与 pattern）。</li>
+ *   <li>{@code durationHours}：时长或秒数换算为小时数。</li>
+ *   <li>{@code default}：空值回退默认字符串。</li>
+ *   <li>{@code join}：集合/数组拼接（支持自定义分隔符）。</li>
+ * </ul>
+ * </p>
+ */
 public final class FormatterRegistry {
 
     private final Map<String, ValueFormatter> formatters =
@@ -32,6 +46,11 @@ public final class FormatterRegistry {
         this.zoneId = zoneId == null ? ZoneId.of("UTC") : zoneId;
     }
 
+    /**
+     * 创建搭载内置默认格式化算子的注册表实例。
+     *
+     * @return FormatterRegistry 实例
+     */
     public static FormatterRegistry defaults() {
         FormatterRegistry registry =
                 new FormatterRegistry(Locale.ROOT, ZoneId.of("UTC"));
@@ -39,6 +58,13 @@ public final class FormatterRegistry {
         return registry;
     }
 
+    /**
+     * 注册自定义值格式化器。
+     *
+     * @param name 格式化器名称
+     * @param formatter 格式化器逻辑实现
+     * @return this
+     */
     public FormatterRegistry register(String name, ValueFormatter formatter) {
         if (name == null || name.trim().isEmpty() || formatter == null) {
             throw new IllegalArgumentException(
@@ -51,6 +77,14 @@ public final class FormatterRegistry {
         return this;
     }
 
+    /**
+     * 执行指定名称的格式化处理。
+     *
+     * @param name 格式化器函数名
+     * @param value 原始输入值
+     * @param argument 格式化参数（可选，如 pattern 模式串）
+     * @return 格式化后的字符串
+     */
     public String format(String name, Object value, String argument) {
         ValueFormatter formatter = formatters.get(name);
         if (formatter == null) {

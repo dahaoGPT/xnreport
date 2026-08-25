@@ -4,11 +4,23 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 文本渲染原生数组到 List 集合的复制解包工具类。
+ * <p>
+ * 支持将 Java 原生基本类型数组（int[], byte[], double[] 等）以及对象数组安全包装复制为泛型 List 列表。
+ * </p>
+ */
 final class TextArrayValues {
 
     private TextArrayValues() {
     }
 
+    /**
+     * 将对象或原生数组复制为 List 列表。
+     *
+     * @param value 原始数组对象
+     * @return List 集合，若非数组则返回 null
+     */
     static List<Object> copy(Object value) {
         List<Object> values = new ArrayList<Object>();
         if (value instanceof Object[]) {

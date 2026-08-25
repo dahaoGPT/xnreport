@@ -26,12 +26,33 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Iterator;
 
+/**
+ * 数据集执行结果契约校验与策略治理器。
+ * <p>
+ * 对 SQL 查询或内存 Transform 产出的原始数据进行全流程校验与治理：
+ * <ul>
+ *   <li><b>形态维度检查</b>：校验 SCALAR（1行1列）、SINGLE（最多1行）与 LIST 的行数与列数约束。</li>
+ *   <li><b>空数据策略治理（{@link EmptyDataPolicy}）</b>：当查询结果为空时，按策略触发 FAIL、SKIP 或默认占位。</li>
+ *   <li><b>缺失字段策略治理（{@link MissingFieldPolicy}）</b>：检查 expectedFields 契约，若缺失列根据策略执行 FAIL、USE_DEFAULT（注入默认值）或 WARN_AND_SKIP（跳过整行）。</li>
+ *   <li><b>NULL 值策略治理（{@link NullValuePolicy}）</b>：对必填字段为 NULL 执行 FAIL 或填充预设默认值。</li>
+ *   <li><b>类型不匹配治理（{@link TypeMismatchPolicy}）</b>：执行强类型检查与安全转换（SAFE_CONVERT），若无法转换则抛出 {@link ReportErrorCode#DATA_003}。</li>
+ * </ul>
+ * </p>
+ */
 public final class DatasetResultValidator {
 
+    /** 支持的标准字段类型映射表。 */
     private static final Map<String, Class<?>> FIELD_TYPES = fieldTypes();
+
+    /** 策略执行与告警下发桥接器。 */
     private final PolicyExecutionBridge policyBridge;
+
+    /** 报表级别默认兜底策略。 */
     private final PolicyDefinition reportPolicies;
 
+    /**
+     * 使用默认系统策略构造校验器。
+     */
     public DatasetResultValidator() {
         this(
                 new PolicyExecutionBridge(new PolicyResolver(
@@ -39,6 +60,12 @@ public final class DatasetResultValidator {
                 PolicyDefinition.systemDefaults());
     }
 
+    /**
+     * 使用指定策略桥接器与报表级策略构造校验器。
+     *
+     * @param policyBridge 策略执行桥接器
+     * @param reportPolicies 报表级策略
+     */
     public DatasetResultValidator(
             PolicyExecutionBridge policyBridge,
             PolicyDefinition reportPolicies) {
@@ -47,6 +74,13 @@ public final class DatasetResultValidator {
                 ? PolicyDefinition.systemDefaults() : reportPolicies;
     }
 
+    /**
+     * 校验内存生成的行数据列表。
+     *
+     * @param definition 数据集配置定义
+     * @param sourceRows 内存数据行列表
+     * @return 校验并治理后的 DatasetResult
+     */
     public DatasetResult validate(
             DatasetDefinition definition, List<DatasetRow> sourceRows) {
         List<DatasetRow> rows = copyRows(
@@ -57,11 +91,21 @@ public final class DatasetResultValidator {
                 false);
     }
 
+    /**
+     * 校验 SQL 执行结果。
+     *
+     * @param definition 数据集配置定义
+     * @param queryResult SQL 查询结果
+     * @return 校验并治理后的 DatasetResult
+     */
     public DatasetResult validate(
             DatasetDefinition definition, SqlQueryResult queryResult) {
         return validateInternal(definition, queryResult, true);
     }
 
+    /**
+     * 内部通用校验与治理流水线。
+     */
     private DatasetResult validateInternal(
             DatasetDefinition definition,
             SqlQueryResult queryResult,
@@ -70,11 +114,12 @@ public final class DatasetResultValidator {
         Objects.requireNonNull(queryResult, "queryResult");
         String datasetId = requireText(definition.getId(), "dataset id");
         DatasetType resultType = Objects.requireNonNull(
-                definition.getResultType(),
+            definition.getResultType(),
                 "resultType for dataset " + datasetId);
         List<DatasetRow> rows = copyRows(datasetId, queryResult.rows());
         DatasetSchema schema = queryResult.schema();
 
+        // 1. 空数据策略处理
         if (rows.isEmpty()) {
             EmptyDataPolicy emptyData = policyBridge.onEmptyData(
                     null,
@@ -91,7 +136,10 @@ public final class DatasetResultValidator {
                         "Dataset " + datasetId + " returned no rows");
             }
         }
+        // 2. 形态与行数校验
         validateShape(datasetId, resultType, schema, rows);
+
+        // 3. 字段 Schema 契约、缺失值与类型匹配治理
         ProcessedData processed = validateFields(
                 datasetId,
                 resultType,
@@ -129,6 +177,9 @@ public final class DatasetResultValidator {
         }
     }
 
+    /**
+     * 逐字段与逐行执行契约校验与降级补齐。
+     */
     private ProcessedData validateFields(
             String datasetId,
             DatasetType resultType,

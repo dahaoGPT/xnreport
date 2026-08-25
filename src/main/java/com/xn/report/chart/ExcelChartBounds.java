@@ -3,7 +3,10 @@ package com.xn.report.chart;
 import org.apache.poi.ss.SpreadsheetVersion;
 
 /**
- * Overflow-safe validation for Excel row and column coordinates.
+ * Excel 2007+ (OOXML) 行列坐标与图表锚点防溢出安全校验工具。
+ * <p>
+ * 保证生成的图表位置锚点（Anchor）与旁路数据区域（Data Area）不会超出 Excel 最大列数（16,384）与最大行数（1,048,576）。
+ * </p>
  */
 final class ExcelChartBounds {
 
@@ -15,6 +18,9 @@ final class ExcelChartBounds {
     private ExcelChartBounds() {
     }
 
+    /**
+     * 校验数据区行列坐标是否超出 Excel 物理边界。
+     */
     static void validateDataArea(
             long startColumn,
             long columnCount,
@@ -32,6 +38,9 @@ final class ExcelChartBounds {
         }
     }
 
+    /**
+     * 校验并构建图表锚点坐标包装对象。
+     */
     static Anchor validateAnchor(
             long row,
             long column,
@@ -50,6 +59,9 @@ final class ExcelChartBounds {
                 (int) (column + width));
     }
 
+    /**
+     * 图表锚点起始行、列与终止行、列数据封装。
+     */
     static final class Anchor {
         private final int row1;
         private final int column1;

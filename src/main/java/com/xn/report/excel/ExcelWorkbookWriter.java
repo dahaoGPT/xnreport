@@ -30,6 +30,20 @@ import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
+/**
+ * Excel 工作簿端到端渲染与生成核心执行器。
+ * <p>
+ * 统领整个 Excel 报表的填充流程：
+ * <ol>
+ *   <li>加载 Excel 模板并创建受工作空间保护的临时渲染文件。</li>
+ *   <li>执行工作表名称及单元格值绑定（{@link ExcelValueBinding}，如 <code>${runtime.date}</code>、<code>${dataset.ds1.total}</code>）跨界防冲突校验。</li>
+ *   <li>填充离散单元格参数（{@link ExcelValueBinder}）。</li>
+ *   <li>逐个数据集执行工作表与结构化表格物化（{@link ExcelDatasetSheetWriter}）。</li>
+ *   <li>生成并嵌入原生图表或更新模板图表（{@link ExcelChartWriter}）。</li>
+ *   <li>强制触发公式重算标记（setForceFormulaRecalculation），经 {@link ExcelOutputValidator} 严苛质检后原子移动（ATOMIC_MOVE）至最终目标路径。</li>
+ * </ol>
+ * </p>
+ */
 public final class ExcelWorkbookWriter {
 
     private final ExcelTemplateLoader templateLoader;

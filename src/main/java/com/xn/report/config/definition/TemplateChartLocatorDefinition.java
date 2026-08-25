@@ -6,13 +6,23 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * Identifies the template chart assigned to one configured group.
+ * 分组原生模板图表定位器配置定义模型。
+ * <p>
+ * 当按 groupByField（如研发中心）分组渲染多个原生图表时，
+ * 用于将特定分组标识（groupKey）与模板中对应的图表标记（marker）或图表索引（index）进行精准映射匹配。
+ * </p>
  */
 public final class TemplateChartLocatorDefinition {
 
+    /** 匹配的分组业务键值（如 "开发一中心"）。 */
     private String groupKey;
+
+    /** 模板中该图表的标记文本（如 "[CHART:center_1]"）。 */
     private String marker;
+
+    /** 模板中该图表的序号索引（0-based）。 */
     private Integer index;
+
     @JsonIgnore
     private final Set<String> presentProperties =
             new LinkedHashSet<String>();

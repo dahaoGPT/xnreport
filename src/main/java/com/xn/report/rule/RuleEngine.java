@@ -25,8 +25,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * 业务异常规则计算引擎。
+ * <p>
+ * 负责编译与执行复杂的行级/聚合级业务过滤规则：
+ * <ul>
+ *   <li><b>条件 AST 编译（{@link #compile(ConditionDefinition)}）</b>：将递归的条件配置编译为强类型的 {@link ConditionNode} 树。</li>
+ *   <li><b>值引用解析（{@link #compile(ValueReferenceDefinition)}）</b>：支持字面量（LITERAL）、当前行字段（CURRENT_FIELD）、跨数据集字段（DATASET_FIELD）及运行时入参（RUNTIME_PARAMETER）。</li>
+ *   <li><b>结果后处理流水线</b>：匹配行过滤（filter）-&gt; 去重（distinct）-&gt; 排序（sort）-&gt; 多维分组（group）-&gt; 截断（limit）-&gt; 汇总度量统计（summary：matchedCount, totalCount, matchedRatio, MAX, MIN, SUM, AVG）。</li>
+ * </ul>
+ * </p>
+ */
 public final class RuleEngine {
 
+    /**
+     * 基础规则求值接口（直接执行已编译条件树）。
+     *
+     * @param ruleId 规则 ID
+     * @param dataset 目标数据集
+     * @param condition 编译后的条件根节点
+     * @param context 规则执行上下文
+     * @return 规则执行结果 RuleResult
+     */
     public RuleResult evaluate(
             String ruleId,
             DatasetResult dataset,
@@ -42,6 +62,14 @@ public final class RuleEngine {
                 summary(matched, input.size(), Collections.<SummaryDefinition>emptyList()));
     }
 
+    /**
+     * 完整规则求值接口（根据规则配置定义执行全量后处理流水线）。
+     *
+     * @param definition 规则配置定义，不可为 null
+     * @param dataset 目标数据集，不可为 null
+     * @param context 规则执行上下文，不可为 null
+     * @return 包含命中行、分组结果及度量汇总的 RuleResult
+     */
     public RuleResult evaluate(
             RuleDefinition definition,
             DatasetResult dataset,
@@ -126,6 +154,12 @@ public final class RuleEngine {
         }
     }
 
+    /**
+     * 将条件配置递归编译为条件 AST 节点。
+     *
+     * @param definition 条件定义配置
+     * @return 编译后的 ConditionNode 节点
+     */
     public ConditionNode compile(ConditionDefinition definition) {
         if (definition == null || definition.getOperator() == null) {
             throw RuleErrors.invalid("Condition operator is required");
@@ -178,6 +212,12 @@ public final class RuleEngine {
                 Boolean.TRUE.equals(definition.getIgnoreCase()));
     }
 
+    /**
+     * 将值引用配置编译为运行时 ValueReference 实例。
+     *
+     * @param definition 引用定义配置
+     * @return ValueReference 实例
+     */
     public ValueReference compile(ValueReferenceDefinition definition) {
         if (definition == null || definition.getSource() == null) {
             throw RuleErrors.invalid("Value reference source is required");

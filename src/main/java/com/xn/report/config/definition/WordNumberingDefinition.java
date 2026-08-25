@@ -4,9 +4,19 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * Word 多级大纲编号定义模型。
+ * <p>
+ * 声明 1 到 4 级章节标题的自动编号格式（如 1 级："一、"、2 级："1.1"、3 级："（1）"、4 级："①"），
+ * 确保生成的 Word 文档具备专业标准的多级大纲编号。
+ * </p>
+ */
 public class WordNumberingDefinition {
 
+    /** 模板中绑定的底层 Word AbstractNum / Num 编号定义 ID。 */
     private Long numId;
+
+    /** 各级别编号格式定义列表（默认提供 1-4 级标准中文大纲定义）。 */
     private List<WordNumberingLevelDefinition> levels = defaultLevels();
 
     public Long getNumId() {
@@ -26,6 +36,9 @@ public class WordNumberingDefinition {
                 ? new ArrayList<WordNumberingLevelDefinition>() : levels;
     }
 
+    /**
+     * 构建默认的 1-4 级大纲编号级别列表。
+     */
     private static List<WordNumberingLevelDefinition> defaultLevels() {
         return new ArrayList<WordNumberingLevelDefinition>(Arrays.asList(
                 level(1, "chineseCounting", "%1、"),

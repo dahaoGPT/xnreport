@@ -19,6 +19,22 @@ import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 
+/**
+ * Word 生成最终产物严格后置质检验证器。
+ * <p>
+ * 全面检验生成落盘的 docx 报表：
+ * <ul>
+ *   <li>Heading1~4 样式完整性校验。</li>
+ *   <li>TOC 目录域指令及 <code>updateFields=true</code> 设置核验。</li>
+ *   <li>全文档未解析占位符（如残留的 <code>{{...}}</code>）扫描。</li>
+ *   <li>封面结构与五个必填字段的存在性、次序与边界检查。</li>
+ *   <li>大纲标题深度优先顺序（DFS Order）、层级（Heading1~4）与统一多级编号（numId / ilvl）严密核对。</li>
+ *   <li>动态表格数量、行数及特征值内容验证。</li>
+ *   <li>附录书签闭合性与标题/描述/列表项结构一致性比对。</li>
+ *   <li>嵌入图片总数及图片数据流非空有效性检查。</li>
+ * </ul>
+ * </p>
+ */
 public final class WordOutputValidator {
 
     private static final Pattern PLACEHOLDER =
@@ -31,6 +47,12 @@ public final class WordOutputValidator {
         WordCoverBinder.PREPARED_DATE
     };
 
+    /**
+     * 校验生成的 Word 文件是否完全符合预期模型。
+     *
+     * @param output 生成的 Word 文件路径
+     * @param expectation 预期特征模型
+     */
     public void validate(
             Path output, WordOutputExpectation expectation) {
         if (expectation == null) {
@@ -517,7 +539,7 @@ public final class WordOutputValidator {
                         if (picture.getPictureData() == null
                                 || picture.getPictureData().getData().length == 0) {
                             throw new WordTemplateException(
-                                    "Word drawing relation is unreadable or empty");
+                                     "Word drawing relation is unreadable or empty");
                         }
                         pictures++;
                     }

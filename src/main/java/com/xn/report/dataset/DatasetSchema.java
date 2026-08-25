@@ -7,6 +7,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 数据集结构 Schema 元数据契约。
+ * <p>
+ * 定义数据集的列名及其对应的强类型 Class 类型信息。
+ * 支持从现有数据行中进行自动类型推断（{@link #infer(List)}），并支持大小写不敏感的字段类型查询。
+ * </p>
+ */
 public final class DatasetSchema {
 
     private enum InferenceState {
@@ -15,11 +22,17 @@ public final class DatasetSchema {
         CONFLICT
     }
 
+    /** 空 Schema 契约常量。 */
     private static final DatasetSchema EMPTY =
             new DatasetSchema(Collections.<String, Class<?>>emptyMap());
 
+    /** 原始列名到 Java 类型的不可变映射。 */
     private final Map<String, Class<?>> fieldTypes;
+
+    /** 小写列名到原始列名的索引映射。 */
     private final Map<String, String> lowerCaseToOriginal;
+
+    /** 保持插入顺序的字段名列表。 */
     private final List<String> fieldNames;
 
     private DatasetSchema(Map<String, Class<?>> source) {
@@ -44,6 +57,12 @@ public final class DatasetSchema {
                 new ArrayList<String>(copiedTypes.keySet()));
     }
 
+    /**
+     * 根据偶数个字段/类型对构造 Schema。
+     *
+     * @param pairs 格式为 "col1", Long.class, "col2", String.class...
+     * @return DatasetSchema 实例
+     */
     public static DatasetSchema of(Object... pairs) {
         if (pairs == null || pairs.length % 2 != 0) {
             throw new IllegalArgumentException(
@@ -74,10 +93,21 @@ public final class DatasetSchema {
         return fields.isEmpty() ? EMPTY : new DatasetSchema(fields);
     }
 
+    /**
+     * 获取空 Schema 实例。
+     *
+     * @return 空 Schema
+     */
     public static DatasetSchema empty() {
         return EMPTY;
     }
 
+    /**
+     * 从数据行集合推断 Schema 契约类型。
+     *
+     * @param rows 数据行列表
+     * @return 推断出的 DatasetSchema
+     */
     static DatasetSchema infer(List<DatasetRow> rows) {
         LinkedHashMap<String, Class<?>> types =
                 new LinkedHashMap<String, Class<?>>();
@@ -123,6 +153,12 @@ public final class DatasetSchema {
         return types.isEmpty() ? EMPTY : new DatasetSchema(types);
     }
 
+    /**
+     * 查询指定字段的 Java 类型（忽略大小写）。
+     *
+     * @param field 字段名
+     * @return 字段对应的 Class 类型
+     */
     public Class<?> typeOf(String field) {
         String original = lowerCaseToOriginal.get(normalize(requireField(field)));
         if (original == null) {
@@ -131,14 +167,30 @@ public final class DatasetSchema {
         return fieldTypes.get(original);
     }
 
+    /**
+     * 检查是否包含指定字段（忽略大小写）。
+     *
+     * @param field 字段名
+     * @return true 表示存在，false 表示不存在
+     */
     public boolean containsField(String field) {
         return lowerCaseToOriginal.containsKey(normalize(requireField(field)));
     }
 
+    /**
+     * 获取所有列名列表。
+     *
+     * @return 列名列表
+     */
     public List<String> fieldNames() {
         return fieldNames;
     }
 
+    /**
+     * 转换为只读 Map 映射。
+     *
+     * @return 字段名到 Class 类型的不可变 Map
+     */
     public Map<String, Class<?>> asMap() {
         return fieldTypes;
     }

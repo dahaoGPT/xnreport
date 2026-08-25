@@ -20,11 +20,25 @@ import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 
 /**
- * Replaces text tokens even when Word has split one token across several runs.
- * Text outside the matched span keeps its original run and formatting.
+ * Word 跨 Run 碎片文本占位符精准查找与替换器。
+ * <p>
+ * 解决 Word 在排版编辑过程中常将一个连续占位符（如 <code>{{cover:title}}</code>）破碎分割到多个相邻 {@link XWPFRun} 中的经典难题：
+ * <ul>
+ *   <li>拼接段落完整文本并定位所有目标 token 的起止下标。</li>
+ *   <li>精确定位匹配跨度的首个 Run 与末尾 Run，仅替换匹配区间，最大化保留两端 Run 原有的字体、字号、颜色与高亮样式。</li>
+ *   <li>支持整篇文档（含正文、页眉 Header、页脚 Footer、表格单元格）的批量安全替换与词频统计。</li>
+ * </ul>
+ * </p>
  */
 public final class WordRunTextReplacer {
 
+    /**
+     * 批量替换整篇文档中的所有占位符。
+     *
+     * @param document 目标 Word 文档
+     * @param replacements 占位符 -> 目标文本映射表
+     * @return 成功替换的匹配项总数
+     */
     public int replaceAll(XWPFDocument document, Map<String, String> replacements) {
         if (document == null) {
             throw new IllegalArgumentException("Word document is required");
@@ -52,12 +66,27 @@ public final class WordRunTextReplacer {
         return replaced;
     }
 
+    /**
+     * 替换单个占位符。
+     *
+     * @param document 目标 Word 文档
+     * @param token 待匹配占位符
+     * @param replacement 替换目标文本
+     * @return 成功替换的匹配项数量
+     */
     public int replace(XWPFDocument document, String token, String replacement) {
         requireToken(token);
         return replaceAll(document, Collections.singletonMap(
                 token, replacement == null ? "" : replacement));
     }
 
+    /**
+     * 在指定的容器体（正文或单元格）中执行批量替换。
+     *
+     * @param body 目标容器体
+     * @param replacements 替换映射表
+     * @return 替换计数
+     */
     public int replaceInBody(IBody body, Map<String, String> replacements) {
         if (body == null) {
             throw new IllegalArgumentException("Word body is required");
@@ -78,6 +107,13 @@ public final class WordRunTextReplacer {
         return replaceBody(body, entries);
     }
 
+    /**
+     * 统计指定占位符在文档（含页眉页脚）中的出现总频次。
+     *
+     * @param document 目标文档
+     * @param token 待匹配 token
+     * @return 出现次数
+     */
     public int count(XWPFDocument document, String token) {
         if (document == null) {
             throw new IllegalArgumentException("Word document is required");

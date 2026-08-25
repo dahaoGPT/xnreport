@@ -21,12 +21,25 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.xml.sax.InputSource;
 
+/**
+ * Word 附录与附件组件（ATTACHMENT）段落写入器。
+ * <p>
+ * 负责在 Word 文档指定位置插入附件标题（加粗）、描述信息与项目符号列表（ListBullet 样式），
+ * 并自动分配全局唯一的 OpenXML 书签 ID（<code>_XN_ATTACHMENT_</code> 前缀）以供结构追溯。
+ * </p>
+ */
 public final class WordAttachmentWriter {
 
     static final String BOOKMARK_PREFIX = "_XN_ATTACHMENT_";
     private static final String WORD_NAMESPACE =
             "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
+    /**
+     * 在文档末尾追加附录组件内容。
+     *
+     * @param document 目标 Word 文档
+     * @param definition 附录组件定义
+     */
     public void append(
             XWPFDocument document, WordComponentDefinition definition) {
         if (document == null || definition == null) {
@@ -49,6 +62,12 @@ public final class WordAttachmentWriter {
         mark(document, paragraphs);
     }
 
+    /**
+     * 通过插入器在锚点位置插入附录组件内容。
+     *
+     * @param inserter 正文元素插入器
+     * @param definition 附录组件定义
+     */
     void append(
             WordBodyInserter inserter, WordComponentDefinition definition) {
         if (inserter == null || definition == null) {

@@ -5,6 +5,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 单个图表数据系列的物理渲染领域模型。
+ * <p>
+ * 封装系列名称、取值字段、图表类型（柱状/折线/饼图/散点/气泡等）、坐标轴归属、堆叠组、颜色、线型线宽、数据标签模式、数据格式、空值策略及数值序列列表（values、sizes）。
+ * </p>
+ */
 public final class ChartSeriesModel {
 
     private final String field;

@@ -11,6 +11,19 @@ import java.util.List;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 
+/**
+ * Word 章节树（Section Tree）深度优先递归渲染引擎。
+ * <p>
+ * 负责在 <code>{{sections}}</code> 锚点处展开多级章节树：
+ * <ul>
+ *   <li>按深度优先搜索（DFS）递归遍历父子章节树。</li>
+ *   <li>应用大纲标题样式（Heading1~4）并绑定多级编号管理器（{@link WordNumberingManager}）。</li>
+ *   <li>执行空章节策略处理（KEEP 保留 / SKIP 跳过 / SHOW_EMPTY 显示空提示语）。</li>
+ *   <li>委派 {@link WordComponentRenderer} 逐个物化章节内部挂载的各类组件。</li>
+ *   <li>全部章节渲染完毕后，安全移除 <code>{{sections}}</code> 锚点段落。</li>
+ * </ul>
+ * </p>
+ */
 public final class WordSectionRenderer {
 
     private final WordSectionAnchorLocator sectionAnchorLocator;
@@ -108,7 +121,7 @@ public final class WordSectionRenderer {
             WordRenderContext context,
             WordComponentRenderer componentRenderer) {
         for (WordComponentDefinition component :
-                safeComponents(section.getComponents())) {
+                    safeComponents(section.getComponents())) {
             String type = component.getType();
             if ("TABLE".equals(type)) {
                 DatasetResult result =

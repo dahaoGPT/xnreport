@@ -16,7 +16,11 @@ import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
- * Materializes the exact ChartModel view beside its SQL detail data.
+ * Excel 图表专用旁路数据区物化写入器。
+ * <p>
+ * 在已填充 SQL 明细数据的工作表右侧空白列区域，将经过图表模型构建引擎计算、排序、对齐后的完整 {@link ChartModel}
+ * 视图数据物化写入工作表，并输出精确的 {@link ChartFormulaRange}，供原生图表或模板图表进行公式绑定与数据源回溯。
+ * </p>
  */
 public final class ExcelChartDataAreaWriter {
 

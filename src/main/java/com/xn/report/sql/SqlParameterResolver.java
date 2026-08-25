@@ -20,8 +20,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * SQL 命名参数动态解析与类型转换器。
+ * <p>
+ * 根据数据集的参数绑定配置（{@link ParameterBindingDefinition}），从运行时入参（RUNTIME）、字面常量（CONSTANT）
+ * 或已执行完毕的前置数据集结果（DATASET）中提取参数值，并将 Java 8 日期时间类型转换为 JDBC 兼容的 Timestamp / Date 类型。
+ * </p>
+ */
 public final class SqlParameterResolver {
 
+    /**
+     * 解析指定数据集的所有 SQL 命名参数。
+     *
+     * @param definition 数据集配置定义，不可为 null
+     * @param runtimeParameters 运行时动态参数 Map，不可为 null
+     * @param datasetContext 已执行完成的数据集上下文（用于跨数据集取值），不可为 null
+     * @return 解析完成的 ResolvedSqlParameters 实例
+     * @throws IllegalArgumentException 如果必填参数缺失、前置数据集无数据或参数值包含循环引用
+     */
     public ResolvedSqlParameters resolve(
             DatasetDefinition definition,
             Map<String, Object> runtimeParameters,
@@ -51,6 +67,9 @@ public final class SqlParameterResolver {
         return new ResolvedSqlParameters(resolved);
     }
 
+    /**
+     * 根据不同的来源渠道获取原始参数值。
+     */
     private static Object resolveValue(
             String parameterName,
             ParameterBindingDefinition binding,
@@ -89,6 +108,9 @@ public final class SqlParameterResolver {
                 "Unsupported parameter source for " + parameterName + ": " + source);
     }
 
+    /**
+     * 将 LocalDateTime, LocalDate 等转换为标准 JDBC 参数格式，并防范空集合与循环引用。
+     */
     private static Object normalize(
             String parameterName,
             Object value,

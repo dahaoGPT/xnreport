@@ -2,6 +2,12 @@ package com.xn.report.chart;
 
 import java.nio.file.Path;
 
+/**
+ * 离线图表图像渲染产物领域模型。
+ * <p>
+ * 封装输出图像文件路径（path）、MIME 媒体类型（mediaType，如 image/png）、像素宽高等信息。
+ * </p>
+ */
 public final class RenderedChart {
 
     private final Path path;

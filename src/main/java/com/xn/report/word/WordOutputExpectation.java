@@ -4,6 +4,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * Word 生成产物质检预期领域模型。
+ * <p>
+ * 封装在生成前依据报表定义与数据计算得出的预期特征（期望封面字段、TOC 最大层级、DFS 标题层级与文字序列、表格数量与特征文本、附录结构、插入图片总数等），供 {@link WordOutputValidator} 执行严格比对。
+ * </p>
+ */
 public final class WordOutputExpectation {
 
     private final List<String> coverValues;
@@ -64,6 +70,9 @@ public final class WordOutputExpectation {
                 new ArrayList<String>(values));
     }
 
+    /**
+     * 预期标题项。
+     */
     public static final class Heading {
         private final int level;
         private final String text;
@@ -82,6 +91,9 @@ public final class WordOutputExpectation {
         }
     }
 
+    /**
+     * 预期表格项。
+     */
     public static final class Table {
         private final int index;
         private final int rowCount;
@@ -107,6 +119,9 @@ public final class WordOutputExpectation {
         }
     }
 
+    /**
+     * 预期附录项。
+     */
     public static final class Attachment {
         private final String title;
         private final String description;
@@ -132,6 +147,9 @@ public final class WordOutputExpectation {
         }
     }
 
+    /**
+     * 期望模型建造者。
+     */
     public static final class Builder {
         private final List<String> coverValues =
                 new ArrayList<String>();

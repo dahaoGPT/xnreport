@@ -16,9 +16,17 @@ import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTbl;
 
 /**
- * Renders one configured component without changing the surrounding section
- * order. Section traversal and empty-section policy remain the responsibility
- * of {@link WordSectionRenderer}.
+ * Word 单个组件多态渲染分发器。
+ * <p>
+ * 在不打乱外层章节遍历次序的前提下，负责各类组件的精准渲染物化：
+ * <ul>
+ *   <li><b>文本类组件</b>：场景描述（SCENARIO）、关键因素（KEY_FACTORS）、固定文本（FIXED_TEXT）、单位（UNIT）。</li>
+ *   <li><b>分析结论</b>：规则叙述文本（RULE_TEXT），自动引用 {@link NarrativeResult}。</li>
+ *   <li><b>表格组件</b>：TABLE，支持 PROTOTYPE 模板行复制策略与 GENERATED 动态生成策略。</li>
+ *   <li><b>图表组件</b>：CHART，插入离线高清 PNG 图片与题注居中。</li>
+ *   <li><b>附录组件</b>：ATTACHMENT，插入加粗标题、描述与列表项。</li>
+ * </ul>
+ * </p>
  */
 public final class WordComponentRenderer {
 

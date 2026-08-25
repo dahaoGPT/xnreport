@@ -11,6 +11,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * 报表单次运行流水线全局上下文模型。
+ * <p>
+ * 贯穿整条执行管道（{@link DefaultReportPipeline}），管理请求参数、工作空间、当前阶段、配置模型、查询快照、分析上下文及累积的告警信息。
+ * </p>
+ */
 public final class ExecutionContext {
 
     private final String executionId;

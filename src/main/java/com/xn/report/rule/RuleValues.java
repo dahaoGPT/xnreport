@@ -17,11 +17,20 @@ import java.util.Map;
 import java.util.Date;
 import java.util.Set;
 
+/**
+ * 规则引擎值对象深拷贝与不可变冻结工具类。
+ * <p>
+ * 为规则计算结果、度量汇总与分组键提供不可变防护和循环引用安全检测。
+ * </p>
+ */
 final class RuleValues {
 
     private RuleValues() {
     }
 
+    /**
+     * 深度冻结 Map 键值对字典。
+     */
     static Map<String, Object> freezeMap(Map<String, Object> source) {
         LinkedHashMap<String, Object> copy = new LinkedHashMap<String, Object>();
         IdentityHashMap<Object, Boolean> visiting = new IdentityHashMap<Object, Boolean>();
@@ -31,18 +40,30 @@ final class RuleValues {
         return Collections.unmodifiableMap(copy);
     }
 
+    /**
+     * 复制 Map 字典。
+     */
     static Map<String, Object> copyMap(Map<String, Object> source) {
         return freezeMap(source);
     }
 
+    /**
+     * 深度冻结单值。
+     */
     static Object freezeValue(Object value) {
         return freeze(value, new IdentityHashMap<Object, Boolean>());
     }
 
+    /**
+     * 复制单值。
+     */
     static Object copyValue(Object value) {
         return freezeValue(value);
     }
 
+    /**
+     * 构建用于分组的深度键值副本。
+     */
     static Object deepKey(Object value) {
         return freezeValue(value);
     }

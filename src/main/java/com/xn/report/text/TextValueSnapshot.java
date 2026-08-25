@@ -31,11 +31,20 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * 文本渲染上下文数据值不可变快照与深度拷贝工具类。
+ * <p>
+ * 为文本变量、summary 统计字典与 runtime 参数提供防御性不可变包装与循环引用安全检测。
+ * </p>
+ */
 final class TextValueSnapshot {
 
     private TextValueSnapshot() {
     }
 
+    /**
+     * 深度冻结 Map 变量字典。
+     */
     static Map<String, Object> map(Map<String, Object> source) {
         if (source == null || source.isEmpty()) {
             return Collections.emptyMap();

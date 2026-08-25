@@ -21,11 +21,30 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageSz;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
 
+/**
+ * Word 图片组件（CHART）插入与页面自适应布局写入器。
+ * <p>
+ * 将离线渲染生成的 PNG 图片插入目标段落：
+ * <ul>
+ *   <li>根据当前分节或全局页面尺寸（PageSz）与页边距（PageMar）动态计算可打印区域（PrintableArea EMU）。</li>
+ *   <li>支持按配置宽度（widthInches）或原图 DPI 比例等比缩放，严格限制不超过版心边界。</li>
+ *   <li>支持段落对齐方式（LEFT / CENTER / RIGHT）、图片替代文本（AltText）与居中题注（Caption）。</li>
+ * </ul>
+ * </p>
+ */
 public final class WordImageWriter {
 
     private static final long DEFAULT_PAGE_WIDTH_DXA = 12240L;
     private static final long DEFAULT_MARGIN_DXA = 1440L;
 
+    /**
+     * 将渲染图表图片写入目标段落。
+     *
+     * @param document Word 根文档
+     * @param paragraph 承载图片的段落
+     * @param chart 离线渲染产物（PNG 图像路径、宽高与 DPI）
+     * @param component 图片组件定义配置（包含宽度、对齐方式、题注、Alt 文本等）
+     */
     public void write(
             XWPFDocument document,
             XWPFParagraph paragraph,

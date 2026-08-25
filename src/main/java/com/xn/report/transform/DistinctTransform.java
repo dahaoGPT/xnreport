@@ -8,8 +8,18 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * 内存数据集多字段联合去重转换器。
+ * <p>
+ * 根据配置的一组或多组去重字段（fields），利用 {@link TransformDeepValue} 对字段值进行跨类型深度比对，
+ * 剔除重复数据行并严格保留首个出现的行记录。
+ * </p>
+ */
 public final class DistinctTransform implements Transform {
 
+    /**
+     * 深度复合键值封装类。
+     */
     private static final class DeepKey {
 
         private final TransformDeepValue[] values;
@@ -33,8 +43,14 @@ public final class DistinctTransform implements Transform {
         }
     }
 
+    /** 参与去重判定的字段名称列表。 */
     private final List<String> fields;
 
+    /**
+     * 构造去重转换器。
+     *
+     * @param fields 去重字段列表，不可为空
+     */
     public DistinctTransform(List<String> fields) {
         if (fields == null || fields.isEmpty()) {
             throw new IllegalArgumentException("Distinct fields must not be empty");

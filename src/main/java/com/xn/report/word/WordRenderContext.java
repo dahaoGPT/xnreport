@@ -9,6 +9,17 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Word 文档渲染上下文环境模型。
+ * <p>
+ * 聚合为 Word 生成提供数据支持的所有运行时上下文要素：
+ * <ul>
+ *   <li>数据集结果集集合（{@link DatasetContext}）。</li>
+ *   <li>叙述与规则分析结果集合（{@link NarrativeResult}）。</li>
+ *   <li>已渲染的离线图表 PNG 产物（{@link RenderedChart}），支持按基础图表 ID 获取分组展开后的所有子图表序列。</li>
+ * </ul>
+ * </p>
+ */
 public final class WordRenderContext {
 
     private final DatasetContext datasets;
@@ -40,7 +51,12 @@ public final class WordRenderContext {
         return charts.get(id);
     }
 
-    /** Returns the base chart and every grouped chart in insertion order. */
+    /**
+     * 按插入顺序返回基础图表及所有分组派生子图表列表。
+     *
+     * @param baseId 基础图表 ID
+     * @return 匹配的图表图像列表
+     */
     public List<RenderedChart> charts(String baseId) {
         List<RenderedChart> matches = new ArrayList<RenderedChart>();
         String groupedPrefix = baseId + "::";
@@ -53,6 +69,9 @@ public final class WordRenderContext {
         return Collections.unmodifiableList(matches);
     }
 
+    /**
+     * 上下文建造者。
+     */
     public static final class Builder {
         private DatasetContext datasets;
         private final Map<String, NarrativeResult> narratives =

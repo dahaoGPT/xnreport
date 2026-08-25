@@ -10,7 +10,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-/** Resolves runtime expressions in a defensive copy of the Word cover. */
+/**
+ * Word 封面表达式动态解析求值器。
+ * <p>
+ * 对封面属性（title、organization、reportPeriod、preparedBy、preparedDate）进行防御性克隆与动态占位符解析（如 <code>${runtime.year}</code>），支持配置未解析占位符策略（FAIL / EMPTY / PRESERVE）。
+ * </p>
+ */
 public final class WordCoverValueResolver {
 
     private final TextRenderer renderer;
@@ -23,6 +28,14 @@ public final class WordCoverValueResolver {
         this.renderer = Objects.requireNonNull(renderer, "renderer");
     }
 
+    /**
+     * 解析封面配置中的动态表达式。
+     *
+     * @param source 原始封面定义
+     * @param runtime 运行时全局参数
+     * @param policies 全局策略定义
+     * @return 解析后的新封面定义副本
+     */
     public WordCoverDefinition resolve(
             WordCoverDefinition source,
             Map<String, Object> runtime,

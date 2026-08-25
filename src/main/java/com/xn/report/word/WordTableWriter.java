@@ -25,6 +25,16 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTrPr;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STTblWidth;
 
+/**
+ * Word 表格（XWPFTable）底层生成与原型行克隆绑定器。
+ * <p>
+ * 支持两种表格填充机制：
+ * <ol>
+ *   <li><b>原型行克隆绑定（PROTOTYPE）</b>：在模板设计好的精美表格中寻找包含 <code>{{row:field|formatter:arg}}</code> 的样本行，针对数据集多行深度克隆行结构（CTTrPr / CTTc）并替换字段占位符，保留原有表格框线与单元格底纹。</li>
+ *   <li><b>全动态表格生成（GENERATED）</b>：动态创建表头行、设置 <code>tblHeader</code> 跨页重复标头属性、统一居中对齐并根据配置列宽（widthDxa）或平均比例分配列网格（CTTblGrid）宽度。</li>
+ * </ol>
+ * </p>
+ */
 public final class WordTableWriter {
 
     private static final int DEFAULT_TABLE_WIDTH_DXA = 8800;
@@ -35,6 +45,14 @@ public final class WordTableWriter {
     private final WordRunTextReplacer replacer = new WordRunTextReplacer();
     private final FormatterRegistry formatters = FormatterRegistry.defaults();
 
+    /**
+     * 采用原型行克隆机制绑定表格。
+     *
+     * @param table 模板目标表格
+     * @param dataset 数据集结果集
+     * @param emptyMessage 数据为空时的展示文案
+     * @return 实际渲染行数
+     */
     public int bindPrototype(
             XWPFTable table, DatasetResult dataset, String emptyMessage) {
         if (table == null || dataset == null) {
@@ -69,6 +87,14 @@ public final class WordTableWriter {
         return rows.size();
     }
 
+    /**
+     * 采用全动态生成机制创建并填充表格。
+     *
+     * @param table 目标空表格对象
+     * @param dataset 数据集结果集
+     * @param configuredColumns 配置的列定义列表
+     * @param emptyMessage 空数据提示语
+     */
     public void fillGenerated(
             XWPFTable table,
             DatasetResult dataset,

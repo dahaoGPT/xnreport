@@ -12,6 +12,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * 报表生成最终响应结果不可变对象（DTO）。
+ * <p>
+ * 封装单次生成流水线的完整输出信息：
+ * <ul>
+ *   <li><code>executionId</code>：全局唯一执行 ID。</li>
+ *   <li><code>status</code>：执行最终状态（{@link ExecutionStatus}）。</li>
+ *   <li><code>excelPath</code> / <code>wordPath</code>：最终发布的 Excel 与 Word 产物物理路径。</li>
+ *   <li><code>datasetRowCounts</code>：各数据集处理的行数映射统计。</li>
+ *   <li><code>warnings</code>：过程告警列表。</li>
+ *   <li><code>error</code> / <code>failure</code> / <code>failedStage</code>：若执行失败时的详细错误码、堆栈及失败阶段。</li>
+ *   <li><code>metrics</code>：各阶段耗时度量指标。</li>
+ * </ul>
+ * </p>
+ */
 public final class ReportExecutionResult {
 
     private final String executionId;

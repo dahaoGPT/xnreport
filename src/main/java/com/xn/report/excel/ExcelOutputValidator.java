@@ -31,6 +31,18 @@ import org.apache.poi.xssf.usermodel.XSSFChart;
 import org.apache.xmlbeans.XmlCursor;
 import org.apache.xmlbeans.XmlObject;
 
+/**
+ * Excel 最终输出产物严格后置校验器。
+ * <p>
+ * 在生成完成并落盘前对临时 Excel 文件进行全方位合规性检查：
+ * <ul>
+ *   <li>全局结构化表格名称全局唯一性校验。</li>
+ *   <li>数据集工作表存在性、可见性及表格物理行列坐标边界校验。</li>
+ *   <li>图表数据公式规范化（类目公式、系列数值公式、标题公式、气泡大小公式等）精准匹配。</li>
+ *   <li>图表 OpenXML 静态缓存点位数量（<code>c:ptCount</code>）与物理数据点数的一致性核验。</li>
+ * </ul>
+ * </p>
+ */
 public final class ExcelOutputValidator {
 
     public void validate(

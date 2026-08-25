@@ -5,6 +5,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 跨格式通用的图表物理渲染领域数据模型。
+ * <p>
+ * 汇聚渲染所需的所有确定性数据：类目列表（categories）、系列列表（series，包含对齐后的数值与气泡尺寸）、
+ * 图例位置、双数值轴边界范围、数据标签模式、离线渲染像素尺寸及空数据降级策略。
+ * </p>
+ */
 public final class ChartModel {
 
     private final String chartId;

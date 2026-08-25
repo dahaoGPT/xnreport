@@ -13,6 +13,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * 报表分析与计算阶段成果上下文不可变模型。
+ * <p>
+ * 聚合分析流水线（{@link AnalysisService}）产生的所有计算产物：
+ * <ul>
+ *   <li><b>查询快照</b>（querySnapshot）：SQL 刚执行完的原始数据集上下文。</li>
+ *   <li><b>转换后数据集</b>（datasetContext）：经过 DerivedField、Filter、Sort、Limit 等清洗转换后的数据集上下文。</li>
+ *   <li><b>规则求值结果</b>（ruleResults）：各级业务规则组的命中判定与严重级别。</li>
+ *   <li><b>叙述文本分析结果</b>（narratives）：通过模板与分析器生成的最终陈述文本。</li>
+ *   <li><b>图表逻辑模型</b>（chartModels）：已完成数据对齐与统计聚合的图表模型。</li>
+ *   <li><b>已渲染图表图像</b>（renderedCharts）：离线渲染的高清 PNG 文件路径与规格。</li>
+ *   <li><b>警告列表</b>（warnings）：空数据跳过、字段缺失等非致命告警。</li>
+ * </ul>
+ * </p>
+ */
 public final class AnalysisContext {
 
     private final DatasetContext querySnapshot;
@@ -46,6 +61,12 @@ public final class AnalysisContext {
                                 : warnings));
     }
 
+    /**
+     * 构建仅含原始数据集的空白分析上下文。
+     *
+     * @param datasets 原始数据集上下文
+     * @return 空白 AnalysisContext
+     */
     public static AnalysisContext empty(DatasetContext datasets) {
         return new AnalysisContext(
                 datasets, datasets,
@@ -56,6 +77,15 @@ public final class AnalysisContext {
                 Collections.<ReportWarning>emptyList());
     }
 
+    /**
+     * 追加警告并返回新的分析上下文副本。
+     *
+     * @param action 告警动作
+     * @param scopeType 作用域类型
+     * @param scopeId 作用域 ID
+     * @param message 警告信息
+     * @return 新的 AnalysisContext 实例
+     */
     public AnalysisContext withWarning(
             String action,
             String scopeType,

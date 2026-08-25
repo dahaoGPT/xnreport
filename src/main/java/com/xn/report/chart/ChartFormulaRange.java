@@ -6,6 +6,12 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * 图表与 Excel 工作表数据区域物理映射范围模型。
+ * <p>
+ * 封装数据所在的工作表名、表头行号、起始数据行号、数据点行数，以及各系列/气泡大小字段与物理列序号的精准对应关系。
+ * </p>
+ */
 public final class ChartFormulaRange {
 
     private final String sheetName;
@@ -186,7 +192,7 @@ public final class ChartFormulaRange {
             }
             throw new IllegalArgumentException(
                     "Chart series has no value column at ordinal "
-                            + ordinal);
+                                + ordinal);
         }
         return column.intValue();
     }

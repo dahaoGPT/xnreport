@@ -6,6 +6,12 @@ import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 
+/**
+ * 报表生成各执行阶段耗时性能指标模型。
+ * <p>
+ * 精确统计各阶段（{@link ExecutionStage}）的独立毫秒耗时以及流水线整体执行耗时。
+ * </p>
+ */
 public final class ExecutionMetrics {
 
     private final Instant startedAt;
@@ -22,6 +28,12 @@ public final class ExecutionMetrics {
                 new EnumMap<ExecutionStage, Long>(durationsMillis));
     }
 
+    /**
+     * 开始计时并创建可变度量收集器。
+     *
+     * @param startedAt 开始时间戳
+     * @return Mutable 收集器实例
+     */
     public static Mutable begin(Instant startedAt) {
         return new Mutable(startedAt);
     }
@@ -34,6 +46,12 @@ public final class ExecutionMetrics {
         return finishedAt;
     }
 
+    /**
+     * 获取指定阶段的耗时（毫秒）。
+     *
+     * @param stage 执行阶段
+     * @return 耗时毫秒数
+     */
     public long getDurationMillis(ExecutionStage stage) {
         Long value = durationsMillis.get(stage);
         return value == null ? 0L : value.longValue();
@@ -47,6 +65,9 @@ public final class ExecutionMetrics {
         return Math.max(0L, Duration.between(startedAt, finishedAt).toMillis());
     }
 
+    /**
+     * 可变执行阶段计时收集器。
+     */
     public static final class Mutable {
         private final Instant startedAt;
         private final EnumMap<ExecutionStage, Long> durations =

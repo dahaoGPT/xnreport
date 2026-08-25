@@ -4,13 +4,24 @@ import com.xn.report.config.definition.ChartDefinition;
 import com.xn.report.config.definition.ChartSeriesDefinition;
 
 /**
- * Resolves a rendered series back to its exact configured source series.
+ * 系列模型到原始配置定义的溯源反解器。
+ * <p>
+ * 将渲染阶段的 {@link ChartSeriesModel} 基于 sourceIndex 或序号准确反向匹配回原始 {@link ChartSeriesDefinition}。
+ * </p>
  */
 public final class ChartSeriesConfigurationResolver {
 
     private ChartSeriesConfigurationResolver() {
     }
 
+    /**
+     * 根据系列模型溯源匹配其原始配置。
+     *
+     * @param definition 图表配置定义
+     * @param model 系列数据模型
+     * @param ordinal 物理系列序号
+     * @return 匹配的 ChartSeriesDefinition
+     */
     public static ChartSeriesDefinition resolve(
             ChartDefinition definition,
             ChartSeriesModel model,

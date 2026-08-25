@@ -10,6 +10,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * 报表生成请求参数不可变对象（DTO）。
+ * <p>
+ * 封装客户端调用 {@link ReportEntry} 时传入的所有入参：
+ * <ul>
+ *   <li><code>reportConfigPath</code>：配置文件 report.json 路径（必须位于 configRoot 目录沙箱之下）。</li>
+ *   <li><code>configRoot</code>：配置文件根目录。</li>
+ *   <li><code>sqlRoot</code>：SQL 文件根目录。</li>
+ *   <li><code>templateRoot</code>：Excel / Word 模板文件根目录。</li>
+ *   <li><code>outputRoot</code>：最终生成报表产物输出根目录。</li>
+ *   <li><code>tempRoot</code>：中间计算临时工作区根目录。</li>
+ *   <li><code>runtimeParameters</code>：运行时传入的动态业务参数（如 startDate、endDate、deptId 等），内部执行深层不可变冻结。</li>
+ * </ul>
+ * </p>
+ */
 public final class ReportExecutionRequest {
 
     private final Path reportConfigPath;

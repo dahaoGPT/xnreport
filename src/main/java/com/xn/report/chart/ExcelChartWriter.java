@@ -12,8 +12,20 @@ import java.util.Map;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
- * Dispatches Excel chart definitions after dataset sheets and tables have
- * been materialized.
+ * Excel 图表生成与写入总调度门面。
+ * <p>
+ * 在 Excel 数据集明细表格物化完成后执行：
+ * <ul>
+ *   <li>调用 {@link ChartModelBuilder} 基于数据集结果派生各分组图表模型。</li>
+ *   <li>调用 {@link ExcelChartDataAreaWriter} 在数据表右侧物化图表独立数据区域。</li>
+ *   <li>依据图表模式分发：
+ *     <ul>
+ *       <li>{@code GENERATED_NATIVE}：调用 {@link GeneratedNativeChartWriter} 动态生成原生 Excel OOXML 图表。</li>
+ *       <li>{@code TEMPLATE_NATIVE}：调用 {@link TemplateNativeChartUpdater} 准确定位模板预置图表并重绑定公式缓存与数据序列。</li>
+ *     </ul>
+ *   </li>
+ * </ul>
+ * </p>
  */
 public final class ExcelChartWriter {
 
@@ -73,6 +85,15 @@ public final class ExcelChartWriter {
                 categoryIndexFactory, "categoryIndexFactory");
     }
 
+    /**
+     * 执行全部配置图表的物化生成与模板更新。
+     *
+     * @param workbook 工作簿
+     * @param charts 图表定义列表
+     * @param datasets 数据集定义列表
+     * @param context 数据集查询上下文
+     * @param tableBindings 表格绑定关系
+     */
     public void write(
             XSSFWorkbook workbook,
             List<ChartDefinition> charts,

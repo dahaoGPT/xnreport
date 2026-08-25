@@ -19,11 +19,28 @@ import org.xml.sax.InputSource;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
+/**
+ * Word 全包文本深度扫描工具类（包级私有）。
+ * <p>
+ * 全方位遍历 Word 各种底层 XML 故事体（Body 正文、页眉 Header、页脚 Footer、脚注 Footnote、尾注 Endnote、批注 Comment）：
+ * <ul>
+ *   <li>统计指定文本标识在全包中的出现次数。</li>
+ *   <li>使用正则表达式检查是否存在特定模式的未解析占位符（如 <code>\{\{[^{}]+}}</code>）。</li>
+ * </ul>
+ * </p>
+ */
 final class WordPackageTextScanner {
 
     private WordPackageTextScanner() {
     }
 
+    /**
+     * 统计指定标记在整包所有故事体中的出现次数。
+     *
+     * @param document 目标 Word 文档
+     * @param token 待匹配标记文本
+     * @return 出现总次数
+     */
     static int count(XWPFDocument document, String token) {
         int count = count(document.getDocument().getBody(), token);
         for (XWPFHeader header : uniqueHeaders(document)) {
@@ -38,6 +55,13 @@ final class WordPackageTextScanner {
         return count;
     }
 
+    /**
+     * 检查整包所有段落文本中是否包含匹配指定正则的内容。
+     *
+     * @param document 目标 Word 文档
+     * @param pattern 正则表达式模式
+     * @return true 若存在匹配项
+     */
     static boolean contains(
             XWPFDocument document, Pattern pattern) {
         for (String text : paragraphTexts(document)) {

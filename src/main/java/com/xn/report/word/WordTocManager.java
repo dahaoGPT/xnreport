@@ -10,20 +10,38 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
 /**
- * Locates a real Word TOC field in document order. Complex fields are parsed
- * as a stream, so their begin/instruction/separate/end nodes may be split
- * across runs, paragraphs, or structured document tags.
+ * Word 目录域（TOC Field）定位与动态层级配置器。
+ * <p>
+ * 支持定位并解析 Word 中两种形态的 TOC 域结构：
+ * <ul>
+ *   <li>简单域：<code>&lt;w:fldSimple w:instr=" TOC \o &quot;1-3&quot; \h \z \ u "&gt;</code></li>
+ *   <li>复杂复合流式域：跨多个 Run 或段落的 <code>w:fldChar (begin -&gt; separate -&gt; end)</code> 与 <code>w:instrText</code> 序列。</li>
+ * </ul>
+ * 自动按照配置的 <code>maxLevel</code>（1~4）改写域指令为 <code>TOC \o "1-{maxLevel}" \h \z \ u</code>，并可在 settings.xml 中开启 <code>w:updateFields</code> 使得用户双击打开 Word 文档时自动弹出或静默刷新最新目录。
+ * </p>
  */
 public final class WordTocManager {
 
     private static final String WORD_NS =
             "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
+    /**
+     * 校验模板中是否存在且仅存在一个合法的 TOC 目录域。
+     *
+     * @param document 目标 Word 文档
+     */
     public void validate(XWPFDocument document) {
         requireDocument(document);
         locateExactlyOne(document);
     }
 
+    /**
+     * 配置目录的最大展示层级与打开时自动更新标志。
+     *
+     * @param document 目标 Word 文档
+     * @param maxLevel 目录最大层级（1~4）
+     * @param updateOnOpen 是否在文档设置中开启 updateFields 标记
+     */
     public void configure(
             XWPFDocument document, int maxLevel, boolean updateOnOpen) {
         requireDocument(document);
@@ -37,6 +55,12 @@ public final class WordTocManager {
         }
     }
 
+    /**
+     * 生成标准 Word TOC 域指令字符串。
+     *
+     * @param maxLevel 最大层级（1~4）
+     * @return 域指令文本
+     */
     public static String instruction(int maxLevel) {
         return " TOC \\o \"1-" + maxLevel + "\" \\h \\z \\u ";
     }

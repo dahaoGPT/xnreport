@@ -20,25 +20,52 @@ import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
+/**
+ * 已解析并完成深度防御性拷贝的 SQL 命名参数值对象。
+ * <p>
+ * 封装已完成类型标准化与空值转换的 SQL 命名参数字典。
+ * 在构造与读取时执行完整的深拷贝（针对 Date、Timestamp、数组、Collection、Map 等可变对象），
+ * 并具备循环引用检测能力，保证多线程与重复执行期间的绝对不可变性与线程安全。
+ * </p>
+ */
 public final class ResolvedSqlParameters {
 
+    /** 内部不可变的命名参数值字典。 */
     private final Map<String, Object> values;
 
+    /**
+     * 构造不可变的 SQL 命名参数集。
+     *
+     * @param values 参数值字典，不可为 null
+     */
     public ResolvedSqlParameters(Map<String, Object> values) {
         Objects.requireNonNull(values, "values");
         this.values = copyMap(
                 values, new IdentityHashMap<Object, Boolean>());
     }
 
+    /**
+     * 获取参数键值字典的深度副本。
+     *
+     * @return 不可变 Map 副本
+     */
     public Map<String, Object> asMap() {
         return copyMap(
                 values, new IdentityHashMap<Object, Boolean>());
     }
 
+    /**
+     * 转换为 Spring JDBC 的 MapSqlParameterSource 对象。
+     *
+     * @return MapSqlParameterSource 实例
+     */
     public MapSqlParameterSource toMapSqlParameterSource() {
         return new MapSqlParameterSource(asMap());
     }
 
+    /**
+     * 执行 Map 深度拷贝与循环引用追踪。
+     */
     private static Map<String, Object> copyMap(
             Map<String, Object> source,
             IdentityHashMap<Object, Boolean> visiting) {
@@ -54,6 +81,9 @@ public final class ResolvedSqlParameters {
         }
     }
 
+    /**
+     * 针对不同数据类型执行深拷贝。
+     */
     private static Object copyValue(
             Object value,
             IdentityHashMap<Object, Boolean> visiting) {
@@ -189,11 +219,14 @@ public final class ResolvedSqlParameters {
             IdentityHashMap<Object, Boolean> visiting) {
         if (visiting.put(value, Boolean.TRUE) != null) {
             throw new IllegalArgumentException(
-                    "Cyclic mutable SQL parameter value: "
-                            + value.getClass().getName());
+                "Cyclic mutable SQL parameter value: "
+                        + value.getClass().getName());
         }
     }
 
+    /**
+     * 判断对象是否属于天然不可变类型。
+     */
     private static boolean isKnownImmutable(Object value) {
         return value instanceof String
                 || value instanceof Boolean

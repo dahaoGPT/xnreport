@@ -27,7 +27,16 @@ import org.openxmlformats.schemas.drawingml.x2006.chart.CTStrRef;
 import org.openxmlformats.schemas.drawingml.x2006.chart.CTStrVal;
 
 /**
- * Rebinds formulas and caches while retaining template plot/layout/style XML.
+ * Excel 模板原生图表数据源公式与缓存重绑定更新器。
+ * <p>
+ * 在完全保留模板 Excel 中由设计师预先配置的精美绘图区样式、色彩主题、3D 视觉与高级版式（如股价图 STOCK、复杂组合图）的前提下：
+ * <ul>
+ *   <li>通过 {@link ChartLocator} 定位目标图表。</li>
+ *   <li>逐个提取 OpenXML 底层系列（<code>c:ser</code>）并匹配对应的数据集字段。</li>
+ *   <li>动态重写类目公式（<code>c:cat//c:f</code> / <code>c:xVal//c:f</code>）、数值公式（<code>c:val//c:f</code> / <code>c:yVal//c:f</code>）、标题公式（<code>c:tx//c:f</code>）及气泡尺寸公式。</li>
+ *   <li>同步刷新底层字符串缓存（<code>c:strCache</code>）与数值缓存（<code>c:numCache</code>），确保图表即使在未开启公式重新计算的预览器中也能正常显示。</li>
+ * </ul>
+ * </p>
  */
 public final class TemplateNativeChartUpdater {
 
@@ -646,7 +655,7 @@ public final class TemplateNativeChartUpdater {
             }
             throw new IllegalArgumentException(
                     "Missing template chart locator for group "
-                            + model.getGroupKey());
+                                + model.getGroupKey());
         }
         String marker = definition.getTemplateChartMarker();
         if (marker == null

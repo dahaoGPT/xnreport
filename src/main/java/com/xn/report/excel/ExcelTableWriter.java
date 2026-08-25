@@ -20,6 +20,19 @@ import org.apache.poi.xssf.usermodel.XSSFTable;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTTableStyleInfo;
 
+/**
+ * Excel 结构化表格（XSSFTable / ListObject）底层物化创建器。
+ * <p>
+ * 负责在物理工作表上精准构建或替换结构化表格：
+ * <ul>
+ *   <li>合并单元格冲突检查与已有表格区域重叠校验。</li>
+ *   <li>继承模板预置表格的原型数据样式（Prototype Styles）与表格样式信息（CTTableStyleInfo）。</li>
+ *   <li>安全清理历史旧数据区域并重建表头与自动筛选（AutoFilter）。</li>
+ *   <li>逐行写入强类型数据，设置列级格式化代码。</li>
+ *   <li>自动冻结首行表头窗格（FreezePane）并根据内容长度自适应计算列宽。</li>
+ * </ul>
+ * </p>
+ */
 public final class ExcelTableWriter {
 
     static final int MIN_COLUMN_WIDTH = 8 * 256;

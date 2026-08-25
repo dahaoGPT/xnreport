@@ -17,6 +17,17 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.STJc;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STMultiLevelType;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STNumberFormat;
 
+/**
+ * Word 多级大纲编号（Heading1~4）自动化管理与绑定器。
+ * <p>
+ * 负责解析或动态创建符合规范的四级大纲编号定义（<code>w:abstractNum</code> / <code>w:num</code>）：
+ * <ul>
+ *   <li>优先复用模板中已存在且规则匹配的多级编号 ID（numId）。</li>
+ *   <li>若不存在，则在 numbering.xml 中动态注入包含 4 个级别（ilvl 0~3）的独立多级编号规则（含数字格式、文本掩码与缩进悬挂量）。</li>
+ *   <li>为各级标题段落统一赋予关联的 <code>numID</code> 与 <code>numILvl</code>，实现全文大纲序号自动连贯递增。</li>
+ * </ul>
+ * </p>
+ */
 public final class WordNumberingManager {
 
     private final BigInteger numId;
@@ -49,6 +60,13 @@ public final class WordNumberingManager {
                 ? createNumbering(numbering, levels) : reusable;
     }
 
+    /**
+     * 将多级编号应用到标题段落。
+     *
+     * @param paragraph 目标标题段落
+     * @param level 标题层级（1~4）
+     * @return 分配的 numId
+     */
     public BigInteger apply(XWPFParagraph paragraph, int level) {
         if (paragraph == null) {
             throw new IllegalArgumentException("Word paragraph is required");

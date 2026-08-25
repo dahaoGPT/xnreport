@@ -9,8 +9,27 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * 内存转换算子构建工厂。
+ * <p>
+ * 将配置模型 {@link TransformDefinition} 解析、校验属性合法性并实例化为对应的 {@link Transform} 具体实现类：
+ * <ul>
+ *   <li>{@link FilterTransform}：行条件过滤。</li>
+ *   <li>{@link SortTransform}：多字段复合排序。</li>
+ *   <li>{@link DistinctTransform}：多字段联合去重。</li>
+ *   <li>{@link LimitTransform}：行数截断限制。</li>
+ *   <li>{@link DerivedFieldTransform}：派生列四则运算计算。</li>
+ * </ul>
+ * </p>
+ */
 public final class TransformFactory {
 
+    /**
+     * 批量创建转换算子列表。
+     *
+     * @param definitions 转换配置定义列表
+     * @return Transform 实例列表
+     */
     public List<Transform> createAll(List<TransformDefinition> definitions) {
         if (definitions == null) {
             throw new IllegalArgumentException(
@@ -23,6 +42,13 @@ public final class TransformFactory {
         return transforms;
     }
 
+    /**
+     * 根据单个转换配置定义创建 Transform 算子。
+     *
+     * @param definition 转换配置定义，不可为 null
+     * @return Transform 实例
+     * @throws IllegalArgumentException 如果必填属性缺失、出现非法多余属性或参数不合法
+     */
     public Transform create(TransformDefinition definition) {
         if (definition == null || definition.getType() == null) {
             throw new IllegalArgumentException(
@@ -111,6 +137,9 @@ public final class TransformFactory {
         }
     }
 
+    /**
+     * 校验当前转换类型所允许的属性与必需的属性集合。
+     */
     private static void validateAttributes(TransformDefinition definition) {
         Set<String> allowed;
         Set<String> required;

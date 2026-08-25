@@ -10,8 +10,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * 数据集依赖拓扑排序规划器。
+ * <p>
+ * 基于 Kahn 算法对配置中的数据集依赖关系（{@code dependsOn}）进行有向无环图（DAG）拓扑分析：
+ * <ul>
+ *   <li><b>拓扑定序</b>：确保所有前置依赖数据集先于后置数据集执行。</li>
+ *   <li><b>配置顺序保序</b>：同层级（入度为 0）无依赖关系的数据集，严格保持配置文件中的原始声明顺序。</li>
+ *   <li><b>循环依赖精准诊断</b>：当检测到死锁环路时，利用深度优先可达性回溯算法，精准定位并输出参与循环依赖的所有数据集 ID 列表。</li>
+ * </ul>
+ * </p>
+ */
 public final class DatasetPlanner {
 
+    /**
+     * 对数据集列表执行依赖分析并规划拓扑执行顺序。
+     *
+     * @param datasets 原始声明的数据集配置列表
+     * @return 经过拓扑排序后的可执行数据集列表
+     * @throws IllegalArgumentException 如果存在重复 ID、未知依赖或循环依赖
+     */
     public List<DatasetDefinition> plan(List<DatasetDefinition> datasets) {
         if (datasets == null) {
             throw new IllegalArgumentException("Datasets must not be null");
@@ -94,6 +112,9 @@ public final class DatasetPlanner {
         return Collections.unmodifiableList(planned);
     }
 
+    /**
+     * 提取参与循环依赖的节点集合。
+     */
     private static List<String> findCycleMembers(
             Map<String, DatasetDefinition> byId,
             Map<String, Integer> indegree) {
@@ -114,6 +135,9 @@ public final class DatasetPlanner {
         return cycleMembers;
     }
 
+    /**
+     * 深度优先判断是否存在回到起始节点的闭环路径。
+     */
     private static boolean reaches(
             String current,
             String target,

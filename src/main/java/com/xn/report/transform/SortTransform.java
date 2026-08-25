@@ -7,8 +7,17 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
+/**
+ * 内存数据集多字段复合排序转换器。
+ * <p>
+ * 支持根据多个字段的优先级（sortFields）、升降序方向（{@link Direction}）与 NULL 值排布规则（{@link NullOrder}）进行稳定排序。
+ * </p>
+ */
 public final class SortTransform implements Transform {
 
+    /**
+     * 单个排序字段规格。
+     */
     public static final class SortField {
 
         private final String field;
@@ -31,6 +40,7 @@ public final class SortTransform implements Transform {
         }
     }
 
+    /** 排序字段链表。 */
     private final List<SortField> fields;
 
     public SortTransform(String field, Direction direction) {

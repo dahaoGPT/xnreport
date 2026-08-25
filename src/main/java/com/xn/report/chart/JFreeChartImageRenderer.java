@@ -62,6 +62,17 @@ import org.jfree.data.xy.DefaultXYZDataset;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 
+/**
+ * 基于 JFreeChart 的离线静态图表图像渲染引擎。
+ * <p>
+ * 支持柱状图、堆叠柱图、折线图、条形图、饼图、环形图、面积图、散点图、气泡图、雷达图等 13 种主流图表形态的高清 PNG 离线渲染：
+ * <ul>
+ *   <li>开启高质量抗锯齿（KEY_ANTIALIASING / KEY_TEXT_ANTIALIASING）。</li>
+ *   <li>自适应匹配操作系统中文字体候选（微软雅黑、SimSun 等），避免乱码。</li>
+ *   <li>自动格式化数据标签与双数值轴刻度。</li>
+ * </ul>
+ * </p>
+ */
 public final class JFreeChartImageRenderer implements ChartImageRenderer {
 
     private static final Set<ChartType> SUPPORTED =

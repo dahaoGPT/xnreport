@@ -9,6 +9,19 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * 文本与智能叙述句渲染统一环境上下文容器。
+ * <p>
+ * 汇聚多维数据源，并实现作用域变量名解析路由：
+ * <ul>
+ *   <li><code>summary.*</code>：当前叙述句分析度量字典。</li>
+ *   <li><code>runtime.*</code>：报表任务全局运行时入参。</li>
+ *   <li><code>dataset.{id}.{field}</code>：指定数据集字段（SCALAR / SINGLE）。</li>
+ *   <li><code>rule.{id}.matchedCount</code> 或 <code>rule.{id}.summary.{key}</code>：异常规则计算产物。</li>
+ *   <li>无前缀字段：在当前行、summary、runtime、单行数据集中自动查找匹配（存在二义性时强制要求前缀限定）。</li>
+ * </ul>
+ * </p>
+ */
 public final class TextRenderContext {
 
     private final DatasetRow currentRow;
@@ -34,6 +47,9 @@ public final class TextRenderContext {
         return new Builder();
     }
 
+    /**
+     * 派生携带全新 summary 度量字典的上下文副本。
+     */
     public TextRenderContext withSummary(Map<String, Object> values) {
         return builder()
                 .currentRow(currentRow)
@@ -44,6 +60,12 @@ public final class TextRenderContext {
                 .build();
     }
 
+    /**
+     * 依据点路径路由解析占位符变量值。
+     *
+     * @param name 变量表达式名称
+     * @return 解析结果包装对象 Resolution
+     */
     Resolution resolve(String name) {
         if (name.startsWith("summary.")) {
             return fromMap(summary, name.substring("summary.".length()));
@@ -157,6 +179,9 @@ public final class TextRenderContext {
                 ? Resolution.found(values.get(key)) : Resolution.missing();
     }
 
+    /**
+     * 变量解析匹配状态值对象。
+     */
     static final class Resolution {
         private final boolean found;
         private final Object value;
@@ -183,6 +208,9 @@ public final class TextRenderContext {
         }
     }
 
+    /**
+     * 上下文构造器。
+     */
     public static final class Builder {
         private DatasetRow currentRow;
         private Map<String, Object> summary;

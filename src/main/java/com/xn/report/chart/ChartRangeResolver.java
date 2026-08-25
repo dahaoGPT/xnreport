@@ -13,8 +13,25 @@ import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFTable;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
+/**
+ * Excel 表格与图表公式范围动态解析器。
+ * <p>
+ * 在已填充数据的工作表中，通过查找结构化表（{@link XSSFTable}）或字段列绑定关系，
+ * 计算出各字段在物理工作表上的表头行、数据行及列序号，构建 {@link ChartFormulaRange}。
+ * </p>
+ */
 public final class ChartRangeResolver {
 
+    /**
+     * 解析图表对应数据集在 Excel 中的物理单元格范围。
+     *
+     * @param workbook 工作簿
+     * @param dataset 数据集定义
+     * @param result 数据集查询结果
+     * @param binding Excel 表格绑定定义
+     * @param chart 图表配置定义
+     * @return 解析完成的 ChartFormulaRange
+     */
     public ChartFormulaRange resolve(
             XSSFWorkbook workbook,
             DatasetDefinition dataset,

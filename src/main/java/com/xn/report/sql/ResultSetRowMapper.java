@@ -21,24 +21,60 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * JDBC ResultSet 行与元数据映射器。
+ * <p>
+ * 负责将 JDBC 原生 {@link ResultSet} 与 {@link ResultSetMetaData} 转换为组件内部标准模型：
+ * <ul>
+ *   <li><b>元数据映射（{@link #schema(ResultSetMetaData)}）</b>：提取列名并规范化映射为 Java 强类型（Long, BigDecimal, LocalDate, LocalTime, LocalDateTime, Boolean, String, byte[] 等）。</li>
+ *   <li><b>行映射（{@link #map(ResultSet)}）</b>：逐行读取并标准化列值，生成不可变的 {@link DatasetRow}。</li>
+ *   <li><b>类型适配</b>：处理整数范围适配（BigInteger/BigDecimal -&gt; Long）、浮点/高精度数值统一映射为 BigDecimal、日期时间统一映射为 Java 8 Time API（LocalDate/LocalTime/LocalDateTime）。</li>
+ *   <li><b>LOB 安全读取</b>：流式读取 CLOB 与 BLOB，并在超过安全阈值（maxLobChars / maxLobBytes）时快速熔断报错，防止大内存消耗。</li>
+ * </ul>
+ * </p>
+ */
 public final class ResultSetRowMapper {
 
+    /** 默认 CLOB 最大字符数（16 MB）。 */
     public static final int DEFAULT_MAX_LOB_CHARS = 16 * 1024 * 1024;
+
+    /** 默认 BLOB 最大字节数（16 MB）。 */
     public static final int DEFAULT_MAX_LOB_BYTES = 16 * 1024 * 1024;
+
+    /** LOB 流读取缓冲区大小（8 KB）。 */
     private static final int LOB_BUFFER_SIZE = 8 * 1024;
 
+    /** 最大允许读取的 CLOB 字符数。 */
     private final int maxLobChars;
+
+    /** 最大允许读取的 BLOB 字节数。 */
     private final int maxLobBytes;
 
+    /**
+     * 使用默认 LOB 限制构造映射器。
+     */
     public ResultSetRowMapper() {
         this(DEFAULT_MAX_LOB_CHARS, DEFAULT_MAX_LOB_BYTES);
     }
 
+    /**
+     * 使用自定义 LOB 限制构造映射器。
+     *
+     * @param maxLobChars 最大 CLOB 字符数
+     * @param maxLobBytes 最大 BLOB 字节数
+     */
     public ResultSetRowMapper(int maxLobChars, int maxLobBytes) {
         this.maxLobChars = requirePositive("maxLobChars", maxLobChars);
         this.maxLobBytes = requirePositive("maxLobBytes", maxLobBytes);
     }
 
+    /**
+     * 从 JDBC ResultSetMetaData 解析构建数据集 Schema 契约。
+     *
+     * @param metadata JDBC 元数据对象，不可为 null
+     * @return DatasetSchema 实例
+     * @throws SQLException 如果读取元数据失败
+     */
     public DatasetSchema schema(ResultSetMetaData metadata) throws SQLException {
         if (metadata == null) {
             throw new IllegalArgumentException("ResultSetMetaData must not be null");
@@ -55,6 +91,13 @@ public final class ResultSetRowMapper {
         return DatasetSchema.of(pairs);
     }
 
+    /**
+     * 将 ResultSet 当前游标指向的数据行映射为 DatasetRow。
+     *
+     * @param resultSet JDBC 结果集，不可为 null
+     * @return 不可变的数据行对象
+     * @throws SQLException 如果读取字段失败
+     */
     public DatasetRow map(ResultSet resultSet) throws SQLException {
         if (resultSet == null) {
             throw new IllegalArgumentException("ResultSet must not be null");
@@ -72,6 +115,9 @@ public final class ResultSetRowMapper {
         return toRow(values);
     }
 
+    /**
+     * 读取并标准化指定列的值。
+     */
     private Object readColumn(
             ResultSet resultSet,
             int index,
@@ -97,6 +143,9 @@ public final class ResultSetRowMapper {
         return DatasetRow.of(pairs);
     }
 
+    /**
+     * 根据 JDBC 列类型将原生 Java 对象转换为标准统一类型。
+     */
     private Object normalize(
             String label, int columnType, Object value) throws SQLException {
         if (value == null) {

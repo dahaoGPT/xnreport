@@ -9,6 +9,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 分布分析智能叙述句受控分析器实现。
+ * <p>
+ * 从指定数据集中提取行记录，调用底层 {@link DistributionAnalyzer} 执行分箱计算，
+ * 并将分箱统计指标展开为格式化的 {@code summary} 变量字典（如 {@code {binId}.count}, {@code {binId}.percent}, {@code total} 等）。
+ * </p>
+ */
 final class DistributionNarrativeAnalyzer
         implements ControlledNarrativeAnalyzer {
 
@@ -39,7 +46,7 @@ final class DistributionNarrativeAnalyzer
                 narrative.getEmptyStrategy());
         if (result.empty()) {
             return new NarrativeAnalysis(
-                    java.util.Collections.<String, Object>emptyMap(),
+                java.util.Collections.<String, Object>emptyMap(),
                     true,
                     result.skipped(),
                     result.message(),

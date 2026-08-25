@@ -17,11 +17,23 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * 转换器值快照深拷贝与不可变冻结工具类。
+ * <p>
+ * 为过滤（Filter）等转换器中所持有的目标匹配值提供深度不可变拷贝，具备循环引用检测能力。
+ * </p>
+ */
 final class TransformValueSnapshot {
 
     private TransformValueSnapshot() {
     }
 
+    /**
+     * 深度冻结并复制输入对象。
+     *
+     * @param value 原始值
+     * @return 深度拷贝后的安全副本
+     */
     static Object freeze(Object value) {
         return copy(value, new IdentityHashMap<Object, Boolean>());
     }

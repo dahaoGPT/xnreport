@@ -15,6 +15,17 @@ import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CreationHelper;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
+/**
+ * Excel 单元格强类型数据绑定与安全防注入写入器。
+ * <p>
+ * 负责将 Java 实体值安全高效地写入 POI {@link Cell} 中：
+ * <ul>
+ *   <li><b>基础类型映射</b>：Boolean、BigDecimal/Number（15位有效数字范围校验与 double 安全转换）、LocalDateTime/LocalDate/Date 日期格式化、byte[] Base64 编码。</li>
+ *   <li><b>公式注入防护</b>：文本字符串经 {@link FormulaInjectionGuard} 处理，防止 Excel 恶意公式执行。</li>
+ *   <li><b>样式复用缓存</b>：按原样式与日期格式代码复用 {@link CellStyle}，避免超出 Excel 最大样式数上限。</li>
+ * </ul>
+ * </p>
+ */
 public final class ExcelValueBinder {
 
     private final FormulaInjectionGuard formulaGuard;
@@ -37,6 +48,12 @@ public final class ExcelValueBinder {
         this.creationHelper = workbook.getCreationHelper();
     }
 
+    /**
+     * 将对象安全绑定到指定单元格。
+     *
+     * @param cell 目标单元格
+     * @param value 待写入值（支持各类原生 Java 对象）
+     */
     public void bind(Cell cell, Object value) {
         if (cell == null) {
             throw new IllegalArgumentException("cell must not be null");

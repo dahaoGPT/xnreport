@@ -42,8 +42,16 @@ import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
- * Creates editable native Excel charts. All data references target the
- * dataset's visible sheet; no hidden helper sheet is created.
+ * 动态原生 Excel OOXML 图表写入器。
+ * <p>
+ * 基于 Apache POI XDDF 框架在 Excel 目标工作表上动态创建全套可编辑原生图表：
+ * <ul>
+ *   <li>所有数据引用公式（Category / Values / Title / BubbleSize）直连物理数据区，不产生任何隐藏辅助表。</li>
+ *   <li>支持多系列组合图（例如柱状图 + 折线图）、双坐标轴（PRIMARY / SECONDARY 左右轴）、百分比堆叠图、散点/气泡图。</li>
+ *   <li>支持图例布局位置、系列填充色（RGB）、线型（SOLID/DASHED/DOTTED）、数据标签及数值格式代码。</li>
+ *   <li>支持自动推导或显式指定的行列锚点（Anchor）布局与防重叠检查。</li>
+ * </ul>
+ * </p>
  */
 public final class GeneratedNativeChartWriter {
 
@@ -142,7 +150,7 @@ public final class GeneratedNativeChartWriter {
                                 range.getSheetName(),
                                 range.getHeaderRow(),
                                 range.seriesColumn(
-                                        ordinal, series.getField()),
+                                         ordinal, series.getField()),
                                 true, true));
                 configureSeries(created, series);
                 configureDataLabels(

@@ -13,11 +13,31 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * 图表配置定义模型。
+ * <p>
+ * 在报表配置文件（YAML）中声明图表的元数据、数据源绑定、展示模式、分类维度与度量系列、坐标轴配置及导出图片尺寸与分辨率：
+ * <ul>
+ *   <li><b>渲染模式（{@link Mode}）</b>：支持 GENERATED_NATIVE（纯代码基于 JFreeChart 动态生成）、TEMPLATE_NATIVE（替换 Excel/Word 模板中的原生图表数据）与 IMAGE。</li>
+ *   <li><b>数据绑定</b>：指定绑定的数据集 ID（dataset）、分类字段（categoryField）、分组字段（groupByField）及多系列配置（series）。</li>
+ *   <li><b>坐标轴与样式</b>：主/次坐标轴范围（primaryAxisMin/Max、secondaryAxisMin/Max）、数据标签显示模式（dataLabelMode）、图例位置（legendPosition）。</li>
+ *   <li><b>图片渲染规格</b>：宽（widthPixels）、高（heightPixels）以及 DPI 分辨率。</li>
+ * </ul>
+ * </p>
+ */
 public class ChartDefinition {
 
+    /**
+     * 图表渲染模式枚举。
+     */
     public enum Mode {
+        /** 使用 JFreeChart 动态生成图片并插入文档。 */
         GENERATED_NATIVE,
+
+        /** 绑定并更新 Excel/Word 模板中已存在的原生图表数据源。 */
         TEMPLATE_NATIVE,
+
+        /** 图片插入模式。 */
         IMAGE;
 
         @com.fasterxml.jackson.annotation.JsonCreator
@@ -26,39 +46,100 @@ public class ChartDefinition {
         }
     }
 
+    /** 图表唯一标识。 */
     private String id;
+
+    /** 图表主标题文本。 */
     private String title;
+
+    /** 图表渲染模式（默认为 GENERATED_NATIVE）。 */
     private Mode mode = Mode.GENERATED_NATIVE;
+
+    /** 绑定的源数据集 ID。 */
     private String dataset;
+
+    /** 对应 Excel 模板中的工作表名称（用于 TEMPLATE_NATIVE 模式）。 */
     private String excelSheet;
+
+    /** 对应 Excel 模板中的表格名称。 */
     private String excelTable;
+
+    /** 模板中用于匹配定位该图表的标记文本（如 "[CHART:api_trend]"）。 */
     private String templateChartMarker;
+
+    /** 模板中原生图表的索引序号（0-based）。 */
     private Integer templateChartIndex;
+
+    /** 分组原生图表定位器列表（用于按维度动态替换多个模板图表）。 */
     private List<TemplateChartLocatorDefinition> templateChartLocators =
             new ArrayList<TemplateChartLocatorDefinition>();
+
+    /** Excel 中插入图表的起始锚点行号（0-based）。 */
     private Integer anchorRow;
+
+    /** Excel 中插入图表的起始锚点列号（0-based）。 */
     private Integer anchorColumn;
+
+    /** Excel 中图表占据的列宽度跨度。 */
     private Integer anchorWidthColumns;
+
+    /** Excel 中图表占据的行高度跨度。 */
     private Integer anchorHeightRows;
+
+    /** 分类 X 轴字段名称。 */
     private String categoryField;
+
+    /** 分组/分面维度字段名称。 */
     private String groupByField;
+
+    /** 显式声明的分类轴固定顺序列表。 */
     private List<String> categories = new ArrayList<String>();
+
+    /** 分类轴默认排序规则（ASC 或 DESC）。 */
     private ChartCategorySort categorySort = ChartCategorySort.ASC;
+
+    /** 图表包含的度量数据系列列表。 */
     private List<ChartSeriesDefinition> series =
             new ArrayList<ChartSeriesDefinition>();
+
+    /** 图例显示位置（TOP, BOTTOM, LEFT, RIGHT, NONE）。 */
     private LegendPosition legendPosition = LegendPosition.BOTTOM;
+
+    /** 主数值 Y 轴最小值。 */
     private BigDecimal primaryAxisMin;
+
+    /** 主数值 Y 轴最大值。 */
     private BigDecimal primaryAxisMax;
+
+    /** 次数值 Y 轴最小值。 */
     private BigDecimal secondaryAxisMin;
+
+    /** 次数值 Y 轴最大值。 */
     private BigDecimal secondaryAxisMax;
+
+    /** 数据点标签显示模式（NONE, VALUE, PERCENT, CATEGORY 等）。 */
     private ChartDataLabelMode dataLabelMode = ChartDataLabelMode.NONE;
+
+    /** 生成图表图片的宽度像素（默认 1600）。 */
     private Integer widthPixels = 1600;
+
+    /** 生成图表图片的高度像素（默认 850）。 */
     private Integer heightPixels = 850;
+
+    /** 图表图片 DPI 清晰度（默认 180）。 */
     private Integer dpi = 180;
+
+    /** 数据集为空时的图表处理策略。 */
     private ChartEmptyDataPolicy emptyDataPolicy =
             ChartEmptyDataPolicy.OUTPUT_MESSAGE;
+
+    /** 空数据时渲染的提示文案（默认“暂无图表数据”）。 */
     private String emptyMessage = "暂无图表数据";
+
+    /** 图表级别的异常降级策略。 */
     private PolicyDefinition policies = new PolicyDefinition();
+
+    /** 记录配置文件中显式出现的属性名（用于反序列化校验）。 */
     @JsonIgnore
     private final Set<String> presentProperties = new LinkedHashSet<String>();
 

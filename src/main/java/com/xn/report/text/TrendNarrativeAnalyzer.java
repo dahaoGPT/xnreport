@@ -16,6 +16,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * 趋势分析智能叙述句受控分析器实现。
+ * <p>
+ * 从数据集中提取时序序列（按 yyyy-MM 排序），解析比对基准（支持 LITERAL、RUNTIME_PARAMETER、DATASET_FIELD、ANNUAL_BASELINE、PREVIOUS_YEAR 去年同期），
+ * 调用 {@link TrendAnalyzer} 执行计算并展开包含 {@code current}, {@code comparison}, {@code difference}, {@code changeRate}, {@code direction}, {@code pattern}, {@code maximumPeriod}, {@code minimumPeriod} 等全套 summary 变量字典。
+ * </p>
+ */
 final class TrendNarrativeAnalyzer implements ControlledNarrativeAnalyzer {
 
     private final TrendAnalyzer analyzer;

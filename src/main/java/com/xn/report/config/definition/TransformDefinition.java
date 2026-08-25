@@ -9,22 +9,63 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * 内存数据集派生转换操作配置定义模型。
+ * <p>
+ * 声明在数据集加载完成后执行的内存转换操作（{@link TransformType}）：
+ * <ul>
+ *   <li><b>FILTER</b>：根据条件操作符（{@link TransformOperator}）和目标值（value）过滤数据行。</li>
+ *   <li><b>SORT</b>：根据多字段排序规则（sortFields）重排数据行。</li>
+ *   <li><b>DISTINCT</b>：根据指定字段集合（fields）去重。</li>
+ *   <li><b>LIMIT</b>：截断保留前 N 行（limit）。</li>
+ *   <li><b>DERIVED_FIELD</b>：基于源字段（sourceField）与操作数（operand）进行四则运算生成新字段（targetField），并支持精度（scale）、除零处理策略（divideByZeroStrategy）与同名覆盖冲突策略（fieldConflictStrategy）。</li>
+ * </ul>
+ * </p>
+ */
 public class TransformDefinition {
 
+    /** 转换操作类型（FILTER, SORT, DISTINCT, LIMIT, DERIVED_FIELD）。 */
     private TransformType type;
+
+    /** 单字段过滤或操作作用字段。 */
     private String field;
+
+    /** 多字段去重时的字段列表。 */
     private List<String> fields;
+
+    /** 多字段排序时的字段列表。 */
     private List<SortFieldDefinition> sortFields;
+
+    /** 比较或算术操作符（EQ, GT, ADD, DIVIDE 等）。 */
     private TransformOperator operator;
+
+    /** 过滤比较目标值。 */
     private Object value;
+
+    /** 派生计算的源输入字段名。 */
     private String sourceField;
+
+    /** 派生计算的新增目标字段名。 */
     private String targetField;
+
+    /** 算术四则运算的第二个操作数（常数）。 */
     private BigDecimal operand;
+
+    /** 截断最大行数。 */
     private Integer limit;
+
+    /** 算术除法/乘法计算的小数精度保留位数。 */
     private Integer scale;
+
+    /** 除以零（DivideByZero）时的容错策略。 */
     private DivideByZeroStrategy divideByZeroStrategy;
+
+    /** 除以零时填充的替代默认值。 */
     private BigDecimal divideByZeroDefault;
+
+    /** 派生字段与现有字段名称冲突时的处理策略。 */
     private FieldConflictStrategy fieldConflictStrategy;
+
     @JsonIgnore
     private final Set<String> presentProperties = new LinkedHashSet<String>();
 

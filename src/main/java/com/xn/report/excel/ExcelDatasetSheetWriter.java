@@ -24,6 +24,19 @@ import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFTable;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
+/**
+ * Excel 数据集工作表与结构化表格（ListObject）写入器。
+ * <p>
+ * 负责将数据集执行结果（{@link DatasetResult}）对齐映射到目标 Sheet：
+ * <ul>
+ *   <li>确保工作表可见性（SheetVisibility.VISIBLE）。</li>
+ *   <li>合并 expectedFields、schema 与实际数据行动态推导所有合法列。</li>
+ *   <li>结合 {@link ExcelTableBinding} 自定义列序、表头名与单元格格式。</li>
+ *   <li>执行预期类型强校验（STRING/INTEGER/DECIMAL/DATE/DATETIME 等）。</li>
+ *   <li>委派 {@link ExcelTableWriter} 重建结构化表格并应用样式与自动列宽。</li>
+ * </ul>
+ * </p>
+ */
 public final class ExcelDatasetSheetWriter {
 
     private final ExcelTableWriter tableWriter;
@@ -303,7 +316,7 @@ public final class ExcelDatasetSheetWriter {
             throw new IllegalArgumentException(
                     "Excel dataset table exceeds XLSX column limit "
                             + SpreadsheetVersion.EXCEL2007
-                                    .getMaxColumns()
+                                     .getMaxColumns()
                             + " for dataset "
                             + definition.getId()
                             + ": " + fields.size());

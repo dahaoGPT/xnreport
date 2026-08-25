@@ -40,6 +40,23 @@ import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.MDC;
 
+/**
+ * 效能报表生成标准流水线核心编排实现类。
+ * <p>
+ * 严格按照详细设计说明书的九大标准阶段执行：
+ * <ol>
+ *   <li><b>INITIALIZE</b>：分配全局唯一 executionId，初始化沙箱工作空间与 MDC 日志追踪标识。</li>
+ *   <li><b>LOAD_CONFIG</b>：加载 report.json 配置文件。</li>
+ *   <li><b>VALIDATE_CONFIG</b>：校验配置模型完整性与输出目标约束（同名且分别以 .xlsx / .docx 结尾）。</li>
+ *   <li><b>QUERY</b>：基于只读可重复读事务批量执行命名 SQL 并记录查询警告。</li>
+ *   <li><b>ANALYZE</b>：清洗转换数据集、计算业务规则、生成叙述分析文本并渲染离线图表。</li>
+ *   <li><b>GENERATE_EXCEL</b>：根据模板与结构化表格填充生成 Excel 报表。</li>
+ *   <li><b>GENERATE_WORD</b>：根据模板与多级章节渲染生成 Word 报表。</li>
+ *   <li><b>VALIDATE_OUTPUTS</b>：对生成的临时文件执行有效性及结构质检。</li>
+ *   <li><b>PUBLISH</b>：应用冲突覆盖策略（OVERWRITE / VERSIONED / FAIL）原子发布至最终产物目录，清理临时工作空间。</li>
+ * </ol>
+ * </p>
+ */
 public final class DefaultReportPipeline implements ReportPipeline {
 
     private static final String MDC_EXECUTION_ID = "reportExecutionId";

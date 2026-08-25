@@ -5,7 +5,10 @@ import org.apache.poi.xssf.usermodel.XSSFChart;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
- * Compatibility facade using the terminology in the detailed design.
+ * 模板图表数据绑定门面。
+ * <p>
+ * 对应详细设计说明书规范，内部委派至 {@link TemplateNativeChartUpdater}。
+ * </p>
  */
 public final class TemplateChartBinder {
 

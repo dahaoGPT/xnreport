@@ -11,8 +11,22 @@ import java.util.List;
 import org.apache.xmlbeans.XmlCursor;
 import org.apache.xmlbeans.XmlObject;
 
+/**
+ * Word 模板静态图表占位符（<code>{{chart:id}}</code>）绑定器。
+ * <p>
+ * 负责在 Word 模板中寻找唯一的 <code>{{chart:id}}</code> 顶层段落，并将其原地替换为一个或多个（如 groupByKey 派生多图）已渲染的高清离线图表图片。
+ * </p>
+ */
 public final class WordTemplateChartBinder {
 
+    /**
+     * 将单张图表绑定至模板图表占位符。
+     *
+     * @param document 目标 Word 文档
+     * @param chartId 图表 ID
+     * @param chart 渲染完成的图表图片
+     * @param component 图片组件配置
+     */
     public void bind(
             XWPFDocument document,
             String chartId,
@@ -21,6 +35,14 @@ public final class WordTemplateChartBinder {
         bindAll(document, chartId, Collections.singletonList(chart), component);
     }
 
+    /**
+     * 将多张图表（分组派生图表列表）顺序绑定并扩展插入到模板图表占位符处。
+     *
+     * @param document 目标 Word 文档
+     * @param chartId 图表 ID
+     * @param charts 渲染完成的图表图片列表
+     * @param component 图片组件配置
+     */
     public void bindAll(
             XWPFDocument document,
             String chartId,

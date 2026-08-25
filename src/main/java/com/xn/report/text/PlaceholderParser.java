@@ -6,12 +6,30 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 文本模板占位符词法解析器。
+ * <p>
+ * 将模板文本拆解为纯字面量（literal）与动态占位符（placeholder）片段：
+ * <ul>
+ *   <li>语法格式：<code>${variable|formatter:argument}</code></li>
+ *   <li>支持多级点路径变量名，例如 <code>${summary.count}</code>, <code>${dataset.ds1.total|number:0.00}</code>。</li>
+ *   <li>支持缺省格式化器、带参格式化器管道。</li>
+ * </ul>
+ * </p>
+ */
 public final class PlaceholderParser {
 
     private static final Pattern EXPRESSION = Pattern.compile(
             "^([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)"
                     + "(?:\\|([A-Za-z][A-Za-z0-9]*)(?::([^{}|]*))?)?$");
 
+    /**
+     * 解析模板为不可变片段列表。
+     *
+     * @param template 原始模板字符串
+     * @return List&lt;Part&gt; 语法片段列表
+     * @throws TextRenderException 如果占位符未闭合或语法格式非法
+     */
     public List<Part> parse(String template) {
         if (template == null) {
             throw new TextRenderException("Text template must not be null");
@@ -49,6 +67,9 @@ public final class PlaceholderParser {
         return Collections.unmodifiableList(parts);
     }
 
+    /**
+     * 模板拆解片段模型。
+     */
     public static final class Part {
         private final String literal;
         private final String source;

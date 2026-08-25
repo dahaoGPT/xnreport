@@ -6,25 +6,61 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+/**
+ * 趋势分析配置定义模型。
+ * <p>
+ * 声明在文字段落生成中自动计算数值走势（如上升、下降、持平、异常波动）的规则与基准源：
+ * <ul>
+ *   <li><b>基准源（{@link ComparisonSource}）</b>：PREVIOUS_YEAR（同比去年）、ANNUAL_BASELINE（基线）、LITERAL（常数）、DATASET_FIELD（对比数据集）、RUNTIME_PARAMETER（入参）。</li>
+ *   <li><b>阈值与容差</b>：持平容差范围（flatTolerance）、异常剧烈波动告警阈值（abnormalThreshold）。</li>
+ * </ul>
+ * </p>
+ */
 public class TrendDefinition {
 
+    /**
+     * 趋势对比基准数据源类型枚举。
+     */
     public enum ComparisonSource {
+        /** 同比去年同期数据。 */
         PREVIOUS_YEAR,
+        /** 全年基线数据。 */
         ANNUAL_BASELINE,
+        /** 固定常数。 */
         LITERAL,
+        /** 另一数据集字段。 */
         DATASET_FIELD,
+        /** 外部运行时参数。 */
         RUNTIME_PARAMETER
     }
 
+    /** 时间周期维度字段名。 */
     private String periodField;
+
+    /** 待分析的度量数值字段名。 */
     private String valueField;
+
+    /** 对比基准来源类型。 */
     private ComparisonSource comparisonSource;
+
+    /** 对比数据集 ID。 */
     private String comparisonDataset;
+
+    /** 对比字段名。 */
     private String comparisonField;
+
+    /** 对比入参名称。 */
     private String comparisonParameter;
+
+    /** 对比常量值。 */
     private BigDecimal comparisonValue;
+
+    /** 判定为“基本持平”的容差阈值（默认 0）。 */
     private BigDecimal flatTolerance = BigDecimal.ZERO;
+
+    /** 判定为“剧烈异常”的波动率阈值（如 0.5 表示变动超过 50% 视为异常）。 */
     private BigDecimal abnormalThreshold;
+
     @JsonIgnore
     private final Set<String> presentProperties = new LinkedHashSet<String>();
 

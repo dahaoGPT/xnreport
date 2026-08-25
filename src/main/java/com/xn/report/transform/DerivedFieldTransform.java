@@ -11,15 +11,41 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 派生字段计算转换器实现。
+ * <p>
+ * 基于源数值字段（sourceField）与常量操作数（operand）进行加减乘除四则运算，将计算结果写入目标列（targetField）：
+ * <ul>
+ *   <li><b>精度与舍入</b>：计算结果按配置的 scale 保留小数位（采用 {@link RoundingMode#HALF_UP} 四舍五入）。</li>
+ *   <li><b>除零安全治理（{@link DivideByZeroStrategy}）</b>：除数为 0 时支持 FAIL（抛出算术异常）、NULL（置为空）或 DEFAULT_VALUE（填充默认值）。</li>
+ *   <li><b>同名字段冲突治理（{@link FieldConflictStrategy}）</b>：当目标列已存在时支持 FAIL（抛出异常）或 REPLACE（就地覆盖）。</li>
+ * </ul>
+ * </p>
+ */
 public final class DerivedFieldTransform implements Transform {
 
+    /** 新增/覆盖的目标字段名。 */
     private final String targetField;
+
+    /** 参与计算的源输入字段名。 */
     private final String sourceField;
+
+    /** 算术四则操作符。 */
     private final ArithmeticOperator operator;
+
+    /** 算术第二个操作数。 */
     private final BigDecimal operand;
+
+    /** 小数保留位数。 */
     private final int scale;
+
+    /** 除以零容错策略。 */
     private final DivideByZeroStrategy divideByZeroStrategy;
+
+    /** 除以零时填充的默认值。 */
     private final BigDecimal divideByZeroDefault;
+
+    /** 同名列冲突策略。 */
     private final FieldConflictStrategy conflictStrategy;
 
     public DerivedFieldTransform(
@@ -116,6 +142,9 @@ public final class DerivedFieldTransform implements Transform {
         return TransformSupport.rebuild(input, schema, rows);
     }
 
+    /**
+     * 计算单行数值的派生值。
+     */
     private Object calculate(Object value) {
         if (value == null) {
             return null;

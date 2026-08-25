@@ -20,11 +20,30 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterUtils;
 import org.springframework.jdbc.core.namedparam.ParsedSql;
 
+/**
+ * 命名参数只读 SQL 执行器。
+ * <p>
+ * 封装 Spring JDBC 的 {@link NamedParameterJdbcTemplate}，执行带命名参数的只读 SQL 查询：
+ * <ul>
+ *   <li><b>超时与行数保护</b>：动态设置 JDBC Statement queryTimeout 与 maxRows，防止慢查询与大内存占用。</li>
+ *   <li><b>大对象（LOB）保护</b>：控制 CLOB/BLOB 字符与字节的最大读取限制，防止内存溢出。</li>
+ *   <li><b>类型安全映射</b>：利用 {@link ResultSetRowMapper} 将 ResultSet 映射为不可变的 {@link DatasetRow} 与 {@link com.xn.report.dataset.DatasetSchema}。</li>
+ * </ul>
+ * </p>
+ */
 public final class NamedSqlExecutor {
 
+    /** Spring 命名参数 JDBC 模板。 */
     private final NamedParameterJdbcTemplate jdbcTemplate;
+
+    /** 结果集行映射器。 */
     private final ResultSetRowMapper rowMapper;
 
+    /**
+     * 根据数据源构造执行器（使用默认 LOB 大小限制）。
+     *
+     * @param dataSource 数据源，不可为 null
+     */
     public NamedSqlExecutor(DataSource dataSource) {
         this(
                 dataSource,
@@ -32,6 +51,13 @@ public final class NamedSqlExecutor {
                 ResultSetRowMapper.DEFAULT_MAX_LOB_BYTES);
     }
 
+    /**
+     * 根据数据源与自定义 LOB 大小限制构造执行器。
+     *
+     * @param dataSource 数据源
+     * @param maxLobChars CLOB 最大字符数
+     * @param maxLobBytes BLOB 最大字节数
+     */
     public NamedSqlExecutor(
             DataSource dataSource, int maxLobChars, int maxLobBytes) {
         this(new NamedParameterJdbcTemplate(
@@ -40,6 +66,11 @@ public final class NamedSqlExecutor {
                 maxLobBytes);
     }
 
+    /**
+     * 根据 NamedParameterJdbcTemplate 构造执行器。
+     *
+     * @param jdbcTemplate JDBC 模板，不可为 null
+     */
     public NamedSqlExecutor(NamedParameterJdbcTemplate jdbcTemplate) {
         this(
                 jdbcTemplate,
@@ -47,6 +78,13 @@ public final class NamedSqlExecutor {
                 ResultSetRowMapper.DEFAULT_MAX_LOB_BYTES);
     }
 
+    /**
+     * 根据 NamedParameterJdbcTemplate 与自定义 LOB 大小限制构造执行器。
+     *
+     * @param jdbcTemplate JDBC 模板
+     * @param maxLobChars CLOB 最大字符数
+     * @param maxLobBytes BLOB 最大字节数
+     */
     public NamedSqlExecutor(
             NamedParameterJdbcTemplate jdbcTemplate,
             int maxLobChars,
@@ -55,6 +93,15 @@ public final class NamedSqlExecutor {
         this.rowMapper = new ResultSetRowMapper(maxLobChars, maxLobBytes);
     }
 
+    /**
+     * 执行 SQL 查询（匿名数据集）。
+     *
+     * @param sql SQL 语句文本
+     * @param parameters 解析后的命名参数集
+     * @param queryTimeoutSeconds 超时秒数
+     * @param maxRows 最大允许返回行数
+     * @return 查询结果对象
+     */
     public SqlQueryResult query(
             String sql,
             ResolvedSqlParameters parameters,
@@ -63,6 +110,17 @@ public final class NamedSqlExecutor {
         return query(null, sql, parameters, queryTimeoutSeconds, maxRows);
     }
 
+    /**
+     * 执行指定数据集的 SQL 查询。
+     *
+     * @param datasetId 数据集 ID（用于异常诊断日志）
+     * @param sql SQL 语句文本
+     * @param parameters 解析后的命名参数集
+     * @param queryTimeoutSeconds 超时秒数
+     * @param maxRows 最大允许返回行数
+     * @return 包含 Schema 与不可变行的 SqlQueryResult
+     * @throws ReportException 如果超过最大行数（DATA-004）或 SQL 执行失败（SQL-004）
+     */
     public SqlQueryResult query(
             String datasetId,
             String sql,
@@ -81,6 +139,7 @@ public final class NamedSqlExecutor {
                         public SqlQueryResult doInPreparedStatement(
                                 PreparedStatement statement) throws SQLException {
                             statement.setQueryTimeout(queryTimeoutSeconds);
+                            // 设置最大行数比限制多 1，以准确检测是否超限
                             statement.setMaxRows(maxRows + 1);
                             List<DatasetRow> rows = new ArrayList<DatasetRow>();
                             try (ResultSet resultSet = statement.executeQuery()) {
@@ -111,6 +170,9 @@ public final class NamedSqlExecutor {
         }
     }
 
+    /**
+     * 将命名参数 SQL 解析转换为 PreparedStatementCreator。
+     */
     private static PreparedStatementCreator statementCreator(
             String sql, ResolvedSqlParameters parameters) {
         MapSqlParameterSource source = parameters.toMapSqlParameterSource();
